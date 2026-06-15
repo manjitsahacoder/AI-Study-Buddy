@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Quiz History - AI Study Buddy</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+<button id="theme-toggle" onclick="toggleTheme()">
+    &#127769; Dark Mode
+</button>
+
+<div class="learn-container history-container">
+    <h1>&#128203; Quiz History</h1>
+    <p class="history-intro">Review recent quiz attempts, scores, grades, subjects, and topics.</p>
+
+    {% if attempts %}
+    <div class="history-table-wrap">
+        <table class="history-table">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Student</th>
+                    <th>Class</th>
+                    <th>Subject</th>
+                    <th>Topic</th>
+                    <th>Score</th>
+                    <th>Grade</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for attempt in attempts %}
+                <tr>
+                    <td>{{ attempt.created_at }}</td>
+                    <td>{{ attempt.name }}</td>
+                    <td>Class {{ attempt.student_class }}</td>
+                    <td>{{ attempt.subject }}</td>
+                    <td>{{ attempt.topic }}</td>
+                    <td><strong>{{ attempt.score }}</strong></td>
+                    <td><strong>{{ attempt.grade }}</strong></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-history">
+        <h2>No quiz attempts yet</h2>
+        <p>Complete a quiz and your result will appear here automatically.</p>
+    </div>
+    {% endif %}
+
+    <div class="result-actions">
+        <a class="button-link" href="{{ url_for('home') }}">
+            &#128260; Back to Home
+        </a>
+    </div>
+
+    <footer>
+        <p>&#129302; Powered by Gemini AI</p>
+        <p>Developed by Manjit</p>
+    </footer>
+</div>
+
+<script>
+function toggleTheme() {
+    document.body.classList.toggle("dark-mode");
+
+    let btn = document.getElementById("theme-toggle");
+    if (document.body.classList.contains("dark-mode")) {
+        btn.innerHTML = "&#9728;&#65039; Light Mode";
+    } else {
+        btn.innerHTML = "&#127769; Dark Mode";
+    }
+}
+</script>
+</body>
+</html>

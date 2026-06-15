@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Performance Report</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+<button id="theme-toggle" onclick="toggleTheme()">
+    &#127769; Dark Mode
+</button>
+
+<div class="learn-container">
+    <h1>&#128202; Performance Report</h1>
+    <div class="badge">&#127942; Active Learner</div>
+
+    <div class="progress-container">
+        <div class="progress-bar"></div>
+    </div>
+
+    <div class="score-dashboard">
+        <div class="score-card">
+            <h3>&#127919; Score</h3>
+            <h2>{{ score }}</h2>
+        </div>
+        <div class="score-card">
+            <h3>&#127942; Grade</h3>
+            <h2>{{ grade }}</h2>
+        </div>
+        <div class="score-card">
+            <h3>&#128218; Topic</h3>
+            <h2>{{ topic }}</h2>
+        </div>
+    </div>
+
+    <div class="dashboard">
+        <div class="achievements">
+            <div class="achievement-card">&#127942; Topic Explorer</div>
+            <div class="achievement-card">&#128218; Active Learner</div>
+            <div class="achievement-card">&#127919; Quiz Attempted</div>
+        </div>
+        <div class="card">
+            <h3>&#127919; AI Evaluation</h3>
+            <p>Personalized Feedback</p>
+        </div>
+        <div class="card">
+            <h3>&#128218; Learning</h3>
+            <p>Topic Analysis</p>
+        </div>
+        <div class="card">
+            <h3>&#127942; Performance</h3>
+            <p>Strengths &amp; Weak Areas</p>
+        </div>
+        <div class="recommendation-card">
+            <h3>&#128204; Study Recommendation</h3>
+            <p>Review key concepts, attempt all questions, and revise weak areas identified by the AI.</p>
+        </div>
+    </div>
+
+    <h3>&#127891; {{ name }}</h3>
+    <h3>&#127979; Class {{ student_class }}</h3>
+    <h3>&#127979; {{ subject }}</h3>
+    <h3>&#128218; {{ topic }}</h3>
+
+    <hr>
+
+    <div class="content">
+        {{ report|safe }}
+    </div>
+
+    <div class="tip-box">
+        &#128161; Study Tip: Revise the notes once more and try answering all questions without looking at the notes.
+    </div>
+
+    <div class="result-actions">
+        <form action="{{ url_for('download_pdf') }}" method="POST" class="report-download-form">
+            <input type="hidden" name="name" value="{{ name }}">
+            <input type="hidden" name="student_class" value="{{ student_class }}">
+            <input type="hidden" name="subject" value="{{ subject }}">
+            <input type="hidden" name="topic" value="{{ topic }}">
+            <input type="hidden" name="score" value="{{ score }}">
+            <input type="hidden" name="grade" value="{{ grade }}">
+            <textarea name="report_text" hidden>{{ report_text }}</textarea>
+
+            <button type="submit">
+                &#128196; Download PDF Report
+            </button>
+        </form>
+        <a class="button-link" href="{{ url_for('home') }}">
+            &#128260; Learn Another Topic
+        </a>
+        <a class="button-link secondary-link" href="{{ url_for('history') }}">
+            Quiz History
+        </a>
+    </div>
+
+    <footer>
+        <p>&#129302; Powered by Gemini AI</p>
+        <p>Developed by Manjit</p>
+    </footer>
+</div>
+
+<script>
+function toggleTheme() {
+    document.body.classList.toggle("dark-mode");
+
+    let btn = document.getElementById("theme-toggle");
+    if (document.body.classList.contains("dark-mode")) {
+        btn.innerHTML = "&#9728;&#65039; Light Mode";
+    } else {
+        btn.innerHTML = "&#127769; Dark Mode";
+    }
+}
+</script>
+</body>
+</html>

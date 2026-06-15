@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.env
+quiz_history.db
+*.sqlite
+*.sqlite3
+study_report.pdf
+sample_performance_report.pdf
