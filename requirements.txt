@@ -3,4 +3,6 @@ google-generativeai
 gunicorn
 Markdown
 Pillow
+pypdf
+python-dotenv
 reportlab

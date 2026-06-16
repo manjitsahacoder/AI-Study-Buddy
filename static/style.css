@@ -452,8 +452,8 @@ button:hover,
 
 .content {
     color: #2d3748;
-    font-size: clamp(1rem, 1.4vw, 1.18rem);
-    line-height: 1.85;
+    font-size: clamp(1.18rem, 1.7vw, 1.38rem);
+    line-height: 1.9;
 }
 
 .content h1,
@@ -466,15 +466,25 @@ button:hover,
 
 .content p {
     color: #3e4858;
+    margin-bottom: 18px;
 }
 
 .content ul,
 .content ol {
-    padding-left: 1.4rem;
+    padding-left: 1.6rem;
 }
 
 .content li {
-    margin: 10px 0;
+    margin: 14px 0;
+    padding-left: 4px;
+}
+
+.content strong {
+    color: #172033;
+    font-weight: 800;
+    background: rgba(255, 207, 102, 0.35);
+    border-radius: 6px;
+    padding: 0 5px;
 }
 
 .diagram-card {

@@ -12,12 +12,16 @@ from html import escape
 from io import BytesIO
 from pathlib import Path
 from contextlib import closing
+from functools import lru_cache
+from difflib import SequenceMatcher
 import json
 import markdown
 import os
 import re
 import sqlite3
+from dotenv import load_dotenv
 
+load_dotenv()
 from config import GEMINI_API_KEY, GEMINI_API_KEY_2
 
 
@@ -574,6 +578,231 @@ def create_performance_pdf(name, subject, topic, score, grade, report_text):
     return buffer
 
 
+TEXTBOOK_SUBJECTS = (
+    "english",
+    "hindi",
+    "bengali",
+    "history",
+    "geography",
+    "civics",
+    "sst",
+    "social science",
+)
+
+SCIENCE_MATH_SUBJECTS = (
+    "science",
+    "math",
+    "maths",
+    "mathematics",
+)
+
+TEXTBOOK_REGISTRY = {
+    ("9", "english", "kaveri"): Path("textbooks") / "class_9" / "english" / "kaveri",
+}
+
+
+def subject_matches(subject, subject_keywords):
+    subject_key = subject.lower()
+    return any(subject_keyword in subject_key for subject_keyword in subject_keywords)
+
+
+def normalize_lookup_value(value):
+    return re.sub(r"\s+", " ", value.strip().lower())
+
+
+def topic_search_terms(topic):
+    normalized_topic = normalize_lookup_value(topic)
+    terms = [normalized_topic]
+    without_article = re.sub(r"^(?:the|a|an)\s+", "", normalized_topic)
+    if without_article and without_article not in terms:
+        terms.append(without_article)
+    return terms
+
+
+def textbook_lookup_key(student_class, subject, book_name):
+    normalized_class = normalize_lookup_value(student_class).replace("class ", "")
+    return (
+        normalized_class,
+        normalize_lookup_value(subject),
+        normalize_lookup_value(book_name),
+    )
+
+
+def find_registered_textbook(student_class, subject, book_name):
+    if not book_name:
+        return None
+
+    relative_path = TEXTBOOK_REGISTRY.get(
+        textbook_lookup_key(student_class, subject, book_name)
+    )
+    if not relative_path:
+        return None
+
+    return Path(app.root_path) / relative_path
+
+
+@lru_cache(maxsize=16)
+def extract_pdf_text(pdf_path):
+    try:
+        from pypdf import PdfReader
+    except ImportError:
+        print("PDF extraction unavailable: install pypdf.")
+        return ""
+
+    try:
+        reader = PdfReader(pdf_path)
+        page_text = [page.extract_text() or "" for page in reader.pages]
+    except Exception as error:
+        print("PDF EXTRACTION ERROR:", error)
+        return ""
+
+    return "\n".join(page_text)
+
+
+def find_topic_start(compact_text, topic):
+    for search_term in topic_search_terms(topic):
+        match = re.search(re.escape(search_term), compact_text, re.IGNORECASE)
+        if match:
+            return match.start()
+
+    best_score = 0
+    best_start = None
+    topic_term = topic_search_terms(topic)[-1]
+    topic_words = topic_term.split()
+    if len(topic_words) < 2:
+        return None
+
+    words = list(re.finditer(r"\b[\w'-]+\b", compact_text))
+    window_sizes = {
+        size
+        for size in (len(topic_words) - 1, len(topic_words), len(topic_words) + 1)
+        if size > 0
+    }
+
+    for window_size in window_sizes:
+        for index in range(0, len(words) - window_size + 1):
+            candidate = " ".join(
+                word.group(0).lower()
+                for word in words[index:index + window_size]
+            )
+            score = SequenceMatcher(None, topic_term, candidate).ratio()
+            if score > best_score:
+                best_score = score
+                best_start = words[index].start()
+
+    if best_score >= 0.86:
+        return best_start
+    return None
+
+
+def extract_chapter_context(pdf_path, topic, max_chars=14000):
+    raw_text = extract_pdf_text(str(pdf_path))
+    compact_text = re.sub(r"\s+", " ", raw_text).strip()
+    if not compact_text:
+        return ""
+
+    topic_start = find_topic_start(compact_text, topic)
+    if topic_start is None:
+        return ""
+
+    start = max(0, topic_start - 800)
+    end = min(len(compact_text), topic_start + max_chars)
+    return compact_text[start:end].strip()
+
+
+def textbook_pdf_paths(textbook_path):
+    if textbook_path.is_file() and textbook_path.suffix.lower() == ".pdf":
+        return [textbook_path]
+    if textbook_path.is_dir():
+        return sorted(textbook_path.glob("*.pdf"))
+    return []
+
+
+def find_chapter_context(textbook_path, topic):
+    for pdf_path in textbook_pdf_paths(textbook_path):
+        chapter_context = extract_chapter_context(pdf_path, topic)
+        if chapter_context:
+            return pdf_path, chapter_context
+    return None, ""
+
+
+def local_textbook_context_section(student_class, subject, book_name, topic):
+    textbook_path = find_registered_textbook(student_class, subject, book_name)
+    if not textbook_path:
+        return ""
+
+    if not textbook_path.exists():
+        return f"""
+Local Textbook PDF Context:
+- A textbook is registered for this class, subject, and book name.
+- Expected PDF path: {textbook_path}
+- The PDF file is not available locally.
+- Do not guess chapter content.
+"""
+
+    chapter_pdf_path, chapter_context = find_chapter_context(textbook_path, topic)
+    if not chapter_context:
+        return f"""
+Local Textbook PDF Context:
+- Registered textbook files were found at: {textbook_path}
+- The requested chapter title was not found in the extracted PDF text.
+- Do not guess chapter content.
+- Clearly state: "I do not have enough information about this chapter."
+"""
+
+    return f"""
+Local Textbook PDF Context:
+Matched PDF: {chapter_pdf_path}
+Use only this extracted textbook context for the chapter:
+
+{chapter_context}
+"""
+
+
+def textbook_prompt_section():
+    return """
+Textbook Subject Instructions:
+- The topic is a chapter title from a school textbook.
+- The book name identifies the textbook.
+- Use the actual chapter content whenever known.
+- Do NOT invent stories.
+- Do NOT invent characters.
+- Do NOT create fictional summaries.
+- Do NOT use these words in the answer: likely, probably, might, perhaps.
+- Never guess chapter content.
+- If the chapter is unknown, clearly state: "I do not have enough information about this chapter."
+- Stay focused on the chapter title and textbook.
+- Generate chapter notes, revision points, diagram labels, and questions only from the chapter.
+- If the chapter is unknown, still return the required sections and create questions that ask the student to find details in the textbook, without adding any chapter facts.
+"""
+
+
+def science_math_prompt_section():
+    return """
+Science and Mathematics Instructions:
+- Explain the concept normally.
+- Use examples and simple language.
+- Explain important ideas step by step.
+"""
+
+
+def general_prompt_section():
+    return """
+General Subject Instructions:
+- Explain the topic clearly.
+- Use simple examples where helpful.
+- Stay focused on the topic.
+"""
+
+
+def learning_subject_prompt_section(subject):
+    if subject_matches(subject, TEXTBOOK_SUBJECTS):
+        return textbook_prompt_section()
+    if subject_matches(subject, SCIENCE_MATH_SUBJECTS):
+        return science_math_prompt_section()
+    return general_prompt_section()
+
+
 @app.route("/")
 def home():
     return render_template("index.html")
@@ -589,30 +818,30 @@ def learn():
     name = request.form.get("name", "").strip()
     student_class = request.form.get("student_class", "").strip()
     subject = request.form.get("subject", "").strip()
+    book_name = request.form.get("book_name", "").strip()
     topic = request.form.get("topic", "").strip()
 
     if not name or not student_class or not subject or not topic:
         abort(400, description="Name, class, subject, and topic are required.")
 
+    subject_prompt_section = learning_subject_prompt_section(subject)
+    textbook_context_section = local_textbook_context_section(
+        student_class,
+        subject,
+        book_name,
+        topic,
+    )
+
     prompt = f"""
 You are a school teacher.
 
+Class: {student_class}
 Subject: {subject}
+Book Name: {book_name}
 Topic: {topic}
 
-The topic may be a chapter name from a school textbook.
-
-If the subject is English, Hindi, Bengali, History, Geography, or another theory subject:
-
-- Treat the topic as a textbook chapter title.
-- Explain the chapter only.
-- Give a summary of the chapter.
-- Explain important characters, events, themes, and meanings.
-- Do NOT give unrelated general knowledge.
-- Stay focused on the chapter title provided.
-
-If the subject is Science or Mathematics:
-- Explain the concept in detail with examples.
+{subject_prompt_section}
+{textbook_context_section}
 
 Rules:
 - Use very simple language
@@ -620,6 +849,14 @@ Rules:
 - Use headings
 - Use bullet points
 - Give examples
+- Make the notes easy to read for a school student.
+- Highlight each main point in bold.
+- After each main point, give a brief explanation in 1 to 2 short sentences.
+- Do not put many facts in one long paragraph.
+- Put each important point on a separate line or bullet.
+- Do not use inline asterisks as separators.
+- For chapter notes, prefer this format:
+  - **Main point:** Brief explanation.
 
 After the explanation create:
 
@@ -646,6 +883,9 @@ Rules:
 - Leave one blank line between questions.
 - Do NOT provide answers.
 - Do NOT put all questions in one paragraph.
+- Always include the exact heading "## Questions".
+- Always include exactly 5 questions, even if the chapter is unknown.
+- If the chapter is unknown, questions must not include invented facts.
 """
 
     try:
@@ -659,7 +899,47 @@ Rules:
         notes, diagram_steps, questions = split_learning_content(response.text)
     except ValueError as error:
         print("LEARN RESPONSE ERROR:", error)
-        abort(502, description="The AI did not return a valid five-question quiz. Please try again.")
+        retry_prompt = f"""
+{prompt}
+
+Your previous response did not follow the required format.
+Rewrite the answer using this exact structure:
+
+# Notes
+
+## Quick Revision
+- point 1
+- point 2
+- point 3
+- point 4
+- point 5
+
+## Diagram Data
+D1: label
+D2: label
+D3: label
+
+## Questions
+Q1. question
+
+Q2. question
+
+Q3. question
+
+Q4. question
+
+Q5. question
+
+Do not provide answers to the questions.
+Do not invent textbook chapter content.
+"""
+        try:
+            print("Gemini call: Learn retry")
+            response = generate_content_with_fallback(retry_prompt)
+            notes, diagram_steps, questions = split_learning_content(response.text)
+        except Exception as retry_error:
+            print("LEARN RETRY ERROR:", retry_error)
+            abort(502, description="The AI did not return a valid five-question quiz. Please try again.")
 
     diagram_image = create_diagram_image(topic, diagram_steps)
 
@@ -668,6 +948,7 @@ Rules:
         name=name,
         student_class=student_class,
         subject=subject,
+        book_name=book_name,
         topic=topic,
         explanation=markdown.markdown(notes),
         notes=notes,

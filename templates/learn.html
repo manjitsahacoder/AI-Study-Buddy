@@ -18,6 +18,9 @@
         <span><strong>Student</strong> {{ name }}</span>
         <span><strong>Class</strong> {{ student_class }}</span>
         <span><strong>Subject</strong> {{ subject }}</span>
+        {% if book_name %}
+        <span><strong>Book</strong> {{ book_name }}</span>
+        {% endif %}
         <span><strong>Topic</strong> {{ topic }}</span>
     </div>
 
@@ -38,6 +41,7 @@
         <input type="hidden" name="name" value="{{ name }}">
         <input type="hidden" name="student_class" value="{{ student_class }}">
         <input type="hidden" name="subject" value="{{ subject }}">
+        <input type="hidden" name="book_name" value="{{ book_name }}">
         <input type="hidden" name="topic" value="{{ topic }}">
         <textarea name="notes" hidden>{{ notes }}</textarea>
         <textarea name="diagram_image" hidden>{{ diagram_image }}</textarea>
