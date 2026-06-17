@@ -8,53 +8,141 @@
 </head>
 
 <body class="home-page">
-<button id="theme-toggle" onclick="toggleTheme()">
-    &#9790; Dark Mode
-</button>
+<div class="page-illustrations home-illustrations" aria-hidden="true">
+    <img class="bg-illustration bg-illustration-large bg-top-left" src="{{ url_for('static', filename='images/backgrounds/home-education.svg') }}" alt="">
+    <img class="bg-illustration bg-illustration-medium bg-top-right" src="{{ url_for('static', filename='images/backgrounds/ai-brain-circuit.svg') }}" alt="">
+    <img class="bg-illustration bg-illustration-small bg-mid-left" src="{{ url_for('static', filename='images/backgrounds/pencil.svg') }}" alt="">
+    <img class="bg-illustration bg-illustration-medium bg-bottom-right" src="{{ url_for('static', filename='images/backgrounds/home-education.svg') }}" alt="">
+</div>
 
 <div id="loader">
     <div class="spinner"></div>
-    <h2>AI is preparing your lesson...</h2>
-    <div class="loader-steps">
-        <p>Generating notes...</p>
-        <p>Creating diagram...</p>
-        <p>Preparing quiz...</p>
+    <div class="loader-icons" aria-hidden="true">
+        <span>&#128214;</span>
+        <span>&#129504;</span>
+        <span>&#9997;</span>
+        <span>&#128218;</span>
+        <span>&#127912;</span>
     </div>
+    <h2>AI is preparing your lesson...</h2>
+    <p id="loader-message">&#128214; Reading your request...</p>
 </div>
 
 <div class="container">
-    <section class="hero">
-        <div class="hero-copy">
-            <div class="eyebrow">Personal AI Learning Companion</div>
-            <h1>AI Study Buddy</h1>
-            <p>Turn any topic into clean notes, a visual diagram, practice questions, and instant feedback.</p>
+    <header class="exhibition-header">
+        <div class="school-mark">
+            <img
+                class="school-logo"
+                src="{{ url_for('static', filename='images/school_logo.png') }}"
+                onerror="this.onerror=null; this.src='{{ url_for('static', filename='images/SCHOOL LOGO.png') }}';"
+                alt="Delhi Public School Dhaligaon logo">
         </div>
 
-        <img
-            class="hero-image"
-            src="{{ url_for('static', filename='images/study_banner.png') }}"
-            alt="Student learning with an AI tutor">
+        <div class="header-center">
+            <p class="school-name">DELHI PUBLIC SCHOOL DHALIGAON</p>
+            <p class="school-motto">Service Before Self</p>
+            <h1>AI Study Buddy</h1>
+            <p class="subtitle">AI-Powered Learning Companion</p>
+            <div class="exhibition-badge">&#127942; School AI Exhibition Project 2026</div>
+        </div>
+
+        <div class="header-actions">
+            <button id="theme-toggle" onclick="toggleTheme()" aria-label="Switch to dark mode">
+                <span class="toggle-switch" aria-hidden="true">
+                    <span class="toggle-knob"></span>
+                </span>
+                <span class="toggle-text">&#127769; Dark</span>
+            </button>
+        </div>
+    </header>
+
+    <section class="welcome-card">
+        <span class="eyebrow">Smarter Learning</span>
+        <h2>Welcome to AI Study Buddy</h2>
+        <p>AI Study Buddy is an AI-powered educational platform designed to help students learn smarter through personalized notes, diagrams, quizzes, textbook support, and performance analysis.</p>
     </section>
 
     <div class="features">
         <div class="feature-card">
+            <div class="feature-icon">&#129302;</div>
+            <h3>AI Notes</h3>
+            <p>Generate easy-to-understand notes.</p>
+        </div>
+
+        <div class="feature-card">
             <div class="feature-icon">&#128218;</div>
-            <h3>Smart Notes</h3>
-            <p>Simple explanations with the important points already organized.</p>
+            <h3>Textbook Support</h3>
+            <p>Learn directly from supported NCERT textbooks.</p>
         </div>
 
         <div class="feature-card">
-            <div class="feature-icon">&#128202;</div>
-            <h3>Visual Diagrams</h3>
-            <p>Generated picture diagrams make each lesson easier to remember.</p>
+            <div class="feature-icon">&#128221;</div>
+            <h3>Smart Quiz</h3>
+            <p>Automatically generate chapter-based questions.</p>
         </div>
 
         <div class="feature-card">
-            <div class="feature-icon">&#127919;</div>
-            <h3>AI Practice</h3>
-            <p>Answer questions and get focused feedback on how to improve.</p>
+            <div class="feature-icon">&#128200;</div>
+            <h3>Performance Analysis</h3>
+            <p>Receive AI-based evaluation and feedback.</p>
+        </div>
+
+        <div class="feature-card">
+            <div class="feature-icon">&#128196;</div>
+            <h3>PDF Downloads</h3>
+            <p>Download notes and performance reports.</p>
+        </div>
+
+        <div class="feature-card">
+            <div class="feature-icon">&#127912;</div>
+            <h3>Diagram Generator</h3>
+            <p>Visual learning with AI-generated educational diagrams.</p>
         </div>
     </div>
+
+    <section class="project-team-card" aria-labelledby="project-team-title">
+        <div class="section-heading">
+            <span class="eyebrow">Exhibition Team</span>
+            <h2 id="project-team-title">Project Team</h2>
+        </div>
+
+        <div class="team-grid">
+            <article class="team-member">
+                <div class="team-icon">&#128104;&#8205;&#128187;</div>
+                <div>
+                    <h3>Developer</h3>
+                    <p class="member-name">Manjit Saha</p>
+                    <p>Designed, developed, deployed and maintained AI Study Buddy.</p>
+                </div>
+            </article>
+
+            <article class="team-member">
+                <div class="team-icon">&#129309;</div>
+                <div>
+                    <h3>Technical Support</h3>
+                    <p class="member-name">Gyanjyoti Mahanta</p>
+                    <p>Provided technical assistance and development support during the project.</p>
+                </div>
+            </article>
+
+            <article class="team-member">
+                <div class="team-icon">&#129514;</div>
+                <div>
+                    <h3>Testing &amp; Quality Assurance</h3>
+                    <p class="member-name">Lakshya Tuwani</p>
+                    <p>Tested the website, identified bugs, and provided valuable feedback to improve the project.</p>
+                </div>
+            </article>
+
+            <article class="team-member class-card">
+                <div class="team-icon">&#127891;</div>
+                <div>
+                    <h3>Class</h3>
+                    <p class="member-name">Class IX/C</p>
+                </div>
+            </article>
+        </div>
+    </section>
 
     <div class="lesson-preview">
         <span class="preview-icon">&#9889;</span>
@@ -64,7 +152,7 @@
     <form class="study-form" action="{{ url_for('learn') }}" method="POST" onsubmit="showLoader()">
         <div class="form-grid">
             <div class="form-field">
-                <label for="name">Your Name</label>
+                <label for="name">&#128100; Your Name</label>
                 <input
                     id="name"
                     type="text"
@@ -75,7 +163,7 @@
             </div>
 
             <div class="form-field">
-                <label for="student_class">Class</label>
+                <label for="student_class">&#127891; Class</label>
                 <select id="student_class" name="student_class" required>
                     <option value="">Select class</option>
                     <option value="6">Class 6</option>
@@ -89,7 +177,7 @@
             </div>
 
             <div class="form-field subject-field">
-                <label for="subject">Subject</label>
+                <label for="subject">&#128218; Subject</label>
                 <div class="subject-hints" aria-hidden="true">
                     <span>&#8721; Maths</span>
                     <span>&#128300; Science</span>
@@ -107,7 +195,7 @@
                 </select>
             </div>
             <div class="form-field">
-                <label for="book_name">Book Name (Optional)</label>
+                <label for="book_name">&#128214; Book Name (Optional)</label>
                 <input
                     id="book_name"
                     type="text"
@@ -116,7 +204,7 @@
                 >
             </div>
             <div class="form-field">
-                <label for="topic">Topic</label>
+                <label for="topic">&#128221; Topic</label>
                 <input
                     id="topic"
                     type="text"
@@ -138,26 +226,64 @@
         </a>
     </div>
 
-    <footer>
-        <p>Powered by Gemini AI</p>
-        <p>Developed by Manjit</p>
-    </footer>
+    <section class="about-card">
+        <div>
+            <span class="eyebrow">About</span>
+            <h2>About AI Study Buddy</h2>
+            <p>AI Study Buddy is an AI-powered educational platform developed for the School AI Exhibition 2026 to help students learn through personalized explanations, textbook support, quizzes, diagrams, and performance analysis.</p>
+        </div>
+        <div class="tech-badges" aria-label="Technologies used">
+            <span>Python</span>
+            <span>Flask</span>
+            <span>Google Gemini AI</span>
+            <span>HTML</span>
+            <span>CSS</span>
+            <span>JavaScript</span>
+            <span>SQLite</span>
+            <span>ReportLab</span>
+        </div>
+    </section>
+
+    {% include 'components/footer.html' %}
 </div>
 
 <script>
+const loaderMessages = [
+    "&#128214; Reading textbook...",
+    "&#129504; AI is thinking...",
+    "&#9997; Writing notes...",
+    "&#128218; Creating questions...",
+    "&#127912; Generating diagram..."
+];
+
+let loaderMessageIndex = 0;
+let loaderInterval;
+
 function showLoader() {
     document.getElementById("loader").style.display = "flex";
+    const loaderMessage = document.getElementById("loader-message");
+    loaderMessageIndex = 0;
+    loaderMessage.innerHTML = loaderMessages[loaderMessageIndex];
+
+    clearInterval(loaderInterval);
+    loaderInterval = setInterval(function() {
+        loaderMessageIndex = (loaderMessageIndex + 1) % loaderMessages.length;
+        loaderMessage.innerHTML = loaderMessages[loaderMessageIndex];
+    }, 2000);
 }
 
 function toggleTheme() {
     document.body.classList.toggle("dark-mode");
 
     let btn = document.getElementById("theme-toggle");
+    let label = btn.querySelector(".toggle-text");
 
     if(document.body.classList.contains("dark-mode")){
-        btn.innerHTML = "&#9728; Light Mode";
+        label.innerHTML = "&#9728; Light";
+        btn.setAttribute("aria-label", "Switch to light mode");
     } else {
-        btn.innerHTML = "&#9790; Dark Mode";
+        label.innerHTML = "&#127769; Dark";
+        btn.setAttribute("aria-label", "Switch to dark mode");
     }
 }
 </script>

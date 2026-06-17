@@ -7,7 +7,13 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 
-<body>
+<body class="learn-page">
+<div class="page-illustrations learn-illustrations" aria-hidden="true">
+    <img class="bg-illustration bg-illustration-large bg-top-left" src="{{ url_for('static', filename='images/backgrounds/learn-doodles.svg') }}" alt="">
+    <img class="bg-illustration bg-illustration-medium bg-top-right" src="{{ url_for('static', filename='images/backgrounds/ai-brain-circuit.svg') }}" alt="">
+    <img class="bg-illustration bg-illustration-small bg-mid-left" src="{{ url_for('static', filename='images/backgrounds/pencil.svg') }}" alt="">
+    <img class="bg-illustration bg-illustration-medium bg-bottom-right" src="{{ url_for('static', filename='images/backgrounds/learn-doodles.svg') }}" alt="">
+</div>
 <button id="theme-toggle" onclick="toggleTheme()">
     &#127769; Dark Mode
 </button>
@@ -69,10 +75,7 @@
         &larr; Back to Home
     </a>
 
-    <footer>
-        <p>&#129302; Powered by Gemini AI</p>
-        <p>Developed by Manjit</p>
-    </footer>
+    {% include 'components/footer.html' %}
 </div>
 
 <script>
