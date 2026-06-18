@@ -501,6 +501,127 @@ Grade: A
         self.assertNotIn(">Login</a>", page)
         self.assertNotIn(">Register</a>", page)
 
+    def test_login_page_links_to_forgot_password(self):
+        response = self.client.get("/login")
+
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        self.assertIn("Forgot Password?", page)
+        self.assertIn('href="/forgot-password"', page)
+
+    def test_forgot_password_rejects_unknown_account(self):
+        response = self.client.post(
+            "/forgot-password",
+            data={
+                "action": "find_account",
+                "identifier": "missing@example.com",
+            },
+        )
+
+        self.assertEqual(response.status_code, 404)
+        page = response.get_data(as_text=True)
+        self.assertIn("We could not find an account with that username or email.", page)
+        self.assertIn("missing@example.com", page)
+
+    def test_forgot_password_validates_new_password(self):
+        self.register_user()
+        find_response = self.client.post(
+            "/forgot-password",
+            data={
+                "action": "find_account",
+                "identifier": "asha",
+            },
+        )
+
+        self.assertEqual(find_response.status_code, 200)
+        self.assertIn("Account Found", find_response.get_data(as_text=True))
+
+        short_response = self.client.post(
+            "/forgot-password",
+            data={
+                "action": "reset_password",
+                "password": "short",
+                "confirm_password": "short",
+            },
+        )
+
+        self.assertEqual(short_response.status_code, 400)
+        self.assertIn("Password must be at least 8 characters long.", short_response.get_data(as_text=True))
+
+        mismatch_response = self.client.post(
+            "/forgot-password",
+            data={
+                "action": "reset_password",
+                "password": "newpassword123",
+                "confirm_password": "different123",
+            },
+        )
+
+        self.assertEqual(mismatch_response.status_code, 400)
+        self.assertIn("Passwords do not match.", mismatch_response.get_data(as_text=True))
+
+    def test_forgot_password_resets_hash_and_allows_new_login(self):
+        self.register_user()
+
+        connection = sqlite3.connect(self.db_path)
+        connection.row_factory = sqlite3.Row
+        try:
+            old_hash = connection.execute(
+                "SELECT password_hash FROM users WHERE username = ?",
+                ("asha",),
+            ).fetchone()["password_hash"]
+        finally:
+            connection.close()
+
+        self.client.post(
+            "/forgot-password",
+            data={
+                "action": "find_account",
+                "identifier": "asha@example.com",
+            },
+        )
+        response = self.client.post(
+            "/forgot-password",
+            data={
+                "action": "reset_password",
+                "password": "newpassword123",
+                "confirm_password": "newpassword123",
+            },
+            follow_redirects=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        self.assertIn("Your password has been reset successfully. Please log in with your new password.", page)
+
+        connection = sqlite3.connect(self.db_path)
+        connection.row_factory = sqlite3.Row
+        try:
+            new_hash = connection.execute(
+                "SELECT password_hash FROM users WHERE username = ?",
+                ("asha",),
+            ).fetchone()["password_hash"]
+        finally:
+            connection.close()
+
+        self.assertNotEqual(old_hash, new_hash)
+        self.assertFalse(app_module.check_password_hash(new_hash, "password123"))
+        self.assertTrue(app_module.check_password_hash(new_hash, "newpassword123"))
+
+        old_login = self.client.post(
+            "/login",
+            data={"identifier": "asha", "password": "password123"},
+        )
+        self.assertEqual(old_login.status_code, 401)
+
+        new_login = self.client.post(
+            "/login",
+            data={"identifier": "asha", "password": "newpassword123"},
+            follow_redirects=True,
+        )
+        self.assertEqual(new_login.status_code, 200)
+        self.assertIn("Student Dashboard", new_login.get_data(as_text=True))
+
     def test_dashboard_and_profile_require_login(self):
         dashboard_response = self.client.get("/dashboard")
         profile_response = self.client.get("/profile")

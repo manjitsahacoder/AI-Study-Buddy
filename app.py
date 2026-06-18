@@ -256,6 +256,31 @@ def create_user(full_name, username, email, student_class, password):
         connection.commit()
 
 
+def update_user_password(user_id, password):
+    init_users_db()
+    with closing(get_db_connection()) as connection:
+        connection.execute(
+            """
+            UPDATE users
+            SET password_hash = ?
+            WHERE id = ?
+            """,
+            (generate_password_hash(password), user_id),
+        )
+        connection.commit()
+
+
+def validate_new_password(password, confirm_password):
+    errors = []
+    if not password:
+        errors.append("New password is required.")
+    elif len(password) < 8:
+        errors.append("Password must be at least 8 characters long.")
+    if password != confirm_password:
+        errors.append("Passwords do not match.")
+    return errors
+
+
 def current_user():
     return get_user_by_id(session.get("user_id"))
 
@@ -1913,6 +1938,66 @@ def login():
         return redirect(url_for("dashboard"))
 
     return render_template("login.html", identifier="")
+
+
+@app.route("/forgot-password", methods=["GET", "POST"])
+def forgot_password():
+    if request.method == "GET":
+        session.pop("password_reset_user_id", None)
+        return render_template("forgot_password.html", identifier="", reset_step=False)
+
+    action = request.form.get("action", "find_account")
+    if action == "find_account":
+        identifier = request.form.get("identifier", "").strip()
+        if not identifier:
+            flash("Please enter your username or email address.", "error")
+            return render_template("forgot_password.html", identifier=identifier, reset_step=False), 400
+
+        account = get_user_by_username_or_email(identifier)
+        if not account:
+            flash("We could not find an account with that username or email.", "error")
+            return render_template("forgot_password.html", identifier=identifier, reset_step=False), 404
+
+        # Future email verification or OTP checks can be inserted before enabling this step.
+        session["password_reset_user_id"] = account["id"]
+        return render_template(
+            "forgot_password.html",
+            identifier=identifier,
+            reset_step=True,
+            account=account,
+        )
+
+    if action == "reset_password":
+        reset_user_id = session.get("password_reset_user_id")
+        if not reset_user_id:
+            flash("Please confirm your username or email before resetting the password.", "error")
+            return render_template("forgot_password.html", identifier="", reset_step=False), 400
+
+        account = get_user_by_id(reset_user_id)
+        if not account:
+            session.pop("password_reset_user_id", None)
+            flash("We could not find that account. Please try again.", "error")
+            return render_template("forgot_password.html", identifier="", reset_step=False), 404
+
+        password = request.form.get("password", "")
+        confirm_password = request.form.get("confirm_password", "")
+        errors = validate_new_password(password, confirm_password)
+        if errors:
+            for error in errors:
+                flash(error, "error")
+            return render_template(
+                "forgot_password.html",
+                identifier=account["username"],
+                reset_step=True,
+                account=account,
+            ), 400
+
+        update_user_password(account["id"], password)
+        session.pop("password_reset_user_id", None)
+        flash("Your password has been reset successfully. Please log in with your new password.", "success")
+        return redirect(url_for("login"))
+
+    abort(400, description="Invalid password reset request.")
 
 
 @app.route("/logout")

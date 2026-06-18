@@ -1291,6 +1291,55 @@ button:hover,
     font-weight: 800;
 }
 
+.forgot-password-link {
+    display: inline-flex;
+    align-self: center;
+    justify-content: center;
+    margin-top: 4px;
+    color: var(--primary);
+    font-weight: 900;
+}
+
+.forgot-password-link:hover {
+    color: var(--primary-dark);
+}
+
+.auth-helper-text {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.94rem;
+    line-height: 1.6;
+}
+
+.password-reset-summary {
+    display: grid;
+    gap: 6px;
+    margin-bottom: 18px;
+    padding: 18px;
+    border: 1px solid rgba(31, 122, 77, 0.22);
+    border-radius: 8px;
+    background: rgba(31, 122, 77, 0.08);
+    box-shadow: var(--soft-shadow);
+}
+
+.password-reset-summary span {
+    color: var(--green);
+    font-size: 0.8rem;
+    font-weight: 900;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.password-reset-summary strong {
+    color: var(--ink);
+    font-size: 1.18rem;
+}
+
+.password-reset-summary p {
+    margin: 0;
+    color: var(--muted);
+}
+
 .profile-card {
     padding: clamp(18px, 3vw, 26px);
     border: 1px solid var(--line);
@@ -2811,6 +2860,14 @@ footer p {
 .dark-mode .tip-box {
     color: #ffe1ad;
     background: rgba(240, 179, 95, 0.12);
+}
+
+.dark-mode .password-reset-summary {
+    background: rgba(31, 122, 77, 0.12);
+}
+
+.dark-mode .password-reset-summary strong {
+    color: var(--ink);
 }
 
 .dark-mode .evaluation-card,
