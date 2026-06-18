@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Access Denied - AI Study Buddy</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body class="auth-page">
+<button id="theme-toggle" onclick="toggleTheme()">
+    &#127769; Dark Mode
+</button>
+
+<main class="learn-container auth-container">
+    <div class="auth-header-row">
+        <div>
+            <span class="eyebrow">RBAC</span>
+            <h1>Access Denied</h1>
+        </div>
+        <div class="auth-page-actions">
+            <a class="button-link secondary-link" href="{{ url_for('dashboard') }}">Back to Dashboard</a>
+            {% include 'components/auth_nav.html' %}
+        </div>
+    </div>
+
+    {% include 'components/flash_messages.html' %}
+
+    <section class="profile-card access-denied-card">
+        <span aria-hidden="true">&#128274;</span>
+        <h2>This page is restricted.</h2>
+        <p>Your current role does not have permission to access this page.</p>
+        <p>Allowed roles: {{ allowed_roles|join(', ') }}</p>
+        {% if account %}
+        <div class="student-identity-card">
+            <span aria-hidden="true">&#128100;</span>
+            <div>
+                <strong>{{ account.full_name }}</strong>
+                {% set role = account.role %}
+                {% include 'components/role_badge.html' %}
+            </div>
+        </div>
+        {% endif %}
+    </section>
+
+    {% include 'components/footer.html' %}
+</main>
+
+<script>
+function toggleTheme() {
+    document.body.classList.toggle("dark-mode");
+    let btn = document.getElementById("theme-toggle");
+    btn.innerHTML = document.body.classList.contains("dark-mode") ? "&#9728;&#65039; Light Mode" : "&#127769; Dark Mode";
+}
+</script>
+</body>
+</html>

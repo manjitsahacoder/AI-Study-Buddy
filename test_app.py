@@ -504,7 +504,7 @@ Grade: A
         special_accounts = [
             ("Manjit Saha", "manjit", "manjit@example.com", "developer", "Developer", "role-developer"),
             ("Gyanjyoti Mahanta", "gyanjyoti", "gyanjyoti@example.com", "technical_support", "Technical Support", "role-technical-support"),
-            ("Lakshya Tuwani", "lakshya", "lakshya@example.com", "qa_tester", "QA Tester", "role-qa-tester"),
+            ("Lakshya Tuwani", "lakshya", "lakshya@example.com", "qa_tester", "Testing &amp; Quality Assurance", "role-qa-tester"),
         ]
 
         for full_name, username, email, expected_role, badge_text, badge_class in special_accounts:
@@ -535,6 +535,105 @@ Grade: A
                 self.assertIn(badge_class, dashboard_page)
                 self.assertIn(badge_text, profile_page)
                 self.assertIn(badge_class, profile_page)
+
+    def test_rbac_panels_require_login(self):
+        for path in ["/developer", "/support", "/qa"]:
+            with self.subTest(path=path):
+                response = self.client.get(path)
+
+                self.assertEqual(response.status_code, 302)
+                self.assertIn(f"/login?next={path}", response.headers["Location"])
+
+    def test_student_is_denied_rbac_panels(self):
+        self.register_user()
+        self.login_user()
+
+        for path in ["/developer", "/support", "/qa"]:
+            with self.subTest(path=path):
+                response = self.client.get(path)
+
+                self.assertEqual(response.status_code, 403)
+                page = response.get_data(as_text=True)
+                self.assertIn("Access Denied", page)
+                self.assertIn("role-student", page)
+
+    def test_developer_panel_shows_system_stats_and_full_access(self):
+        self.register_user(full_name="Manjit Saha", username="manjit", email="manjit@example.com")
+        self.login_user(identifier="manjit")
+
+        app_module.save_learning_history(1, "Science", "Book", "Plants", "Notes", "Diagram", ["Q1"])
+        app_module.save_quiz_history(
+            "Manjit Saha",
+            "8",
+            "Science",
+            "Plants",
+            "8/10",
+            "A",
+            ["Q1"],
+            ["A1"],
+            "{}",
+            user_id=1,
+        )
+        app_module.save_downloaded_file(1, "performance_report", "Science", "Plants", "8/10", "A")
+
+        developer_response = self.client.get("/developer")
+        support_response = self.client.get("/support")
+        qa_response = self.client.get("/qa")
+
+        self.assertEqual(developer_response.status_code, 200)
+        self.assertEqual(support_response.status_code, 200)
+        self.assertEqual(qa_response.status_code, 200)
+
+        page = developer_response.get_data(as_text=True)
+        self.assertIn("Developer Panel", page)
+        self.assertIn("Total Registered Users", page)
+        self.assertIn("Total Lessons Generated", page)
+        self.assertIn("Total Quizzes Taken", page)
+        self.assertIn("Total PDFs Downloaded", page)
+        self.assertIn("AI Provider Status", page)
+        self.assertIn("Gemini", page)
+        self.assertIn("Ollama", page)
+        self.assertIn("Website Version", page)
+        self.assertIn("Database Statistics", page)
+        self.assertIn("Server Status", page)
+        self.assertIn("role-developer", page)
+        self.assertIn("Support Panel", page)
+        self.assertIn("QA Panel", page)
+
+    def test_support_and_qa_panels_enforce_role_permissions(self):
+        self.register_user(
+            full_name="Gyanjyoti Mahanta",
+            username="gyanjyoti",
+            email="gyanjyoti@example.com",
+        )
+        self.login_user(identifier="gyanjyoti")
+
+        support_response = self.client.get("/support")
+        qa_response = self.client.get("/qa")
+        developer_response = self.client.get("/developer")
+
+        self.assertEqual(support_response.status_code, 200)
+        self.assertIn("Support Panel", support_response.get_data(as_text=True))
+        self.assertIn("role-technical-support", support_response.get_data(as_text=True))
+        self.assertEqual(qa_response.status_code, 403)
+        self.assertEqual(developer_response.status_code, 403)
+
+        self.client.get("/logout")
+        self.register_user(
+            full_name="Lakshya Tuwani",
+            username="lakshya",
+            email="lakshya@example.com",
+        )
+        self.login_user(identifier="lakshya")
+
+        qa_tester_response = self.client.get("/qa")
+        support_denied_response = self.client.get("/support")
+
+        self.assertEqual(qa_tester_response.status_code, 200)
+        self.assertIn("QA Panel", qa_tester_response.get_data(as_text=True))
+        self.assertIn("Testing Checklist", qa_tester_response.get_data(as_text=True))
+        self.assertIn("role-qa-tester", qa_tester_response.get_data(as_text=True))
+        self.assertEqual(support_denied_response.status_code, 403)
 
     def test_login_accepts_email_and_redirects_to_dashboard(self):
         self.register_user()

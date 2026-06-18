@@ -72,8 +72,8 @@ ROLE_DEFINITIONS = {
         "permissions": "Support access",
     },
     "qa_tester": {
-        "label": "QA Tester",
-        "badge": "&#128994; QA Tester",
+        "label": "Testing & Quality Assurance",
+        "badge": "&#128994; Testing &amp; Quality Assurance",
         "class": "role-qa-tester",
         "permissions": "Testing access",
     },
@@ -90,6 +90,8 @@ SPECIAL_ROLE_ACCOUNTS = {
     "gyanjyoti mahanta": "technical_support",
     "lakshya tuwani": "qa_tester",
 }
+
+WEBSITE_VERSION = os.environ.get("WEBSITE_VERSION", "AI Study Buddy 1.0")
 
 
 def is_quota_error(error):
@@ -411,6 +413,41 @@ def login_required(view):
         return view(*args, **kwargs)
 
     return wrapped_view
+
+
+def user_can_access_role(account, allowed_roles):
+    if not account:
+        return False
+    user_role = normalize_role(account["role"])
+    normalized_allowed_roles = {normalize_role(role) for role in allowed_roles}
+    return user_role == "developer" or user_role in normalized_allowed_roles
+
+
+def role_required(*allowed_roles):
+    def decorator(view):
+        @wraps(view)
+        def wrapped_view(*args, **kwargs):
+            if not session.get("user_id"):
+                flash(
+                    "Login required. Create a free account to save your progress and unlock personalized learning.",
+                    "error",
+                )
+                return redirect(url_for("login", next=request.path))
+
+            account = current_user()
+            if not user_can_access_role(account, allowed_roles):
+                flash("Access Denied. Your account role does not have permission to open this page.", "error")
+                return render_template(
+                    "access_denied.html",
+                    account=account,
+                    allowed_roles=[role_details(role)["label"] for role in allowed_roles],
+                ), 403
+
+            return view(*args, **kwargs)
+
+        return wrapped_view
+
+    return decorator
 
 
 def validate_registration_form(form):
@@ -1062,6 +1099,80 @@ def get_dashboard_stats(user_id):
         "average_score": average_score,
         "achievements": achievements_count,
         "study_streak": study_streak,
+    }
+
+
+def count_table_rows(connection, table_name):
+    return connection.execute(f"SELECT COUNT(*) AS total FROM {table_name}").fetchone()["total"]
+
+
+def get_developer_panel_stats():
+    init_users_db()
+    init_quiz_history_db()
+    init_account_activity_db()
+    init_learning_history_db()
+    with closing(get_db_connection()) as connection:
+        table_counts = {
+            "users": count_table_rows(connection, "users"),
+            "learning_history": count_table_rows(connection, "learning_history"),
+            "learning_sessions": count_table_rows(connection, "learning_sessions"),
+            "quiz_history": count_table_rows(connection, "quiz_history"),
+            "downloaded_files": count_table_rows(connection, "downloaded_files"),
+        }
+
+    return {
+        "total_users": table_counts["users"],
+        "total_lessons": table_counts["learning_history"],
+        "total_quizzes": table_counts["quiz_history"],
+        "total_downloads": table_counts["downloaded_files"],
+        "ai_provider_status": {
+            "gemini": "Configured" if GEMINI_API_KEY else "Missing API key",
+            "ollama": "Placeholder",
+        },
+        "website_version": WEBSITE_VERSION,
+        "database_statistics": table_counts,
+        "server_status": "Online placeholder",
+    }
+
+
+def support_tools():
+    return [
+        {
+            "title": "Student Account Lookup",
+            "description": "Placeholder for future support-assisted account checks.",
+        },
+        {
+            "title": "Learning Issue Notes",
+            "description": "Placeholder for tracking student-reported study or download issues.",
+        },
+        {
+            "title": "System Health Checklist",
+            "description": "Placeholder for quick support diagnostics.",
+        },
+    ]
+
+
+def qa_panel_items():
+    return {
+        "checklist": [
+            "Login and logout flow",
+            "Guest mode locked features",
+            "AI notes generation",
+            "Quiz evaluation and PDF download",
+            "Learning history save and delete",
+            "Responsive dashboard and profile views",
+        ],
+        "bug_reports": [
+            "No open bug reports yet.",
+            "Use this space for exhibition testing notes later.",
+        ],
+        "feature_status": [
+            {"name": "Authentication", "status": "Ready"},
+            {"name": "Guest Mode", "status": "Ready"},
+            {"name": "Learning History", "status": "Ready"},
+            {"name": "Performance Analytics", "status": "Coming Soon"},
+            {"name": "AI Recommendations", "status": "Coming Soon"},
+        ],
     }
 
 
@@ -2121,6 +2232,39 @@ def dashboard():
         recent_activity=get_recent_learning_activity(account["id"]),
         achievements=dashboard_achievements(stats),
         recommendations=recommended_topics(),
+    )
+
+
+@app.route("/developer")
+@role_required("developer")
+def developer_panel():
+    account = current_user()
+    return render_template(
+        "developer.html",
+        account=account,
+        stats=get_developer_panel_stats(),
+    )
+
+
+@app.route("/support")
+@role_required("technical_support")
+def support_panel():
+    account = current_user()
+    return render_template(
+        "support.html",
+        account=account,
+        tools=support_tools(),
+    )
+
+
+@app.route("/qa")
+@role_required("qa_tester")
+def qa_panel():
+    account = current_user()
+    return render_template(
+        "qa.html",
+        account=account,
+        qa_items=qa_panel_items(),
     )
 
 

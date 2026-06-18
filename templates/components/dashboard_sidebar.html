@@ -36,6 +36,24 @@
             <span aria-hidden="true">&#11088;</span>
             <span>Saved Notes</span>
         </a>
+        {% if user and user.role == 'developer' %}
+        <a class="{% if active_page == 'developer' %}active{% endif %}" href="{{ url_for('developer_panel') }}">
+            <span aria-hidden="true">&#128295;</span>
+            <span>Developer</span>
+        </a>
+        {% endif %}
+        {% if user and user.role in ['developer', 'technical_support'] %}
+        <a class="{% if active_page == 'support' %}active{% endif %}" href="{{ url_for('support_panel') }}">
+            <span aria-hidden="true">&#127911;</span>
+            <span>Support</span>
+        </a>
+        {% endif %}
+        {% if user and user.role in ['developer', 'qa_tester'] %}
+        <a class="{% if active_page == 'qa' %}active{% endif %}" href="{{ url_for('qa_panel') }}">
+            <span aria-hidden="true">&#9989;</span>
+            <span>QA Testing</span>
+        </a>
+        {% endif %}
         <a class="{% if active_page == 'profile' %}active{% endif %}" href="{{ url_for('profile') }}">
             <span aria-hidden="true">&#128100;</span>
             <span>Profile</span>

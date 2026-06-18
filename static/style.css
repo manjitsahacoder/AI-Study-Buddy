@@ -1695,6 +1695,101 @@ body.dashboard-page #theme-toggle {
     font-size: clamp(1.45rem, 2vw, 2rem);
 }
 
+.rbac-stat-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.rbac-status-list,
+.rbac-tool-grid,
+.rbac-table-grid,
+.rbac-check-list {
+    display: grid;
+    gap: 14px;
+}
+
+.rbac-tool-grid,
+.rbac-table-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.rbac-status-list div,
+.rbac-table-grid article,
+.rbac-tool-card {
+    min-width: 0;
+    padding: 16px;
+    border: 1px solid rgba(49, 87, 213, 0.12);
+    border-radius: 8px;
+    background: rgba(255, 253, 248, 0.82);
+}
+
+.rbac-status-list span,
+.rbac-table-grid span,
+.rbac-tool-card small {
+    display: block;
+    color: var(--muted);
+    font-size: 0.78rem;
+    font-weight: 900;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.rbac-status-list strong,
+.rbac-table-grid strong,
+.rbac-tool-card strong {
+    display: block;
+    margin-top: 6px;
+    color: var(--ink);
+    font-size: 1.08rem;
+}
+
+.rbac-tool-card > span {
+    display: grid;
+    place-items: center;
+    width: 42px;
+    height: 42px;
+    margin-bottom: 12px;
+    border-radius: 8px;
+    color: #fff;
+    background: var(--primary);
+    font-size: 1.2rem;
+}
+
+.rbac-tool-card p {
+    margin: 10px 0 12px;
+    color: var(--muted);
+}
+
+.rbac-check-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.rbac-check-list li {
+    padding: 13px 14px;
+    border: 1px solid rgba(31, 122, 77, 0.16);
+    border-radius: 8px;
+    color: var(--ink);
+    background: rgba(31, 122, 77, 0.08);
+    font-weight: 800;
+}
+
+.access-denied-card {
+    display: grid;
+    gap: 12px;
+}
+
+.access-denied-card > span {
+    display: grid;
+    place-items: center;
+    width: 54px;
+    height: 54px;
+    border-radius: 8px;
+    color: #fff;
+    background: var(--coral);
+    font-size: 1.6rem;
+}
+
 .dashboard-panel {
     padding: clamp(18px, 2.5vw, 26px);
     margin-bottom: 18px;
@@ -2788,6 +2883,9 @@ footer p {
 .dark-mode .achievement-badge,
 .dark-mode .recommended-topic-card,
 .dark-mode .locked-dashboard-card,
+.dark-mode .rbac-status-list div,
+.dark-mode .rbac-table-grid article,
+.dark-mode .rbac-tool-card,
 .dark-mode .score-card,
 .dark-mode .recommendation-card,
 .dark-mode .card,
@@ -3038,10 +3136,13 @@ footer p {
     }
 
     .dashboard-stat-grid,
+    .rbac-stat-grid,
     .quick-actions-grid,
     .dashboard-content-grid,
     .achievement-badge-grid,
     .recommended-topic-grid,
+    .rbac-tool-grid,
+    .rbac-table-grid,
     .history-tools,
     .learning-history-grid,
     .evaluation-summary-grid,
@@ -3169,10 +3270,13 @@ footer p {
     .dashboard-topbar-actions .button-link,
     .dashboard-topbar-actions .auth-nav,
     .dashboard-stat-grid,
+    .rbac-stat-grid,
     .quick-actions-grid,
     .dashboard-content-grid,
     .achievement-badge-grid,
     .recommended-topic-grid,
+    .rbac-tool-grid,
+    .rbac-table-grid,
     .history-tools,
     .learning-history-grid,
     .evaluation-summary-grid,

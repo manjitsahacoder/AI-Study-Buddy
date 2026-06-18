@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>QA Panel - AI Study Buddy</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body class="dashboard-page">
+
+{% set active_page = 'qa' %}
+<div class="dashboard-shell">
+    {% include 'components/dashboard_sidebar.html' %}
+
+    <main class="dashboard-main">
+        <header class="dashboard-topbar">
+            <div>
+                <span class="eyebrow">QA Testing</span>
+                <h1>QA Panel</h1>
+                <p>Testing checklist, placeholder bug reports, and feature status.</p>
+                <div class="student-identity-card">
+                    <span aria-hidden="true">&#128100;</span>
+                    <div>
+                        <strong>{{ account.full_name }}</strong>
+                        {% set role = account.role %}
+                        {% include 'components/role_badge.html' %}
+                    </div>
+                </div>
+            </div>
+            <div class="dashboard-topbar-actions">
+                <button id="theme-toggle" onclick="toggleTheme()">&#127769; Dark Mode</button>
+                <a class="button-link secondary-link" href="{{ url_for('dashboard') }}">Back to Dashboard</a>
+                {% include 'components/auth_nav.html' %}
+            </div>
+        </header>
+
+        {% include 'components/flash_messages.html' %}
+
+        <div class="dashboard-content-grid">
+            <section class="dashboard-panel">
+                <div class="dashboard-section-heading">
+                    <div>
+                        <span class="eyebrow">Testing Checklist</span>
+                        <h2>Core QA Tasks</h2>
+                    </div>
+                </div>
+                <ul class="rbac-check-list">
+                    {% for item in qa_items.checklist %}
+                    <li>{{ item }}</li>
+                    {% endfor %}
+                </ul>
+            </section>
+
+            <section class="dashboard-panel">
+                <div class="dashboard-section-heading">
+                    <div>
+                        <span class="eyebrow">Bug Reports</span>
+                        <h2>Placeholder Reports</h2>
+                    </div>
+                </div>
+                <div class="rbac-status-list">
+                    {% for report in qa_items.bug_reports %}
+                    <div>
+                        <span>Report</span>
+                        <strong>{{ report }}</strong>
+                    </div>
+                    {% endfor %}
+                </div>
+            </section>
+        </div>
+
+        <section class="dashboard-panel">
+            <div class="dashboard-section-heading">
+                <div>
+                    <span class="eyebrow">Feature Status</span>
+                    <h2>Current Build Status</h2>
+                </div>
+            </div>
+            <div class="rbac-table-grid">
+                {% for feature in qa_items.feature_status %}
+                <article>
+                    <span>{{ feature.name }}</span>
+                    <strong>{{ feature.status }}</strong>
+                </article>
+                {% endfor %}
+            </div>
+        </section>
+
+        {% include 'components/footer.html' %}
+    </main>
+</div>
+
+<script>
+function toggleTheme() {
+    document.body.classList.toggle("dark-mode");
+    let btn = document.getElementById("theme-toggle");
+    btn.innerHTML = document.body.classList.contains("dark-mode") ? "&#9728;&#65039; Light Mode" : "&#127769; Dark Mode";
+}
+</script>
+</body>
+</html>
