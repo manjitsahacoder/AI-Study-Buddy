@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Login - AI Study Buddy</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body class="auth-page">
+<button id="theme-toggle" onclick="toggleTheme()">
+    &#127769; Dark Mode
+</button>
+
+<main class="learn-container auth-container">
+    <div class="auth-header-row">
+        <div>
+            <span class="eyebrow">Account</span>
+            <h1>Login</h1>
+        </div>
+        <a class="button-link secondary-link" href="{{ url_for('home') }}">Back to Home</a>
+    </div>
+
+    {% include 'components/flash_messages.html' %}
+
+    <form class="study-form auth-form" action="{{ url_for('login', next=request.args.get('next', '')) }}" method="POST">
+        <div class="form-field">
+            <label for="identifier">&#128100; Username or Email</label>
+            <input
+                id="identifier"
+                type="text"
+                name="identifier"
+                value="{{ identifier }}"
+                placeholder="Enter username or email"
+                required
+                autocomplete="username"
+            >
+        </div>
+
+        <div class="form-field">
+            <label for="password">&#128274; Password</label>
+            <input
+                id="password"
+                type="password"
+                name="password"
+                placeholder="Enter password"
+                required
+                autocomplete="current-password"
+            >
+        </div>
+
+        <button type="submit">Login</button>
+    </form>
+
+    <p class="auth-switch">New to AI Study Buddy? <a href="{{ url_for('register') }}">Create an account</a></p>
+
+    {% include 'components/footer.html' %}
+</main>
+
+<script>
+function toggleTheme() {
+    document.body.classList.toggle("dark-mode");
+
+    let btn = document.getElementById("theme-toggle");
+    if (document.body.classList.contains("dark-mode")) {
+        btn.innerHTML = "&#9728;&#65039; Light Mode";
+    } else {
+        btn.innerHTML = "&#127769; Dark Mode";
+    }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,57 @@
+<div class="locked-modal-backdrop" data-locked-modal hidden>
+    <section class="locked-modal" role="dialog" aria-modal="true" aria-labelledby="locked-modal-title">
+        <button class="locked-modal-close" type="button" aria-label="Continue as Guest" data-close-locked-modal>
+            &times;
+        </button>
+        <span class="locked-modal-icon" aria-hidden="true">&#128274;</span>
+        <h2 id="locked-modal-title">Login Required</h2>
+        <p>This feature is available for registered students. Create a free account to save your progress and unlock personalized learning.</p>
+        <div class="locked-modal-actions">
+            <a class="button-link" href="{{ url_for('login') }}">Login</a>
+            <a class="button-link secondary-link" href="{{ url_for('register') }}">Register</a>
+            <button class="secondary-link" type="button" data-close-locked-modal>Continue as Guest</button>
+        </div>
+    </section>
+</div>
+
+<script>
+(function() {
+    const modal = document.querySelector("[data-locked-modal]");
+    const lockedTriggers = document.querySelectorAll("[data-locked-feature]");
+
+    if (!modal || lockedTriggers.length === 0) {
+        return;
+    }
+
+    function openModal(event) {
+        event.preventDefault();
+        modal.hidden = false;
+        document.body.classList.add("modal-open");
+    }
+
+    function closeModal() {
+        modal.hidden = true;
+        document.body.classList.remove("modal-open");
+    }
+
+    lockedTriggers.forEach(function(trigger) {
+        trigger.addEventListener("click", openModal);
+    });
+
+    modal.querySelectorAll("[data-close-locked-modal]").forEach(function(button) {
+        button.addEventListener("click", closeModal);
+    });
+
+    modal.addEventListener("click", function(event) {
+        if (event.target === modal) {
+            closeModal();
+        }
+    });
+
+    document.addEventListener("keydown", function(event) {
+        if (event.key === "Escape" && !modal.hidden) {
+            closeModal();
+        }
+    });
+})();
+</script>

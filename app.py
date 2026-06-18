@@ -1,4 +1,14 @@
-from flask import Flask, abort, render_template, request, send_file
+from flask import (
+    Flask,
+    abort,
+    flash,
+    redirect,
+    render_template,
+    request,
+    send_file,
+    session,
+    url_for,
+)
 from base64 import b64encode
 from PIL import Image, ImageDraw, ImageFont
 from reportlab.lib import colors
@@ -6,14 +16,16 @@ from reportlab.lib.enums import TA_CENTER
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import inch
+from reportlab.platypus import Image as RLImage
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 import google.generativeai as genai
 from html import escape
 from io import BytesIO
 from pathlib import Path
 from contextlib import closing
-from functools import lru_cache
+from functools import lru_cache, wraps
 from difflib import SequenceMatcher
+from werkzeug.security import check_password_hash, generate_password_hash
 import json
 import markdown
 import os
@@ -26,6 +38,7 @@ from config import GEMINI_API_KEY, GEMINI_API_KEY_2
 
 
 app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY", "ai-study-buddy-dev-secret-key")
 
 
 def default_quiz_history_db():
@@ -107,15 +120,400 @@ def init_quiz_history_db():
             )
             """
         )
+        existing_columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(quiz_history)").fetchall()
+        }
+        if "user_id" not in existing_columns:
+            connection.execute("ALTER TABLE quiz_history ADD COLUMN user_id INTEGER")
         connection.commit()
 
 
-def save_quiz_history(name, student_class, subject, topic, score, grade, questions, answers, report_text):
+def init_users_db():
+    with closing(get_db_connection()) as connection:
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                full_name TEXT NOT NULL,
+                username TEXT NOT NULL UNIQUE,
+                email TEXT NOT NULL UNIQUE,
+                student_class TEXT NOT NULL,
+                password_hash TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        connection.commit()
+
+
+def init_account_activity_db():
+    with closing(get_db_connection()) as connection:
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS learning_sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                student_class TEXT NOT NULL,
+                subject TEXT NOT NULL,
+                book_name TEXT,
+                topic TEXT NOT NULL,
+                notes TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS downloaded_files (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                file_type TEXT NOT NULL,
+                subject TEXT,
+                topic TEXT NOT NULL,
+                score TEXT,
+                grade TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        connection.commit()
+
+
+def init_learning_history_db():
+    with closing(get_db_connection()) as connection:
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS learning_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                subject TEXT NOT NULL,
+                book_name TEXT,
+                topic TEXT NOT NULL,
+                notes TEXT NOT NULL,
+                diagram_data TEXT NOT NULL,
+                quiz_questions TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        connection.commit()
+
+
+def get_user_by_id(user_id):
+    if not user_id:
+        return None
+
+    init_users_db()
+    with closing(get_db_connection()) as connection:
+        return connection.execute(
+            """
+            SELECT id, full_name, username, email, student_class, created_at
+            FROM users
+            WHERE id = ?
+            """,
+            (user_id,),
+        ).fetchone()
+
+
+def get_user_by_username_or_email(identifier):
+    init_users_db()
+    normalized_identifier = identifier.strip().lower()
+    with closing(get_db_connection()) as connection:
+        return connection.execute(
+            """
+            SELECT *
+            FROM users
+            WHERE lower(username) = ? OR lower(email) = ?
+            """,
+            (normalized_identifier, normalized_identifier),
+        ).fetchone()
+
+
+def create_user(full_name, username, email, student_class, password):
+    init_users_db()
+    with closing(get_db_connection()) as connection:
+        connection.execute(
+            """
+            INSERT INTO users (
+                full_name,
+                username,
+                email,
+                student_class,
+                password_hash
+            )
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                full_name,
+                username,
+                email.lower(),
+                student_class,
+                generate_password_hash(password),
+            ),
+        )
+        connection.commit()
+
+
+def current_user():
+    return get_user_by_id(session.get("user_id"))
+
+
+@app.context_processor
+def inject_current_user():
+    return {
+        "current_user": current_user(),
+        "user": {
+            "id": session.get("user_id"),
+            "name": session.get("user_name"),
+            "full_name": session.get("user_name"),
+            "username": session.get("username"),
+        } if session.get("user_id") else None,
+    }
+
+
+def login_required(view):
+    @wraps(view)
+    def wrapped_view(*args, **kwargs):
+        if not session.get("user_id"):
+            flash(
+                "Login required. Create a free account to save your progress and unlock personalized learning.",
+                "error",
+            )
+            return redirect(url_for("login", next=request.path))
+        return view(*args, **kwargs)
+
+    return wrapped_view
+
+
+def validate_registration_form(form):
+    full_name = form.get("full_name", "").strip()
+    username = form.get("username", "").strip()
+    email = form.get("email", "").strip()
+    student_class = form.get("student_class", "").strip()
+    password = form.get("password", "")
+    confirm_password = form.get("confirm_password", "")
+    errors = []
+
+    if not full_name:
+        errors.append("Full name is required.")
+    if not username:
+        errors.append("Username is required.")
+    elif not re.fullmatch(r"[A-Za-z0-9_]{3,30}", username):
+        errors.append("Username must be 3 to 30 characters and use only letters, numbers, or underscores.")
+    if not email:
+        errors.append("Email is required.")
+    elif not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+        errors.append("Please enter a valid email address.")
+    if not student_class:
+        errors.append("Class is required.")
+    if not password:
+        errors.append("Password is required.")
+    elif len(password) < 8:
+        errors.append("Password must be at least 8 characters long.")
+    if password != confirm_password:
+        errors.append("Passwords do not match.")
+
+    return (
+        {
+            "full_name": full_name,
+            "username": username,
+            "email": email,
+            "student_class": student_class,
+            "password": password,
+        },
+        errors,
+    )
+
+
+def save_learning_session(user_id, name, student_class, subject, book_name, topic, notes):
+    init_account_activity_db()
+    with closing(get_db_connection()) as connection:
+        connection.execute(
+            """
+            INSERT INTO learning_sessions (
+                user_id,
+                name,
+                student_class,
+                subject,
+                book_name,
+                topic,
+                notes
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (user_id, name, student_class, subject, book_name, topic, notes),
+        )
+        connection.commit()
+
+
+def save_learning_history(user_id, subject, book_name, topic, notes, diagram_data, quiz_questions):
+    init_learning_history_db()
+    with closing(get_db_connection()) as connection:
+        connection.execute(
+            """
+            INSERT INTO learning_history (
+                user_id,
+                subject,
+                book_name,
+                topic,
+                notes,
+                diagram_data,
+                quiz_questions
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                user_id,
+                subject,
+                book_name,
+                topic,
+                notes,
+                json.dumps(diagram_data),
+                json.dumps(quiz_questions),
+            ),
+        )
+        connection.commit()
+
+
+LEARNING_HISTORY_FILTERS = [
+    ("all", "All"),
+    ("science", "Science"),
+    ("mathematics", "Mathematics"),
+    ("english", "English"),
+    ("social-science", "Social Science"),
+    ("computer", "Computer"),
+]
+
+
+def subject_filter_pattern(filter_value):
+    return {
+        "science": "%science%",
+        "mathematics": "%math%",
+        "english": "%english%",
+        "social-science": "%social%",
+        "computer": "%computer%",
+    }.get(filter_value)
+
+
+def get_learning_history_entries(user_id, search="", subject_filter="all", sort_order="newest"):
+    init_learning_history_db()
+    clauses = ["user_id = ?"]
+    parameters = [user_id]
+    search_text = search.strip().lower()
+
+    if search_text:
+        clauses.append(
+            """
+            (
+                lower(subject) LIKE ?
+                OR lower(COALESCE(book_name, '')) LIKE ?
+                OR lower(topic) LIKE ?
+            )
+            """
+        )
+        like_value = f"%{search_text}%"
+        parameters.extend([like_value, like_value, like_value])
+
+    pattern = subject_filter_pattern(subject_filter)
+    if pattern:
+        clauses.append("lower(subject) LIKE ?")
+        parameters.append(pattern)
+
+    direction = "ASC" if sort_order == "oldest" else "DESC"
+    with closing(get_db_connection()) as connection:
+        return connection.execute(
+            f"""
+            SELECT
+                id,
+                user_id,
+                subject,
+                book_name,
+                topic,
+                notes,
+                diagram_data,
+                quiz_questions,
+                created_at
+            FROM learning_history
+            WHERE {" AND ".join(clauses)}
+            ORDER BY datetime(created_at) {direction}, id {direction}
+            """,
+            parameters,
+        ).fetchall()
+
+
+def get_learning_history_entry(entry_id, user_id):
+    init_learning_history_db()
+    with closing(get_db_connection()) as connection:
+        return connection.execute(
+            """
+            SELECT
+                id,
+                user_id,
+                subject,
+                book_name,
+                topic,
+                notes,
+                diagram_data,
+                quiz_questions,
+                created_at
+            FROM learning_history
+            WHERE id = ? AND user_id = ?
+            """,
+            (entry_id, user_id),
+        ).fetchone()
+
+
+def delete_learning_history_entry(entry_id, user_id):
+    init_learning_history_db()
+    with closing(get_db_connection()) as connection:
+        connection.execute(
+            """
+            DELETE FROM learning_history
+            WHERE id = ? AND user_id = ?
+            """,
+            (entry_id, user_id),
+        )
+        connection.commit()
+
+
+def decode_json_list(value):
+    try:
+        decoded_value = json.loads(value or "[]")
+    except json.JSONDecodeError:
+        return []
+
+    return decoded_value if isinstance(decoded_value, list) else []
+
+
+def save_downloaded_file(user_id, file_type, subject, topic, score="", grade=""):
+    init_account_activity_db()
+    with closing(get_db_connection()) as connection:
+        connection.execute(
+            """
+            INSERT INTO downloaded_files (
+                user_id,
+                file_type,
+                subject,
+                topic,
+                score,
+                grade
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (user_id, file_type, subject, topic, score, grade),
+        )
+        connection.commit()
+
+
+def save_quiz_history(name, student_class, subject, topic, score, grade, questions, answers, report_text, user_id=None):
     init_quiz_history_db()
     with closing(get_db_connection()) as connection:
         connection.execute(
             """
             INSERT INTO quiz_history (
+                user_id,
                 name,
                 student_class,
                 subject,
@@ -126,9 +524,10 @@ def save_quiz_history(name, student_class, subject, topic, score, grade, questio
                 answers_json,
                 report_text
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
+                user_id,
                 name,
                 student_class,
                 subject,
@@ -143,11 +542,13 @@ def save_quiz_history(name, student_class, subject, topic, score, grade, questio
         connection.commit()
 
 
-def get_quiz_history(limit=50):
+def get_quiz_history(limit=50, user_id=None):
     init_quiz_history_db()
+    where_clause = "WHERE user_id = ?" if user_id else ""
+    parameters = (user_id, limit) if user_id else (limit,)
     with closing(get_db_connection()) as connection:
         return connection.execute(
-            """
+            f"""
             SELECT
                 id,
                 name,
@@ -158,11 +559,162 @@ def get_quiz_history(limit=50):
                 grade,
                 created_at
             FROM quiz_history
+            {where_clause}
             ORDER BY datetime(created_at) DESC, id DESC
             LIMIT ?
             """,
-            (limit,),
+            parameters,
         ).fetchall()
+
+
+def score_to_number(score):
+    match = re.search(r"(\d+(?:\.\d+)?)\s*/\s*10", score or "")
+    return float(match.group(1)) if match else None
+
+
+def get_recent_learning_activity(user_id, limit=5):
+    init_quiz_history_db()
+    init_account_activity_db()
+    init_learning_history_db()
+    with closing(get_db_connection()) as connection:
+        return connection.execute(
+            """
+            SELECT
+                subject,
+                topic,
+                'Not attempted' AS score,
+                created_at
+            FROM learning_history
+            WHERE user_id = ?
+            ORDER BY datetime(created_at) DESC, id DESC
+            LIMIT ?
+            """,
+            (user_id, limit),
+        ).fetchall()
+
+
+def calculate_study_streak(activity_dates):
+    normalized_dates = sorted(
+        {
+            date_text[:10]
+            for date_text in activity_dates
+            if date_text
+        },
+        reverse=True,
+    )
+    if not normalized_dates:
+        return 0
+
+    streak = 1
+    current_date = normalized_dates[0]
+    for next_date in normalized_dates[1:]:
+        with closing(get_db_connection()) as connection:
+            day_difference = connection.execute(
+                "SELECT julianday(?) - julianday(?)",
+                (current_date, next_date),
+            ).fetchone()[0]
+        if day_difference == 1:
+            streak += 1
+            current_date = next_date
+        elif day_difference > 1:
+            break
+
+    return streak
+
+
+def get_dashboard_stats(user_id):
+    init_quiz_history_db()
+    init_account_activity_db()
+    init_learning_history_db()
+    with closing(get_db_connection()) as connection:
+        quiz_rows = connection.execute(
+            """
+            SELECT topic, score, created_at
+            FROM quiz_history
+            WHERE user_id = ?
+            """,
+            (user_id,),
+        ).fetchall()
+        lesson_rows = connection.execute(
+            """
+            SELECT topic, created_at
+            FROM learning_history
+            WHERE user_id = ?
+            """,
+            (user_id,),
+        ).fetchall()
+        downloaded_count = connection.execute(
+            """
+            SELECT COUNT(*) AS total
+            FROM downloaded_files
+            WHERE user_id = ?
+            """,
+            (user_id,),
+        ).fetchone()["total"]
+
+    scores = [
+        numeric_score
+        for numeric_score in (score_to_number(row["score"]) for row in quiz_rows)
+        if numeric_score is not None
+    ]
+    topics_studied = len(lesson_rows)
+    quizzes_attempted = len(quiz_rows)
+    average_score = f"{sum(scores) / len(scores):.1f}/10" if scores else "0"
+    study_streak = calculate_study_streak(
+        [row["created_at"] for row in lesson_rows] + [row["created_at"] for row in quiz_rows]
+    )
+    achievements_count = (
+        1
+        + (1 if topics_studied else 0)
+        + (1 if quizzes_attempted else 0)
+        + (1 if downloaded_count else 0)
+        + (1 if study_streak >= 7 else 0)
+    )
+
+    return {
+        "topics_studied": topics_studied,
+        "quizzes_attempted": quizzes_attempted,
+        "average_score": average_score,
+        "achievements": achievements_count,
+        "study_streak": study_streak,
+    }
+
+
+def dashboard_achievements(stats):
+    return [
+        {
+            "icon": "&#129351;",
+            "title": "First Login",
+            "description": "Account created and ready.",
+            "unlocked": True,
+        },
+        {
+            "icon": "&#128214;",
+            "title": "First Lesson",
+            "description": "Start a lesson to unlock.",
+            "unlocked": stats["topics_studied"] > 0,
+        },
+        {
+            "icon": "&#128221;",
+            "title": "First Quiz",
+            "description": "Complete a quiz to unlock.",
+            "unlocked": stats["quizzes_attempted"] > 0,
+        },
+        {
+            "icon": "&#128293;",
+            "title": "7-Day Streak",
+            "description": "Study for seven days.",
+            "unlocked": stats["study_streak"] >= 7,
+        },
+    ]
+
+
+def recommended_topics():
+    return [
+        {"subject": "Science", "topic": "Photosynthesis"},
+        {"subject": "Mathematics", "topic": "Linear Equations"},
+        {"subject": "English", "topic": "Grammar Revision"},
+    ]
 
 
 def split_learning_content(response_text):
@@ -578,6 +1130,103 @@ def create_performance_pdf(name, subject, topic, score, grade, report_text):
     return buffer
 
 
+def create_learning_history_pdf(entry, diagram_steps, questions):
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=letter,
+        rightMargin=0.58 * inch,
+        leftMargin=0.58 * inch,
+        topMargin=0.62 * inch,
+        bottomMargin=0.62 * inch,
+        pageCompression=0,
+    )
+    base_styles = getSampleStyleSheet()
+    styles = {
+        "Title": ParagraphStyle(
+            "Title",
+            parent=base_styles["Title"],
+            fontName="Helvetica-Bold",
+            fontSize=24,
+            leading=29,
+            textColor=colors.HexColor("#172033"),
+            alignment=TA_CENTER,
+            spaceAfter=8,
+        ),
+        "Subtitle": ParagraphStyle(
+            "Subtitle",
+            parent=base_styles["Normal"],
+            fontName="Helvetica",
+            fontSize=10,
+            leading=14,
+            textColor=colors.HexColor("#667085"),
+            alignment=TA_CENTER,
+            spaceAfter=18,
+        ),
+        "SectionHeading": ParagraphStyle(
+            "SectionHeading",
+            parent=base_styles["Heading2"],
+            fontName="Helvetica-Bold",
+            fontSize=14,
+            leading=18,
+            textColor=colors.HexColor("#3157d5"),
+            spaceBefore=8,
+            spaceAfter=6,
+        ),
+        "ReportBody": ParagraphStyle(
+            "ReportBody",
+            parent=base_styles["BodyText"],
+            fontName="Helvetica",
+            fontSize=10.5,
+            leading=15,
+            textColor=colors.HexColor("#2d3748"),
+            spaceAfter=4,
+        ),
+        "BulletLine": ParagraphStyle(
+            "BulletLine",
+            parent=base_styles["BodyText"],
+            fontName="Helvetica",
+            fontSize=10.5,
+            leading=15,
+            leftIndent=12,
+            textColor=colors.HexColor("#2d3748"),
+            spaceAfter=4,
+        ),
+    }
+    story = [
+        Paragraph(escape(entry["topic"]), styles["Title"]),
+        Paragraph(
+            (
+                f"Subject: {escape(entry['subject'])} &nbsp;&nbsp; | &nbsp;&nbsp; "
+                f"Book: {escape(entry['book_name'] or 'N/A')} &nbsp;&nbsp; | &nbsp;&nbsp; "
+                f"Saved: {escape(entry['created_at'])}"
+            ),
+            styles["Subtitle"],
+        ),
+    ]
+    story.extend(report_text_to_flowables(entry["notes"], styles))
+
+    if diagram_steps:
+        story.append(Spacer(1, 12))
+        story.append(Paragraph("Diagram", styles["SectionHeading"]))
+        diagram_image = create_diagram_image(entry["topic"], diagram_steps)
+        if diagram_image.startswith("data:image/png;base64,"):
+            import base64
+
+            image_data = BytesIO(base64.b64decode(diagram_image.split(",", 1)[1]))
+            story.append(RLImage(image_data, width=5.7 * inch, height=2.2 * inch))
+
+    if questions:
+        story.append(Spacer(1, 12))
+        story.append(Paragraph("Quiz Questions", styles["SectionHeading"]))
+        for index, question in enumerate(questions, start=1):
+            story.append(Paragraph(f"Q{index}. {escape(question)}", styles["ReportBody"]))
+
+    doc.build(story, onFirstPage=add_pdf_background, onLaterPages=add_pdf_background)
+    buffer.seek(0)
+    return buffer
+
+
 TEXTBOOK_SUBJECTS = (
     "english",
     "hindi",
@@ -808,9 +1457,226 @@ def home():
     return render_template("index.html")
 
 
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    init_users_db()
+    form_data = {
+        "full_name": "",
+        "username": "",
+        "email": "",
+        "student_class": "",
+    }
+
+    if request.method == "POST":
+        form_data, errors = validate_registration_form(request.form)
+
+        if not errors:
+            existing_user = get_user_by_username_or_email(form_data["username"])
+            existing_email = get_user_by_username_or_email(form_data["email"])
+
+            if existing_user:
+                errors.append("That username is already taken.")
+            if existing_email:
+                errors.append("That email is already registered.")
+
+        if errors:
+            for error in errors:
+                flash(error, "error")
+            return render_template("register.html", form_data=form_data), 400
+
+        try:
+            create_user(
+                form_data["full_name"],
+                form_data["username"],
+                form_data["email"],
+                form_data["student_class"],
+                form_data["password"],
+            )
+        except sqlite3.IntegrityError:
+            flash("Username or email is already registered.", "error")
+            return render_template("register.html", form_data=form_data), 400
+
+        flash("Registration successful. Please log in.", "success")
+        return redirect(url_for("login"))
+
+    return render_template("register.html", form_data=form_data)
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        identifier = request.form.get("identifier", "").strip()
+        password = request.form.get("password", "")
+
+        if not identifier or not password:
+            flash("Username/email and password are required.", "error")
+            return render_template("login.html", identifier=identifier), 400
+
+        account = get_user_by_username_or_email(identifier)
+        if not account or not check_password_hash(account["password_hash"], password):
+            flash("Invalid username/email or password.", "error")
+            return render_template("login.html", identifier=identifier), 401
+
+        session.clear()
+        session["user_id"] = account["id"]
+        session["user_name"] = account["full_name"]
+        session["username"] = account["username"]
+
+        next_url = request.args.get("next", "")
+        if next_url.startswith("/"):
+            return redirect(next_url)
+        return redirect(url_for("dashboard"))
+
+    return render_template("login.html", identifier="")
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    flash("You have been logged out.", "success")
+    return redirect(url_for("home"))
+
+
+@app.route("/dashboard")
+@login_required
+def dashboard():
+    account = current_user()
+    stats = get_dashboard_stats(account["id"])
+    return render_template(
+        "dashboard.html",
+        account=account,
+        stats=stats,
+        recent_activity=get_recent_learning_activity(account["id"]),
+        achievements=dashboard_achievements(stats),
+        recommendations=recommended_topics(),
+    )
+
+
+@app.route("/profile")
+@login_required
+def profile():
+    return render_template("profile.html", account=current_user())
+
+
+@app.route("/learning-history")
+def learning_history():
+    if not session.get("user_id"):
+        return render_template("learning_history.html", guest_locked=True)
+
+    search = request.args.get("search", "").strip()
+    subject_filter = request.args.get("subject", "all").strip().lower()
+    sort_order = request.args.get("sort", "newest").strip().lower()
+    if subject_filter not in {value for value, _ in LEARNING_HISTORY_FILTERS}:
+        subject_filter = "all"
+    if sort_order not in {"newest", "oldest"}:
+        sort_order = "newest"
+
+    return render_template(
+        "learning_history.html",
+        guest_locked=False,
+        lessons=get_learning_history_entries(
+            session["user_id"],
+            search=search,
+            subject_filter=subject_filter,
+            sort_order=sort_order,
+        ),
+        filters=LEARNING_HISTORY_FILTERS,
+        search=search,
+        subject_filter=subject_filter,
+        sort_order=sort_order,
+    )
+
+
+@app.route("/learning-history/<int:lesson_id>")
+@login_required
+def view_learning_history(lesson_id):
+    lesson = get_learning_history_entry(lesson_id, session["user_id"])
+    if not lesson:
+        abort(404)
+
+    diagram_steps = decode_json_list(lesson["diagram_data"])
+    questions = decode_json_list(lesson["quiz_questions"])
+    return render_template(
+        "learning_history_detail.html",
+        lesson=lesson,
+        notes_html=markdown.markdown(lesson["notes"]),
+        diagram_image=create_diagram_image(lesson["topic"], diagram_steps),
+        questions=questions,
+    )
+
+
+@app.route("/learning-history/<int:lesson_id>/download")
+@login_required
+def download_learning_history_pdf(lesson_id):
+    lesson = get_learning_history_entry(lesson_id, session["user_id"])
+    if not lesson:
+        abort(404)
+
+    pdf_file = create_learning_history_pdf(
+        lesson,
+        decode_json_list(lesson["diagram_data"]),
+        decode_json_list(lesson["quiz_questions"]),
+    )
+    save_downloaded_file(
+        session["user_id"],
+        "saved_lesson",
+        lesson["subject"],
+        lesson["topic"],
+    )
+    return send_file(
+        pdf_file,
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=safe_notes_filename(lesson["topic"], extension="pdf"),
+    )
+
+
+@app.route("/learning-history/<int:lesson_id>/delete", methods=["POST"])
+@login_required
+def delete_learning_history(lesson_id):
+    delete_learning_history_entry(lesson_id, session["user_id"])
+    flash("Saved lesson deleted.", "success")
+    return redirect(url_for("learning_history"))
+
+
+@app.route("/downloaded-reports")
+@login_required
+def downloaded_reports():
+    return render_template(
+        "placeholder.html",
+        page_title="Downloaded Reports",
+        heading="Downloaded reports coming soon",
+        message="Future downloaded performance reports will appear here.",
+    )
+
+
+@app.route("/favourite-notes")
+@login_required
+def favourite_notes():
+    return render_template(
+        "placeholder.html",
+        page_title="Favourite Notes",
+        heading="Favourite notes coming soon",
+        message="Saved and favourite notes will appear here.",
+    )
+
+
+@app.route("/settings")
+@login_required
+def settings():
+    return render_template(
+        "placeholder.html",
+        page_title="Settings",
+        heading="Settings coming soon",
+        message="Future account and learning preferences will appear here.",
+    )
+
+
 @app.route("/history")
+@app.route("/quiz-history")
+@login_required
 def history():
-    return render_template("history.html", attempts=get_quiz_history())
+    return render_template("history.html", attempts=get_quiz_history(user_id=session["user_id"]))
 
 
 @app.route("/learn", methods=["POST"])
@@ -943,6 +1809,26 @@ Do not invent textbook chapter content.
 
     diagram_image = create_diagram_image(topic, diagram_steps)
 
+    if session.get("user_id"):
+        save_learning_history(
+            session["user_id"],
+            subject,
+            book_name,
+            topic,
+            notes,
+            diagram_steps,
+            questions,
+        )
+        save_learning_session(
+            session["user_id"],
+            name,
+            student_class,
+            subject,
+            book_name,
+            topic,
+            notes,
+        )
+
     return render_template(
         "learn.html",
         name=name,
@@ -1040,6 +1926,14 @@ def download_notes():
 </html>
 """
     notes_file = BytesIO(notes_document.encode("utf-8"))
+
+    if session.get("user_id"):
+        save_downloaded_file(
+            session["user_id"],
+            "notes",
+            subject,
+            topic,
+        )
 
     return send_file(
         notes_file,
@@ -1150,17 +2044,19 @@ Be encouraging and student-friendly.
     score = score_match.group(1) if score_match else "N/A"
     grade = grade_match.group(1) if grade_match else "N/A"
 
-    save_quiz_history(
-        name,
-        student_class,
-        subject,
-        topic,
-        score,
-        grade,
-        questions,
-        answers,
-        response.text,
-    )
+    if session.get("user_id"):
+        save_quiz_history(
+            name,
+            student_class,
+            subject,
+            topic,
+            score,
+            grade,
+            questions,
+            answers,
+            response.text,
+            user_id=session["user_id"],
+        )
 
     global latest_report
     latest_report = {
@@ -1208,6 +2104,16 @@ def download_pdf():
         abort(400, description="Topic and report content are required.")
 
     pdf_file = create_performance_pdf(name, subject, topic, score, grade, report_text)
+
+    if session.get("user_id"):
+        save_downloaded_file(
+            session["user_id"],
+            "performance_report",
+            subject,
+            topic,
+            score,
+            grade,
+        )
 
     return send_file(
         pdf_file,

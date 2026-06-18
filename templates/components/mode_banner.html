@@ -1,0 +1,17 @@
+{% if user %}
+<section class="mode-banner account-mode-banner" aria-label="Account mode">
+    <div>
+        <strong>&#128075; Welcome back, {{ user.full_name }}</strong>
+        <span>Personalized learning is active. Your progress can be saved to your student account.</span>
+    </div>
+    <span class="mode-badge verified-badge">&#128994; Verified Student</span>
+</section>
+{% else %}
+<section class="mode-banner guest-mode-banner" aria-label="Guest mode">
+    <div>
+        <strong>&#128075; Welcome, Guest!</strong>
+        <span>You can explore AI Study Buddy without an account. Create an account to save your learning progress.</span>
+    </div>
+    <span class="mode-badge guest-badge">&#128309; Guest</span>
+</section>
+{% endif %}

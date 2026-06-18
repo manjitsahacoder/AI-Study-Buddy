@@ -53,14 +53,36 @@
                 </span>
                 <span class="toggle-text">&#127769; Dark</span>
             </button>
+            {% include 'components/auth_nav.html' %}
         </div>
     </header>
+
+    {% include 'components/flash_messages.html' %}
+    {% include 'components/mode_banner.html' %}
 
     <section class="welcome-card">
         <span class="eyebrow">Smarter Learning</span>
         <h2>Welcome to AI Study Buddy</h2>
         <p>AI Study Buddy is an AI-powered educational platform designed to help students learn smarter through personalized notes, diagrams, quizzes, textbook support, and performance analysis.</p>
     </section>
+
+    {% if not user %}
+    <section class="account-motivation-card">
+        <div>
+            <span class="eyebrow">Guest Mode = Explore</span>
+            <h2>Why create an account?</h2>
+            <ul>
+                <li>&#10004; Save every lesson</li>
+                <li>&#10004; Track your progress</li>
+                <li>&#10004; Earn achievements</li>
+                <li>&#10004; Access your dashboard</li>
+                <li>&#10004; View quiz history</li>
+                <li>&#10004; Personalized AI learning</li>
+            </ul>
+        </div>
+        <a class="button-link" href="{{ url_for('register') }}">Create Free Account</a>
+    </section>
+    {% endif %}
 
     <div class="features">
         <div class="feature-card">
@@ -149,7 +171,7 @@
         <span><strong>Science</strong> + <strong>Photosynthesis</strong> = notes, diagram, quiz</span>
     </div>
 
-    <form class="study-form" action="{{ url_for('learn') }}" method="POST" onsubmit="showLoader()">
+    <form id="lesson-form" class="study-form" action="{{ url_for('learn') }}" method="POST" onsubmit="showLoader()">
         <div class="form-grid">
             <div class="form-field">
                 <label for="name">&#128100; Your Name</label>
@@ -221,10 +243,47 @@
     </form>
 
     <div class="home-actions">
+        {% if user %}
         <a class="button-link secondary-link" href="{{ url_for('history') }}">
             View Quiz History
         </a>
+        {% else %}
+        <button class="secondary-link" type="button" data-locked-feature>
+            View Quiz History
+        </button>
+        {% endif %}
     </div>
+
+    {% if not user %}
+    <section class="guest-locked-card">
+        <div class="section-heading">
+            <span class="eyebrow">Account Mode = Personalized Learning Platform</span>
+            <h2>Unlock with a free student account</h2>
+        </div>
+        <div class="locked-feature-grid">
+            <button type="button" data-locked-feature>
+                <span aria-hidden="true">&#128274;</span>
+                <strong>Dashboard</strong>
+                <small>Track your learning progress</small>
+            </button>
+            <button type="button" data-locked-feature>
+                <span aria-hidden="true">&#128274;</span>
+                <strong>Saved Quiz History</strong>
+                <small>Review every attempt</small>
+            </button>
+            <button type="button" data-locked-feature>
+                <span aria-hidden="true">&#128274;</span>
+                <strong>Performance Analytics</strong>
+                <small>Understand your growth</small>
+            </button>
+            <button type="button" data-locked-feature>
+                <span aria-hidden="true">&#128274;</span>
+                <strong>AI Recommendations</strong>
+                <small>Personalized study ideas</small>
+            </button>
+        </div>
+    </section>
+    {% endif %}
 
     <section class="about-card">
         <div>
@@ -246,6 +305,10 @@
 
     {% include 'components/footer.html' %}
 </div>
+
+{% if not user %}
+{% include 'components/login_required_modal.html' %}
+{% endif %}
 
 <script>
 const loaderMessages = [

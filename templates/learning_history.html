@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Learning History - AI Study Buddy</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+<button id="theme-toggle" onclick="toggleTheme()">
+    &#127769; Dark Mode
+</button>
+
+<main class="learn-container learning-history-container">
+    <div class="auth-header-row">
+        <div>
+            <span class="eyebrow">Study Library</span>
+            <h1>&#128218; Learning History</h1>
+        </div>
+        <div class="auth-page-actions">
+            <a class="button-link secondary-link" href="{{ url_for('home') }}">Back to Home</a>
+            {% include 'components/auth_nav.html' %}
+        </div>
+    </div>
+
+    {% include 'components/flash_messages.html' %}
+
+    {% if guest_locked %}
+    <section class="learning-locked-panel">
+        <span aria-hidden="true">&#128274;</span>
+        <h2>Learning History is available only for registered students.</h2>
+        <p>Create a free account to save every AI lesson into your personal study notebook.</p>
+        <div class="locked-modal-actions">
+            <a class="button-link" href="{{ url_for('login', next=url_for('learning_history')) }}">Login</a>
+            <a class="button-link secondary-link" href="{{ url_for('register') }}">Register</a>
+        </div>
+    </section>
+    {% else %}
+    <form class="history-tools" action="{{ url_for('learning_history') }}" method="GET">
+        <div class="form-field">
+            <label for="search">&#128269; Search</label>
+            <input id="search" type="search" name="search" value="{{ search }}" placeholder="Search subject, book, or topic">
+        </div>
+
+        <div class="form-field">
+            <label for="subject">&#128218; Filter</label>
+            <select id="subject" name="subject">
+                {% for value, label in filters %}
+                <option value="{{ value }}" {% if subject_filter == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="form-field">
+            <label for="sort">&#8597; Sort</label>
+            <select id="sort" name="sort">
+                <option value="newest" {% if sort_order == 'newest' %}selected{% endif %}>Newest First</option>
+                <option value="oldest" {% if sort_order == 'oldest' %}selected{% endif %}>Oldest First</option>
+            </select>
+        </div>
+
+        <button type="submit">Apply</button>
+    </form>
+
+    {% if lessons %}
+    <section class="learning-history-grid" aria-label="Saved lessons">
+        {% for lesson in lessons %}
+        <article class="learning-history-card">
+            <div class="lesson-card-main">
+                <span class="lesson-card-icon" aria-hidden="true">&#128218;</span>
+                <div>
+                    <h2>{{ lesson.topic }}</h2>
+                    <p><strong>&#128218; Subject</strong> {{ lesson.subject }}</p>
+                    <p><strong>&#128214; Book</strong> {{ lesson.book_name or 'N/A' }}</p>
+                    <p><strong>&#128197; Date</strong> {{ lesson.created_at }}</p>
+                </div>
+            </div>
+            <div class="lesson-card-actions">
+                <a class="button-link" href="{{ url_for('view_learning_history', lesson_id=lesson.id) }}">&#128065; View</a>
+                <a class="button-link secondary-link" href="{{ url_for('download_learning_history_pdf', lesson_id=lesson.id) }}">&#128196; Download PDF</a>
+                <form action="{{ url_for('delete_learning_history', lesson_id=lesson.id) }}" method="POST" onsubmit="return confirm('Delete this saved lesson?');">
+                    <button class="danger-link" type="submit">&#128465; Delete</button>
+                </form>
+            </div>
+        </article>
+        {% endfor %}
+    </section>
+    {% else %}
+    <section class="empty-history learning-empty-state">
+        <h2>No saved lessons yet</h2>
+        <p>Generate AI notes while logged in, and every lesson will appear here automatically.</p>
+        <a class="button-link" href="{{ url_for('home') }}#lesson-form">Start New Lesson</a>
+    </section>
+    {% endif %}
+    {% endif %}
+
+    {% include 'components/footer.html' %}
+</main>
+
+<script>
+function toggleTheme() {
+    document.body.classList.toggle("dark-mode");
+
+    let btn = document.getElementById("theme-toggle");
+    if (document.body.classList.contains("dark-mode")) {
+        btn.innerHTML = "&#9728;&#65039; Light Mode";
+    } else {
+        btn.innerHTML = "&#127769; Dark Mode";
+    }
+}
+</script>
+</body>
+</html>

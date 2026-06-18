@@ -1,0 +1,99 @@
+<nav class="auth-nav" aria-label="Account navigation">
+    {% if user %}
+    <div class="profile-menu" data-profile-menu>
+        <button
+            class="profile-menu-button"
+            type="button"
+            aria-haspopup="true"
+            aria-expanded="false"
+            data-profile-menu-button>
+            <span class="profile-menu-icon" aria-hidden="true">&#128100;</span>
+            <span class="profile-menu-label">{{ user.name }}</span>
+            <span class="profile-menu-arrow" aria-hidden="true">&#9662;</span>
+        </button>
+
+        <div class="profile-dropdown" role="menu" data-profile-dropdown>
+            <div class="profile-dropdown-user" aria-label="Signed in student">
+                <span aria-hidden="true">&#128100;</span>
+                <div>
+                    <strong>{{ user.full_name }}</strong>
+                    <small><span aria-hidden="true">&#128994;</span> Verified Student</small>
+                </div>
+            </div>
+            <a role="menuitem" href="{{ url_for('dashboard') }}">
+                <span aria-hidden="true">&#128202;</span>
+                <span>Dashboard</span>
+            </a>
+            <a role="menuitem" href="{{ url_for('profile') }}">
+                <span aria-hidden="true">&#128100;</span>
+                <span>My Profile</span>
+            </a>
+            <a role="menuitem" href="{{ url_for('learning_history') }}">
+                <span aria-hidden="true">&#128218;</span>
+                <span>Learning History</span>
+            </a>
+            <a role="menuitem" href="{{ url_for('history') }}">
+                <span aria-hidden="true">&#128221;</span>
+                <span>Quiz History</span>
+            </a>
+            <a role="menuitem" href="{{ url_for('downloaded_reports') }}">
+                <span aria-hidden="true">&#128196;</span>
+                <span>Downloaded Reports</span>
+            </a>
+            <a role="menuitem" href="{{ url_for('settings') }}">
+                <span aria-hidden="true">&#9881;</span>
+                <span>Settings</span>
+            </a>
+            <a class="profile-dropdown-logout" role="menuitem" href="{{ url_for('logout') }}">
+                <span aria-hidden="true">&#128682;</span>
+                <span>Logout</span>
+            </a>
+        </div>
+    </div>
+    {% else %}
+    <span class="mode-badge guest-badge">&#128309; Guest</span>
+    <a class="auth-link" href="{{ url_for('login') }}">Login</a>
+    <a class="auth-link secondary-auth-link" href="{{ url_for('register') }}">Register</a>
+    {% endif %}
+</nav>
+
+<script>
+(function() {
+    const menus = document.querySelectorAll("[data-profile-menu]");
+
+    function closeMenu(menu) {
+        const button = menu.querySelector("[data-profile-menu-button]");
+        menu.classList.remove("is-open");
+        if (button) {
+            button.setAttribute("aria-expanded", "false");
+        }
+    }
+
+    menus.forEach(function(menu) {
+        const button = menu.querySelector("[data-profile-menu-button]");
+        if (!button) {
+            return;
+        }
+
+        button.addEventListener("click", function(event) {
+            event.stopPropagation();
+            const isOpen = menu.classList.toggle("is-open");
+            button.setAttribute("aria-expanded", isOpen ? "true" : "false");
+        });
+
+        menu.addEventListener("click", function(event) {
+            event.stopPropagation();
+        });
+    });
+
+    document.addEventListener("click", function() {
+        menus.forEach(closeMenu);
+    });
+
+    document.addEventListener("keydown", function(event) {
+        if (event.key === "Escape") {
+            menus.forEach(closeMenu);
+        }
+    });
+})();
+</script>

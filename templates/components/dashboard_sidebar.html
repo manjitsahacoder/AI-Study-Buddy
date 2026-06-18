@@ -1,0 +1,86 @@
+<button class="dashboard-menu-toggle" type="button" aria-label="Open dashboard menu" aria-expanded="false" data-dashboard-menu-toggle>
+    <span aria-hidden="true">&#9776;</span>
+</button>
+
+<aside class="student-sidebar" data-dashboard-sidebar>
+    <div class="sidebar-brand">
+        <span class="sidebar-brand-icon" aria-hidden="true">&#127891;</span>
+        <div>
+            <strong>AI Study Buddy</strong>
+            <span>Student Space</span>
+        </div>
+    </div>
+
+    <nav class="sidebar-nav" aria-label="Student dashboard navigation">
+        <a class="{% if active_page == 'home' %}active{% endif %}" href="{{ url_for('home') }}">
+            <span aria-hidden="true">&#127968;</span>
+            <span>Home</span>
+        </a>
+        <a class="{% if active_page == 'dashboard' %}active{% endif %}" href="{{ url_for('dashboard') }}">
+            <span aria-hidden="true">&#128202;</span>
+            <span>Dashboard</span>
+        </a>
+        <a class="{% if active_page == 'learning_history' %}active{% endif %}" href="{{ url_for('learning_history') }}">
+            <span aria-hidden="true">&#128218;</span>
+            <span>Learning History</span>
+        </a>
+        <a class="{% if active_page == 'quiz_history' %}active{% endif %}" href="{{ url_for('history') }}">
+            <span aria-hidden="true">&#128221;</span>
+            <span>Quiz History</span>
+        </a>
+        <a class="{% if active_page == 'downloads' %}active{% endif %}" href="{{ url_for('downloaded_reports') }}">
+            <span aria-hidden="true">&#128196;</span>
+            <span>Downloads</span>
+        </a>
+        <a class="{% if active_page == 'favourite_notes' %}active{% endif %}" href="{{ url_for('favourite_notes') }}">
+            <span aria-hidden="true">&#11088;</span>
+            <span>Saved Notes</span>
+        </a>
+        <a class="{% if active_page == 'profile' %}active{% endif %}" href="{{ url_for('profile') }}">
+            <span aria-hidden="true">&#128100;</span>
+            <span>Profile</span>
+        </a>
+        <a class="{% if active_page == 'settings' %}active{% endif %}" href="{{ url_for('settings') }}">
+            <span aria-hidden="true">&#9881;</span>
+            <span>Settings <small>Coming Soon</small></span>
+        </a>
+        <a href="{{ url_for('logout') }}">
+            <span aria-hidden="true">&#128682;</span>
+            <span>Logout</span>
+        </a>
+    </nav>
+</aside>
+
+<div class="dashboard-sidebar-overlay" data-dashboard-sidebar-overlay></div>
+
+<script>
+(function() {
+    const sidebar = document.querySelector("[data-dashboard-sidebar]");
+    const toggle = document.querySelector("[data-dashboard-menu-toggle]");
+    const overlay = document.querySelector("[data-dashboard-sidebar-overlay]");
+
+    if (!sidebar || !toggle || !overlay) {
+        return;
+    }
+
+    function setSidebar(open) {
+        sidebar.classList.toggle("is-open", open);
+        overlay.classList.toggle("is-open", open);
+        toggle.setAttribute("aria-expanded", open ? "true" : "false");
+    }
+
+    toggle.addEventListener("click", function() {
+        setSidebar(!sidebar.classList.contains("is-open"));
+    });
+
+    overlay.addEventListener("click", function() {
+        setSidebar(false);
+    });
+
+    document.addEventListener("keydown", function(event) {
+        if (event.key === "Escape") {
+            setSidebar(false);
+        }
+    });
+})();
+</script>
