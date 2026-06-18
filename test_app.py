@@ -1,4 +1,5 @@
 import os
+import json
 import sqlite3
 import tempfile
 import unittest
@@ -250,13 +251,77 @@ Q5. What is question five?
         self.register_user()
         self.login_user()
         generate_content.return_value = MockResponse(
-            """# Performance Summary
-Score: 8/10
-Grade: A
-
-# Strengths
-- Clear answers
-"""
+            json.dumps(
+                {
+                    "questions": [
+                        {
+                            "question": "What is question one?",
+                            "student_answer": "Answer 1",
+                            "correct_answer": "Correct answer 1",
+                            "status": "correct",
+                            "marks_awarded": 2,
+                            "max_marks": 2,
+                            "teacher_feedback": "Excellent answer.",
+                            "revision_tip": "",
+                        },
+                        {
+                            "question": "What is question two?",
+                            "student_answer": "Answer 2",
+                            "correct_answer": "Correct answer 2",
+                            "status": "partial",
+                            "marks_awarded": 1,
+                            "max_marks": 2,
+                            "teacher_feedback": "Some key idea is present.",
+                            "revision_tip": "Add the missing keyword.",
+                        },
+                        {
+                            "question": "What is question three?",
+                            "student_answer": "Answer 3",
+                            "correct_answer": "Correct answer 3",
+                            "status": "correct",
+                            "marks_awarded": 2,
+                            "max_marks": 2,
+                            "teacher_feedback": "Clear answer.",
+                            "revision_tip": "",
+                        },
+                        {
+                            "question": "What is question four?",
+                            "student_answer": "Answer 4",
+                            "correct_answer": "Correct answer 4",
+                            "status": "incorrect",
+                            "marks_awarded": 0,
+                            "max_marks": 2,
+                            "teacher_feedback": "This answer misses the main concept.",
+                            "revision_tip": "Revise the definition first.",
+                        },
+                        {
+                            "question": "What is question five?",
+                            "student_answer": "Answer 5",
+                            "correct_answer": "Correct answer 5",
+                            "status": "correct",
+                            "marks_awarded": 2,
+                            "max_marks": 2,
+                            "teacher_feedback": "Good explanation.",
+                            "revision_tip": "",
+                        },
+                    ],
+                    "summary": {
+                        "total_score": 7,
+                        "max_score": 10,
+                        "percentage": 70,
+                        "grade": "B+",
+                        "correct_answers": 3,
+                        "incorrect_answers": 1,
+                        "partial_answers": 1,
+                    },
+                    "teacher_report": {
+                        "overall_feedback": "Good work with room for revision.",
+                        "strengths": ["Clear answers", "Good effort"],
+                        "weak_areas": ["Definitions need revision"],
+                        "revision_suggestions": ["Revise keywords", "Practice again"],
+                    },
+                }
+            )
         )
 
         response = self.client.post("/submit_answers", data=self.answer_payload())
@@ -268,25 +333,36 @@ Grade: A
         self.assertIn("Class: 8", prompt)
         self.assertIn("Subject: Biology", prompt)
         page = response.get_data(as_text=True)
-        self.assertIn("8/10", page)
+        self.assertIn("7/10", page)
+        self.assertIn("70%", page)
         self.assertIn("Grade", page)
+        self.assertIn("Question Analysis", page)
+        self.assertIn("Correct answer 1", page)
+        self.assertIn("Excellent answer.", page)
+        self.assertIn("Add the missing keyword.", page)
+        self.assertIn("AI Teacher Report", page)
+        self.assertIn("Good work with room for revision.", page)
         self.assertIn('action="/download_pdf"', page)
         self.assertIn('method="POST"', page)
         self.assertIn('name="report_text"', page)
+        self.assertIn('name="evaluation_json"', page)
         self.assertIn("Clear answers", page)
 
         connection = sqlite3.connect(self.db_path)
         try:
             row = connection.execute(
                 """
-                SELECT name, student_class, subject, topic, score, grade
+                SELECT name, student_class, subject, topic, score, grade, report_text
                 FROM quiz_history
                 """
             ).fetchone()
         finally:
             connection.close()
 
-        self.assertEqual(row, ("Asha", "8", "Biology", "Plants", "8/10", "A"))
+        self.assertEqual(row[:6], ("Asha", "8", "Biology", "Plants", "7/10", "B+"))
+        saved_report = json.loads(row[6])
+        self.assertEqual(saved_report["summary"]["correct_answers"], 3)
+        self.assertEqual(saved_report["questions"][1]["status"], "partial")
 
         history_response = self.client.get("/history")
         self.assertEqual(history_response.status_code, 200)
@@ -717,6 +793,34 @@ Q5. What is question five?
         self.assertIn("Edit Profile", page)
 
     def test_download_pdf_returns_full_report_attachment(self):
+        evaluation = {
+            "questions": [
+                {
+                    "question": "What is question one?",
+                    "student_answer": "Answer 1",
+                    "correct_answer": "Correct answer 1",
+                    "status": "correct",
+                    "marks_label": "2",
+                    "max_marks": "2",
+                    "teacher_feedback": "Excellent answer.",
+                    "revision_tip": "",
+                }
+            ],
+            "summary": {
+                "score_label": "8/10",
+                "percentage_label": "80%",
+                "grade": "A",
+                "correct_answers": 1,
+                "incorrect_answers": 0,
+                "partial_answers": 0,
+            },
+            "teacher_report": {
+                "overall_feedback": "Strong attempt.",
+                "strengths": ["Clear answers"],
+                "weak_areas": ["Add more examples"],
+                "revision_suggestions": ["Practice again"],
+            },
+        }
         report_text = """# Performance Summary
 Score: 8/10
 Grade: A
@@ -737,6 +841,7 @@ Grade: A
                 "score": "8/10",
                 "grade": "A",
                 "report_text": report_text,
+                "evaluation_json": json.dumps(evaluation),
             },
         )
 

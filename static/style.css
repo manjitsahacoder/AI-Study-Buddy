@@ -2195,6 +2195,195 @@ body.dashboard-page #theme-toggle {
     border-left: 6px solid var(--amber);
 }
 
+.evaluation-summary-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.evaluation-section,
+.teacher-report {
+    margin-top: 28px;
+}
+
+.compact-heading {
+    align-items: end;
+    margin-bottom: 16px;
+}
+
+.compact-heading h2 {
+    margin: 0;
+    font-size: clamp(1.3rem, 2vw, 1.8rem);
+}
+
+.evaluation-card-list,
+.teacher-report-grid {
+    display: grid;
+    gap: 16px;
+}
+
+.evaluation-card {
+    padding: 20px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: rgba(255, 253, 248, 0.92);
+    box-shadow: var(--soft-shadow);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.evaluation-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 18px 36px rgba(23, 32, 51, 0.12);
+}
+
+.evaluation-card.correct {
+    border-color: rgba(47, 159, 103, 0.38);
+    background: linear-gradient(135deg, rgba(231, 247, 239, 0.94), rgba(255, 253, 248, 0.96));
+}
+
+.evaluation-card.incorrect {
+    border-color: rgba(217, 72, 72, 0.32);
+    background: linear-gradient(135deg, rgba(255, 240, 240, 0.95), rgba(255, 253, 248, 0.96));
+}
+
+.evaluation-card.partial {
+    border-color: rgba(197, 138, 24, 0.34);
+    background: linear-gradient(135deg, rgba(255, 247, 220, 0.96), rgba(255, 253, 248, 0.96));
+}
+
+.evaluation-card-header,
+.marks-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.evaluation-card-header h3 {
+    margin: 0;
+    color: var(--ink);
+    font-size: 1.15rem;
+}
+
+.status-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 108px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    font-size: 0.88rem;
+    font-weight: 900;
+}
+
+.status-pill.correct {
+    color: #147a45;
+    background: rgba(47, 159, 103, 0.15);
+}
+
+.status-pill.incorrect {
+    color: #b42318;
+    background: rgba(217, 72, 72, 0.14);
+}
+
+.status-pill.partial {
+    color: #946300;
+    background: rgba(240, 179, 95, 0.2);
+}
+
+.question-text {
+    margin: 16px 0;
+    color: var(--ink);
+    font-size: 1.05rem;
+    font-weight: 800;
+}
+
+.answer-grid,
+.teacher-report-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.answer-grid {
+    display: grid;
+    gap: 14px;
+}
+
+.answer-grid div,
+.feedback-box,
+.revision-tip,
+.teacher-report-overview,
+.teacher-report-card {
+    padding: 16px;
+    border: 1px solid rgba(49, 87, 213, 0.12);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.72);
+}
+
+.answer-grid span,
+.marks-row strong,
+.feedback-box strong,
+.revision-tip strong {
+    display: block;
+    margin-bottom: 7px;
+    color: var(--muted);
+    font-size: 0.78rem;
+    font-weight: 900;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.answer-grid p,
+.feedback-box p,
+.revision-tip p,
+.teacher-report-overview p {
+    margin: 0;
+    color: var(--muted);
+    line-height: 1.6;
+}
+
+.marks-row {
+    margin-top: 14px;
+    padding: 14px 16px;
+    border-radius: 8px;
+    background: rgba(49, 87, 213, 0.08);
+}
+
+.marks-row strong {
+    margin: 0;
+}
+
+.marks-row span {
+    color: var(--primary);
+    font-size: 1.2rem;
+    font-weight: 900;
+}
+
+.feedback-box,
+.revision-tip {
+    margin-top: 14px;
+}
+
+.revision-tip {
+    border-color: rgba(240, 179, 95, 0.38);
+    background: rgba(255, 247, 230, 0.88);
+}
+
+.teacher-report-overview {
+    margin-bottom: 16px;
+    border-left: 6px solid var(--primary);
+}
+
+.teacher-report-overview h3,
+.teacher-report-card h3 {
+    margin-top: 0;
+    color: var(--ink);
+}
+
+.teacher-report-card ul {
+    margin: 0;
+    padding-left: 20px;
+    color: var(--muted);
+    line-height: 1.7;
+}
+
 .tip-box {
     margin-top: 26px;
     padding: 18px 20px;
@@ -2601,7 +2790,11 @@ footer p {
 .dark-mode .recommended-topic-card h3,
 .dark-mode .score-card h3,
 .dark-mode .card h3,
-.dark-mode .recommendation-card h3 {
+.dark-mode .recommendation-card h3,
+.dark-mode .evaluation-card-header h3,
+.dark-mode .question-text,
+.dark-mode .teacher-report-overview h3,
+.dark-mode .teacher-report-card h3 {
     color: var(--ink);
 }
 
@@ -2618,6 +2811,31 @@ footer p {
 .dark-mode .tip-box {
     color: #ffe1ad;
     background: rgba(240, 179, 95, 0.12);
+}
+
+.dark-mode .evaluation-card,
+.dark-mode .answer-grid div,
+.dark-mode .feedback-box,
+.dark-mode .revision-tip,
+.dark-mode .teacher-report-overview,
+.dark-mode .teacher-report-card {
+    background: rgba(20, 27, 42, 0.86);
+}
+
+.dark-mode .evaluation-card.correct {
+    background: linear-gradient(135deg, rgba(47, 159, 103, 0.16), rgba(20, 27, 42, 0.9));
+}
+
+.dark-mode .evaluation-card.incorrect {
+    background: linear-gradient(135deg, rgba(217, 72, 72, 0.16), rgba(20, 27, 42, 0.9));
+}
+
+.dark-mode .evaluation-card.partial {
+    background: linear-gradient(135deg, rgba(240, 179, 95, 0.16), rgba(20, 27, 42, 0.9));
+}
+
+.dark-mode .marks-row {
+    background: rgba(134, 161, 255, 0.11);
 }
 
 .dark-mode #loader {
@@ -2700,6 +2918,7 @@ footer p {
     .recommended-topic-grid,
     .history-tools,
     .learning-history-grid,
+    .evaluation-summary-grid,
     .locked-feature-grid,
     .locked-dashboard-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2743,7 +2962,9 @@ footer p {
     .lesson-info-strip,
     .score-dashboard,
     .dashboard,
-    .achievements {
+    .achievements,
+    .answer-grid,
+    .teacher-report-grid {
         grid-template-columns: 1fr;
     }
 
@@ -2802,6 +3023,10 @@ footer p {
         right: -64px;
         bottom: 80px;
     }
+
+    .score-dashboard.evaluation-summary-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
 }
 
 @media (max-width: 560px) {
@@ -2824,6 +3049,9 @@ footer p {
     .recommended-topic-grid,
     .history-tools,
     .learning-history-grid,
+    .evaluation-summary-grid,
+    .answer-grid,
+    .teacher-report-grid,
     .locked-feature-grid,
     .locked-dashboard-grid,
     .account-motivation-card ul {
@@ -2855,6 +3083,20 @@ footer p {
     .lesson-card-actions form,
     .lesson-card-actions button {
         width: 100%;
+    }
+
+    .evaluation-card-header,
+    .marks-row {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .status-pill {
+        width: 100%;
+    }
+
+    .score-dashboard.evaluation-summary-grid {
+        grid-template-columns: 1fr;
     }
 
     .dashboard-menu-toggle {

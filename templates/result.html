@@ -26,18 +26,30 @@
         <div class="progress-bar"></div>
     </div>
 
-    <div class="score-dashboard">
+    <div class="score-dashboard evaluation-summary-grid">
         <div class="score-card">
             <h3>&#127919; Score</h3>
-            <h2>{{ score }}</h2>
+            <h2>{{ evaluation.summary.score_label if evaluation else score }}</h2>
+        </div>
+        <div class="score-card">
+            <h3>&#128200; Percentage</h3>
+            <h2>{{ evaluation.summary.percentage_label if evaluation else 'N/A' }}</h2>
         </div>
         <div class="score-card">
             <h3>&#127942; Grade</h3>
             <h2>{{ grade }}</h2>
         </div>
         <div class="score-card">
-            <h3>&#128218; Topic</h3>
-            <h2>{{ topic }}</h2>
+            <h3>&#9989; Correct</h3>
+            <h2>{{ evaluation.summary.correct_answers if evaluation else 0 }}</h2>
+        </div>
+        <div class="score-card">
+            <h3>&#10060; Incorrect</h3>
+            <h2>{{ evaluation.summary.incorrect_answers if evaluation else 0 }}</h2>
+        </div>
+        <div class="score-card">
+            <h3>&#128993; Partial</h3>
+            <h2>{{ evaluation.summary.partial_answers if evaluation else 0 }}</h2>
         </div>
     </div>
 
@@ -72,9 +84,103 @@
 
     <hr>
 
+    {% if evaluation %}
+    <section class="evaluation-section">
+        <div class="section-heading compact-heading">
+            <span class="badge">&#128221; Question Analysis</span>
+            <h2>Teacher Feedback for Every Answer</h2>
+        </div>
+
+        <div class="evaluation-card-list">
+            {% for item in evaluation.questions %}
+            <article class="evaluation-card {{ item.status }}">
+                <div class="evaluation-card-header">
+                    <h3>Question {{ loop.index }}</h3>
+                    <span class="status-pill {{ item.status }}">
+                        {% if item.status == 'correct' %}
+                            &#9989; Correct
+                        {% elif item.status == 'partial' %}
+                            &#128993; Partial
+                        {% else %}
+                            &#10060; Incorrect
+                        {% endif %}
+                    </span>
+                </div>
+                <p class="question-text">{{ item.question }}</p>
+
+                <div class="answer-grid">
+                    <div>
+                        <span>Student's Answer</span>
+                        <p>{{ item.student_answer }}</p>
+                    </div>
+                    <div>
+                        <span>Correct Answer</span>
+                        <p>{{ item.correct_answer }}</p>
+                    </div>
+                </div>
+
+                <div class="marks-row">
+                    <strong>Marks Awarded</strong>
+                    <span>{{ item.marks_label }}/{{ item.max_marks }}</span>
+                </div>
+
+                <div class="feedback-box">
+                    <strong>Short Teacher Feedback</strong>
+                    <p>{{ item.teacher_feedback }}</p>
+                </div>
+
+                {% if item.revision_tip %}
+                <div class="revision-tip">
+                    <strong>Revision Tip</strong>
+                    <p>{{ item.revision_tip }}</p>
+                </div>
+                {% endif %}
+            </article>
+            {% endfor %}
+        </div>
+    </section>
+
+    <section class="teacher-report">
+        <div class="section-heading compact-heading">
+            <span class="badge">&#127891; AI Teacher Report</span>
+            <h2>Personalized Revision Plan</h2>
+        </div>
+        <div class="teacher-report-overview">
+            <h3>Overall Feedback</h3>
+            <p>{{ evaluation.teacher_report.overall_feedback }}</p>
+        </div>
+        <div class="teacher-report-grid">
+            <div class="teacher-report-card">
+                <h3>&#9989; Strengths</h3>
+                <ul>
+                    {% for strength in evaluation.teacher_report.strengths %}
+                    <li>{{ strength }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            <div class="teacher-report-card">
+                <h3>&#128204; Weak Areas</h3>
+                <ul>
+                    {% for area in evaluation.teacher_report.weak_areas %}
+                    <li>{{ area }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            <div class="teacher-report-card">
+                <h3>&#128161; Revision Suggestions</h3>
+                <ul>
+                    {% for suggestion in evaluation.teacher_report.revision_suggestions %}
+                    <li>{{ suggestion }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+    </section>
+    {% else %}
     <div class="content">
         {{ report|safe }}
     </div>
+    {% endif %}
 
     <div class="tip-box">
         &#128161; Study Tip: Revise the notes once more and try answering all questions without looking at the notes.
@@ -89,6 +195,7 @@
             <input type="hidden" name="score" value="{{ score }}">
             <input type="hidden" name="grade" value="{{ grade }}">
             <textarea name="report_text" hidden>{{ report_text }}</textarea>
+            <textarea name="evaluation_json" hidden>{{ evaluation_json }}</textarea>
 
             <button type="submit">
                 &#128196; Download PDF Report

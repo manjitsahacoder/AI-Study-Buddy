@@ -572,6 +572,265 @@ def score_to_number(score):
     return float(match.group(1)) if match else None
 
 
+def format_mark(value):
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return "0"
+    return str(int(number)) if number.is_integer() else f"{number:.1f}"
+
+
+def grade_from_percentage(percentage):
+    if percentage >= 90:
+        return "A+"
+    if percentage >= 80:
+        return "A"
+    if percentage >= 70:
+        return "B+"
+    if percentage >= 60:
+        return "B"
+    return "C"
+
+
+def normalize_evaluation_status(status):
+    status = (status or "").strip().lower()
+    if "correct" in status and "incorrect" not in status:
+        return "correct"
+    if "partial" in status or "partly" in status or "half" in status:
+        return "partial"
+    return "incorrect"
+
+
+def extract_json_payload(text):
+    response_text = (text or "").strip()
+    if not response_text:
+        return None
+
+    fence_match = re.search(r"```(?:json)?\s*(.*?)```", response_text, re.DOTALL | re.IGNORECASE)
+    if fence_match:
+        response_text = fence_match.group(1).strip()
+
+    try:
+        return json.loads(response_text)
+    except json.JSONDecodeError:
+        pass
+
+    start = response_text.find("{")
+    end = response_text.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        try:
+            return json.loads(response_text[start : end + 1])
+        except json.JSONDecodeError:
+            return None
+    return None
+
+
+def list_from_value(value, fallback):
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if isinstance(value, str) and value.strip():
+        lines = [
+            re.sub(r"^[-*]\s*", "", line).strip()
+            for line in value.splitlines()
+            if line.strip()
+        ]
+        return lines or fallback
+    return fallback
+
+
+def build_fallback_evaluation(response_text, questions, answers):
+    score_match = re.search(r"Score:\s*(\d+(?:\.\d+)?)/10", response_text or "", re.IGNORECASE)
+    grade_match = re.search(r"Grade:\s*([A-Z+]+)", response_text or "", re.IGNORECASE)
+    total_score = float(score_match.group(1)) if score_match else 0
+    per_question_mark = total_score / max(len(questions), 1)
+    if per_question_mark >= 1.6:
+        fallback_status = "correct"
+    elif per_question_mark > 0:
+        fallback_status = "partial"
+    else:
+        fallback_status = "incorrect"
+
+    return {
+        "questions": [
+            {
+                "question": question,
+                "student_answer": answer,
+                "correct_answer": "Review the lesson notes for the model answer.",
+                "status": fallback_status,
+                "marks_awarded": round(per_question_mark, 1),
+                "marks_label": format_mark(per_question_mark),
+                "max_marks": "2",
+                "teacher_feedback": "The AI returned a general report for this attempt.",
+                "revision_tip": "Revise the topic notes and compare your answer with key terms.",
+            }
+            for question, answer in zip(questions, answers)
+        ],
+        "summary": {
+            "total_score": round(total_score, 1),
+            "total_score_label": format_mark(total_score),
+            "max_score": "10",
+            "score_label": f"{format_mark(total_score)}/10",
+            "percentage": round(total_score * 10, 1),
+            "percentage_label": f"{format_mark(total_score * 10)}%",
+            "grade": grade_match.group(1) if grade_match else grade_from_percentage(total_score * 10),
+            "correct_answers": len(questions) if fallback_status == "correct" else 0,
+            "incorrect_answers": len(questions) if fallback_status == "incorrect" else 0,
+            "partial_answers": len(questions) if fallback_status == "partial" else 0,
+        },
+        "teacher_report": {
+            "overall_feedback": "Your quiz has been evaluated. Use the details below to revise steadily.",
+            "strengths": ["You completed the quiz and attempted the questions."],
+            "weak_areas": ["Review any answers where important points were missing."],
+            "revision_suggestions": [
+                "Read the generated notes again.",
+                "Rewrite weak answers in your own words.",
+                "Retake the quiz after revision.",
+            ],
+        },
+    }
+
+
+def normalize_evaluation_payload(payload, response_text, questions, answers):
+    if not isinstance(payload, dict):
+        return build_fallback_evaluation(response_text, questions, answers)
+
+    raw_questions = payload.get("questions") or payload.get("question_analysis") or []
+    normalized_questions = []
+    mark_total = 0.0
+    for index, question in enumerate(questions):
+        raw_item = raw_questions[index] if index < len(raw_questions) and isinstance(raw_questions[index], dict) else {}
+        max_marks = raw_item.get("max_marks", 2)
+        try:
+            max_marks = float(max_marks)
+        except (TypeError, ValueError):
+            max_marks = 2.0
+
+        marks_awarded = raw_item.get("marks_awarded", raw_item.get("marks", 0))
+        try:
+            marks_awarded = max(0.0, min(float(marks_awarded), max_marks))
+        except (TypeError, ValueError):
+            marks_awarded = 0.0
+
+        status = normalize_evaluation_status(raw_item.get("status"))
+        if not raw_item.get("status"):
+            if marks_awarded >= max_marks:
+                status = "correct"
+            elif marks_awarded > 0:
+                status = "partial"
+            else:
+                status = "incorrect"
+
+        mark_total += marks_awarded
+        normalized_questions.append(
+            {
+                "question": str(raw_item.get("question") or question).strip(),
+                "student_answer": str(raw_item.get("student_answer") or answers[index]).strip(),
+                "correct_answer": str(raw_item.get("correct_answer") or "Review the lesson notes for the model answer.").strip(),
+                "status": status,
+                "marks_awarded": round(marks_awarded, 1),
+                "marks_label": format_mark(marks_awarded),
+                "max_marks": format_mark(max_marks),
+                "teacher_feedback": str(raw_item.get("teacher_feedback") or raw_item.get("feedback") or "Keep revising this concept.").strip(),
+                "revision_tip": str(raw_item.get("revision_tip") or "").strip(),
+            }
+        )
+
+    summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
+    max_score = 10.0
+    total_score = summary.get("total_score", mark_total)
+    try:
+        total_score = max(0.0, min(float(total_score), max_score))
+    except (TypeError, ValueError):
+        total_score = mark_total
+    percentage = round((total_score / max_score) * 100, 1)
+    correct_count = sum(1 for item in normalized_questions if item["status"] == "correct")
+    incorrect_count = sum(1 for item in normalized_questions if item["status"] == "incorrect")
+    partial_count = sum(1 for item in normalized_questions if item["status"] == "partial")
+
+    teacher_report = payload.get("teacher_report") if isinstance(payload.get("teacher_report"), dict) else {}
+    evaluation = {
+        "questions": normalized_questions,
+        "summary": {
+            "total_score": round(total_score, 1),
+            "total_score_label": format_mark(total_score),
+            "max_score": "10",
+            "score_label": f"{format_mark(total_score)}/10",
+            "percentage": percentage,
+            "percentage_label": f"{format_mark(percentage)}%",
+            "grade": str(summary.get("grade") or grade_from_percentage(percentage)).strip(),
+            "correct_answers": correct_count,
+            "incorrect_answers": incorrect_count,
+            "partial_answers": partial_count,
+        },
+        "teacher_report": {
+            "overall_feedback": str(teacher_report.get("overall_feedback") or "Good effort. Use this report to revise the weak areas and strengthen your next attempt.").strip(),
+            "strengths": list_from_value(
+                teacher_report.get("strengths"),
+                ["You attempted the quiz and engaged with the topic."],
+            ),
+            "weak_areas": list_from_value(
+                teacher_report.get("weak_areas"),
+                ["Review any question marked incorrect or partial."],
+            ),
+            "revision_suggestions": list_from_value(
+                teacher_report.get("revision_suggestions") or teacher_report.get("personalized_revision_suggestions"),
+                ["Revise the notes, then retry similar questions without looking at the answers."],
+            ),
+        },
+    }
+    return evaluation
+
+
+def build_structured_evaluation(response_text, questions, answers):
+    return normalize_evaluation_payload(
+        extract_json_payload(response_text),
+        response_text,
+        questions,
+        answers,
+    )
+
+
+def structured_evaluation_to_markdown(evaluation):
+    summary = evaluation["summary"]
+    report = evaluation["teacher_report"]
+    lines = [
+        "# Performance Summary",
+        f"Score: {summary['score_label']}",
+        f"Percentage: {summary['percentage_label']}",
+        f"Grade: {summary['grade']}",
+        f"Correct Answers: {summary['correct_answers']}",
+        f"Incorrect Answers: {summary['incorrect_answers']}",
+        f"Partial Marks: {summary['partial_answers']}",
+        "",
+        "# Question Analysis",
+    ]
+    for index, item in enumerate(evaluation["questions"], start=1):
+        lines.extend(
+            [
+                f"## Question {index}",
+                f"Question: {item['question']}",
+                f"Student Answer: {item['student_answer']}",
+                f"Correct Answer: {item['correct_answer']}",
+                f"Status: {item['status'].title()}",
+                f"Marks Awarded: {item['marks_label']}/{item['max_marks']}",
+                f"Teacher Feedback: {item['teacher_feedback']}",
+            ]
+        )
+        if item["revision_tip"]:
+            lines.append(f"Revision Tip: {item['revision_tip']}")
+        lines.append("")
+
+    lines.extend(["# AI Teacher Report", report["overall_feedback"], "", "# Strengths"])
+    lines.extend(f"- {item}" for item in report["strengths"])
+    lines.append("")
+    lines.append("# Weak Areas")
+    lines.extend(f"- {item}" for item in report["weak_areas"])
+    lines.append("")
+    lines.append("# Personalized Revision Suggestions")
+    lines.extend(f"- {item}" for item in report["revision_suggestions"])
+    return "\n".join(lines)
+
+
 def get_recent_learning_activity(user_id, limit=5):
     init_quiz_history_db()
     init_account_activity_db()
@@ -961,7 +1220,100 @@ def report_text_to_flowables(report_text, styles):
     return flowables
 
 
-def create_performance_pdf(name, subject, topic, score, grade, report_text):
+def evaluation_to_pdf_flowables(evaluation, styles):
+    status_colors = {
+        "correct": ("#e7f7ef", "#2f9f67"),
+        "incorrect": ("#fff0f0", "#d94848"),
+        "partial": ("#fff7dc", "#c58a18"),
+    }
+    flowables = [
+        Paragraph("Question-by-Question Analysis", styles["SectionHeading"]),
+        Spacer(1, 4),
+    ]
+    for index, item in enumerate(evaluation.get("questions", []), start=1):
+        status = item.get("status", "incorrect")
+        background, border = status_colors.get(status, status_colors["incorrect"])
+        card = Table(
+            [
+                [
+                    Paragraph(
+                        f"<b>Question {index}:</b> {escape(item.get('question', ''))}",
+                        styles["ReportBody"],
+                    )
+                ],
+                [
+                    Paragraph(
+                        f"<b>Student Answer:</b> {escape(item.get('student_answer', ''))}",
+                        styles["ReportBody"],
+                    )
+                ],
+                [
+                    Paragraph(
+                        f"<b>Correct Answer:</b> {escape(item.get('correct_answer', ''))}",
+                        styles["ReportBody"],
+                    )
+                ],
+                [
+                    Paragraph(
+                        f"<b>Status:</b> {escape(status.title())} &nbsp;&nbsp; <b>Marks:</b> {escape(str(item.get('marks_label', '0')))}/{escape(str(item.get('max_marks', '2')))}",
+                        styles["ReportBody"],
+                    )
+                ],
+                [
+                    Paragraph(
+                        f"<b>Teacher Feedback:</b> {escape(item.get('teacher_feedback', ''))}",
+                        styles["ReportBody"],
+                    )
+                ],
+            ],
+            colWidths=[5.7 * inch],
+        )
+        card_rows = [
+            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor(background)),
+            ("BOX", (0, 0), (-1, -1), 0.8, colors.HexColor(border)),
+            ("LEFTPADDING", (0, 0), (-1, -1), 10),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+            ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ]
+        card.setStyle(TableStyle(card_rows))
+        flowables.extend([card, Spacer(1, 8)])
+        if item.get("revision_tip"):
+            flowables.append(
+                Paragraph(
+                    f"<b>Revision Tip:</b> {escape(item['revision_tip'])}",
+                    styles["Tip"],
+                )
+            )
+            flowables.append(Spacer(1, 6))
+
+    report = evaluation.get("teacher_report", {})
+    flowables.extend(
+        [
+            Spacer(1, 8),
+            Paragraph("AI Teacher Report", styles["SectionHeading"]),
+            Paragraph(escape(report.get("overall_feedback", "")), styles["ReportBody"]),
+            Paragraph("Strengths", styles["SectionHeading"]),
+        ]
+    )
+    flowables.extend(
+        Paragraph(f"&bull; {escape(item)}", styles["BulletLine"])
+        for item in report.get("strengths", [])
+    )
+    flowables.append(Paragraph("Weak Areas", styles["SectionHeading"]))
+    flowables.extend(
+        Paragraph(f"&bull; {escape(item)}", styles["BulletLine"])
+        for item in report.get("weak_areas", [])
+    )
+    flowables.append(Paragraph("Personalized Revision Suggestions", styles["SectionHeading"]))
+    flowables.extend(
+        Paragraph(f"&bull; {escape(item)}", styles["BulletLine"])
+        for item in report.get("revision_suggestions", [])
+    )
+    return flowables
+
+
+def create_performance_pdf(name, subject, topic, score, grade, report_text, evaluation=None):
     buffer = BytesIO()
     doc = SimpleDocTemplate(
         buffer,
@@ -1104,7 +1456,40 @@ def create_performance_pdf(name, subject, topic, score, grade, report_text):
         )
     )
     story.extend([badges, Spacer(1, 16)])
-    story.extend(report_text_to_flowables(report_text, styles))
+    if evaluation:
+        summary = evaluation.get("summary", {})
+        result_table = Table(
+            [
+                [
+                    Paragraph("Percentage", styles["CardLabel"]),
+                    Paragraph("Correct", styles["CardLabel"]),
+                    Paragraph("Incorrect", styles["CardLabel"]),
+                    Paragraph("Partial", styles["CardLabel"]),
+                ],
+                [
+                    Paragraph(escape(str(summary.get("percentage_label", "0%"))), styles["CardValue"]),
+                    Paragraph(escape(str(summary.get("correct_answers", 0))), styles["CardValue"]),
+                    Paragraph(escape(str(summary.get("incorrect_answers", 0))), styles["CardValue"]),
+                    Paragraph(escape(str(summary.get("partial_answers", 0))), styles["CardValue"]),
+                ],
+            ],
+            colWidths=[1.42 * inch, 1.42 * inch, 1.42 * inch, 1.42 * inch],
+        )
+        result_table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#eef6ff")),
+                    ("BOX", (0, 0), (-1, -1), 0.7, colors.HexColor("#c9d8ff")),
+                    ("INNERGRID", (0, 0), (-1, -1), 0.7, colors.HexColor("#c9d8ff")),
+                    ("TOPPADDING", (0, 0), (-1, -1), 8),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+                ]
+            )
+        )
+        story.extend([result_table, Spacer(1, 16)])
+        story.extend(evaluation_to_pdf_flowables(evaluation, styles))
+    else:
+        story.extend(report_text_to_flowables(report_text, styles))
     story.extend(
         [
             Spacer(1, 12),
@@ -1985,7 +2370,7 @@ def submit_answers():
     )
 
     evaluation_prompt = f"""
-You are a teacher.
+You are an expert school teacher evaluating a five-question quiz.
 
 Topic: {topic}
 Class: {student_class}
@@ -1995,37 +2380,40 @@ Student Answers:
 
 {question_and_answer_text}
 
-Evaluate the answers.
+Evaluate every answer individually. Award up to 2 marks per question, for a total of 10 marks. Use partial marks when an answer includes some correct ideas but misses important details.
 
-Give the result in exactly this format:
+Return valid JSON only. Do not include markdown, code fences, or extra text.
 
-# Performance Summary
-
-Score: X/10
-
-Grade: A+/A/B+/B/C
-
-# Strengths
-- Point 1
-- Point 2
-- Point 3
-
-# Weak Areas
-- Point 1
-- Point 2
-- Point 3
-
-# Study Tips
-- Tip 1
-- Tip 2
-- Tip 3
-
-# Suggestions for Improvement
-- Suggestion 1
-- Suggestion 2
-- Suggestion 3
-
-Be encouraging and student-friendly.
+Use exactly this schema:
+{{
+  "questions": [
+    {{
+      "question": "Question text",
+      "student_answer": "Student answer",
+      "correct_answer": "Teacher model answer",
+      "status": "correct, incorrect, or partial",
+      "marks_awarded": 0,
+      "max_marks": 2,
+      "teacher_feedback": "Short teacher feedback",
+      "revision_tip": "Helpful tip if incorrect or partial, otherwise empty"
+    }}
+  ],
+  "summary": {{
+    "total_score": 0,
+    "max_score": 10,
+    "percentage": 0,
+    "grade": "A+/A/B+/B/C",
+    "correct_answers": 0,
+    "incorrect_answers": 0,
+    "partial_answers": 0
+  }},
+  "teacher_report": {{
+    "overall_feedback": "Encouraging overall feedback",
+    "strengths": ["Point 1", "Point 2", "Point 3"],
+    "weak_areas": ["Point 1", "Point 2", "Point 3"],
+    "revision_suggestions": ["Suggestion 1", "Suggestion 2", "Suggestion 3"]
+  }}
+}}
 """
 
     try:
@@ -2037,12 +2425,12 @@ Be encouraging and student-friendly.
             abort(503, description="Gemini quota reached. Please try again later.")
         abort(503, description="The evaluation service is unavailable. Please try again later.")
 
-    report = markdown.markdown(response.text)
-    score_match = re.search(r"Score:\s*(\d+/10)", response.text)
-    grade_match = re.search(r"Grade:\s*([A-Z+]+)", response.text)
-
-    score = score_match.group(1) if score_match else "N/A"
-    grade = grade_match.group(1) if grade_match else "N/A"
+    evaluation = build_structured_evaluation(response.text, questions, answers)
+    report_text = structured_evaluation_to_markdown(evaluation)
+    report = markdown.markdown(report_text)
+    evaluation_json = json.dumps(evaluation)
+    score = evaluation["summary"]["score_label"]
+    grade = evaluation["summary"]["grade"]
 
     if session.get("user_id"):
         save_quiz_history(
@@ -2054,7 +2442,7 @@ Be encouraging and student-friendly.
             grade,
             questions,
             answers,
-            response.text,
+            evaluation_json,
             user_id=session["user_id"],
         )
 
@@ -2066,7 +2454,8 @@ Be encouraging and student-friendly.
         "topic": topic,
         "score": score,
         "grade": grade,
-        "report_text": response.text,
+        "report_text": report_text,
+        "evaluation_json": evaluation_json,
     }
 
     return render_template(
@@ -2076,7 +2465,9 @@ Be encouraging and student-friendly.
         subject=subject,
         topic=topic,
         report=report,
-        report_text=response.text,
+        report_text=report_text,
+        evaluation=evaluation,
+        evaluation_json=evaluation_json,
         score=score,
         grade=grade,
     )
@@ -2091,6 +2482,7 @@ def download_pdf():
     score = values.get("score", "").strip()
     grade = values.get("grade", "").strip()
     report_text = values.get("report_text", "").strip()
+    evaluation_json = values.get("evaluation_json", "").strip()
 
     if not report_text and latest_report:
         name = name or latest_report.get("name", "")
@@ -2099,11 +2491,18 @@ def download_pdf():
         score = score or latest_report.get("score", "")
         grade = grade or latest_report.get("grade", "")
         report_text = latest_report.get("report_text", "")
+        evaluation_json = evaluation_json or latest_report.get("evaluation_json", "")
 
     if not topic or not report_text:
         abort(400, description="Topic and report content are required.")
 
-    pdf_file = create_performance_pdf(name, subject, topic, score, grade, report_text)
+    evaluation = None
+    if evaluation_json:
+        evaluation_payload = extract_json_payload(evaluation_json)
+        if isinstance(evaluation_payload, dict):
+            evaluation = evaluation_payload
+
+    pdf_file = create_performance_pdf(name, subject, topic, score, grade, report_text, evaluation)
 
     if session.get("user_id"):
         save_downloaded_file(
