@@ -23,7 +23,8 @@
                     <span aria-hidden="true">&#128100;</span>
                     <div>
                         <strong>{{ account.full_name }}</strong>
-                        <small><span aria-hidden="true">&#128994;</span> Verified Student</small>
+                        {% set role = account.role %}
+                        {% include 'components/role_badge.html' %}
                     </div>
                 </div>
             </div>

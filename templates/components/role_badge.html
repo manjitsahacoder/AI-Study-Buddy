@@ -1,0 +1,3 @@
+{% set badge_role = role if role is defined else (user.role if user else 'student') %}
+{% set badge = role_details(badge_role) %}
+<span class="role-badge {{ badge.class }}">{{ badge.badge|safe }}</span>

@@ -66,17 +66,27 @@ class RouteTests(unittest.TestCase):
         )
         return payload
 
-    def register_user(self, username="asha", email="asha@example.com", password="password123"):
+    def register_user(
+        self,
+        username="asha",
+        email="asha@example.com",
+        password="password123",
+        full_name="Asha Student",
+        extra_data=None,
+    ):
+        data = {
+            "full_name": full_name,
+            "username": username,
+            "email": email,
+            "student_class": "8",
+            "password": password,
+            "confirm_password": password,
+        }
+        if extra_data:
+            data.update(extra_data)
         return self.client.post(
             "/register",
-            data={
-                "full_name": "Asha Student",
-                "username": username,
-                "email": email,
-                "student_class": "8",
-                "password": password,
-                "confirm_password": password,
-            },
+            data=data,
         )
 
     def login_user(self, identifier="asha", password="password123"):
@@ -431,7 +441,8 @@ Grade: A
         self.assertEqual(response.status_code, 200)
         page = response.get_data(as_text=True)
         self.assertIn("Welcome back, Asha Student", page)
-        self.assertIn("Verified Student", page)
+        self.assertIn("Student", page)
+        self.assertIn("role-student", page)
         self.assertNotIn("Welcome, Guest!", page)
         self.assertNotIn("Why create an account?", page)
 
@@ -444,7 +455,7 @@ Grade: A
         try:
             row = connection.execute(
                 """
-                SELECT full_name, username, email, student_class, password_hash
+                SELECT full_name, username, email, student_class, role, password_hash
                 FROM users
                 WHERE username = ?
                 """,
@@ -456,6 +467,7 @@ Grade: A
         self.assertEqual(row["full_name"], "Asha Student")
         self.assertEqual(row["email"], "asha@example.com")
         self.assertEqual(row["student_class"], "8")
+        self.assertEqual(row["role"], "student")
         self.assertNotEqual(row["password_hash"], "password123")
         self.assertTrue(app_module.check_password_hash(row["password_hash"], "password123"))
 
@@ -471,6 +483,58 @@ Grade: A
 
         self.assertEqual(response.status_code, 400)
         self.assertIn("That email is already registered.", response.get_data(as_text=True))
+
+    def test_register_ignores_submitted_role_for_normal_user(self):
+        response = self.register_user(extra_data={"role": "developer"})
+
+        self.assertEqual(response.status_code, 302)
+        connection = sqlite3.connect(self.db_path)
+        connection.row_factory = sqlite3.Row
+        try:
+            row = connection.execute(
+                "SELECT role FROM users WHERE username = ?",
+                ("asha",),
+            ).fetchone()
+        finally:
+            connection.close()
+
+        self.assertEqual(row["role"], "student")
+
+    def test_predefined_accounts_receive_role_badges(self):
+        special_accounts = [
+            ("Manjit Saha", "manjit", "manjit@example.com", "developer", "Developer", "role-developer"),
+            ("Gyanjyoti Mahanta", "gyanjyoti", "gyanjyoti@example.com", "technical_support", "Technical Support", "role-technical-support"),
+            ("Lakshya Tuwani", "lakshya", "lakshya@example.com", "qa_tester", "QA Tester", "role-qa-tester"),
+        ]
+
+        for full_name, username, email, expected_role, badge_text, badge_class in special_accounts:
+            with self.subTest(username=username):
+                self.register_user(username=username, email=email, full_name=full_name)
+                connection = sqlite3.connect(self.db_path)
+                connection.row_factory = sqlite3.Row
+                try:
+                    row = connection.execute(
+                        "SELECT role FROM users WHERE username = ?",
+                        (username,),
+                    ).fetchone()
+                finally:
+                    connection.close()
+
+                self.assertEqual(row["role"], expected_role)
+
+                self.client.get("/logout")
+                self.login_user(identifier=username)
+                dashboard_response = self.client.get("/dashboard")
+                profile_response = self.client.get("/profile")
+
+                self.assertEqual(dashboard_response.status_code, 200)
+                self.assertEqual(profile_response.status_code, 200)
+                dashboard_page = dashboard_response.get_data(as_text=True)
+                profile_page = profile_response.get_data(as_text=True)
+                self.assertIn(badge_text, dashboard_page)
+                self.assertIn(badge_class, dashboard_page)
+                self.assertIn(badge_text, profile_page)
+                self.assertIn(badge_class, profile_page)
 
     def test_login_accepts_email_and_redirects_to_dashboard(self):
         self.register_user()
@@ -490,7 +554,8 @@ Grade: A
         self.assertIn("Welcome back, Asha Student", page)
         self.assertIn('class="profile-menu-button"', page)
         self.assertIn('class="profile-dropdown"', page)
-        self.assertIn("Verified Student", page)
+        self.assertIn("Student", page)
+        self.assertIn("role-student", page)
         self.assertIn("Dashboard", page)
         self.assertIn("My Profile", page)
         self.assertIn("Learning History", page)
@@ -651,7 +716,8 @@ Grade: A
         self.assertIn("Coming Soon", page)
         self.assertIn("AI Recommendations", page)
         self.assertIn("Study Planner", page)
-        self.assertIn("Verified Student", page)
+        self.assertIn("Student", page)
+        self.assertIn("role-student", page)
         self.assertIn("Recommended Topics", page)
         self.assertIn("Photosynthesis", page)
         self.assertIn("Back to Home", page)
@@ -907,6 +973,9 @@ Q5. What is question five?
         self.assertIn("Email", page)
         self.assertIn("asha@example.com", page)
         self.assertIn("Class 8", page)
+        self.assertIn("Role", page)
+        self.assertIn("Student", page)
+        self.assertIn("role-student", page)
         self.assertIn("Account Created", page)
         self.assertIn("Future Achievement Section", page)
         self.assertIn("Future Study Streak", page)

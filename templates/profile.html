@@ -30,8 +30,9 @@
         <div class="profile-card-header">
             <div>
                 <h2>{{ account.full_name }}</h2>
-                <p>Student account details</p>
-                <span class="mode-badge verified-badge">&#128994; Verified Student</span>
+                <p>Account details</p>
+                {% set role = account.role %}
+                {% include 'components/role_badge.html' %}
             </div>
             <button class="secondary-link edit-profile-button" type="button">Edit Profile</button>
         </div>
@@ -52,6 +53,13 @@
             <div>
                 <dt>Class</dt>
                 <dd>Class {{ account.student_class }}</dd>
+            </div>
+            <div>
+                <dt>Role</dt>
+                <dd>
+                    {% set role = account.role %}
+                    {% include 'components/role_badge.html' %}
+                </dd>
             </div>
             <div>
                 <dt>Account Created</dt>

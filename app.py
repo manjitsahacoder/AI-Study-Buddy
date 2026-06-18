@@ -58,6 +58,40 @@ genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel("gemini-2.5-flash")
 
 
+ROLE_DEFINITIONS = {
+    "developer": {
+        "label": "Developer",
+        "badge": "&#128311; Developer",
+        "class": "role-developer",
+        "permissions": "Full access",
+    },
+    "technical_support": {
+        "label": "Technical Support",
+        "badge": "&#128995; Technical Support",
+        "class": "role-technical-support",
+        "permissions": "Support access",
+    },
+    "qa_tester": {
+        "label": "QA Tester",
+        "badge": "&#128994; QA Tester",
+        "class": "role-qa-tester",
+        "permissions": "Testing access",
+    },
+    "student": {
+        "label": "Student",
+        "badge": "&#9898; Student",
+        "class": "role-student",
+        "permissions": "Student access",
+    },
+}
+
+SPECIAL_ROLE_ACCOUNTS = {
+    "manjit saha": "developer",
+    "gyanjyoti mahanta": "technical_support",
+    "lakshya tuwani": "qa_tester",
+}
+
+
 def is_quota_error(error):
     error_text = str(error).lower()
     return (
@@ -139,11 +173,65 @@ def init_users_db():
                 username TEXT NOT NULL UNIQUE,
                 email TEXT NOT NULL UNIQUE,
                 student_class TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'student',
                 password_hash TEXT NOT NULL,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
             """
         )
+        existing_columns = {
+            row["name"]
+            for row in connection.execute("PRAGMA table_info(users)").fetchall()
+        }
+        if "role" not in existing_columns:
+            connection.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'student'")
+        connection.execute(
+            """
+            UPDATE users
+            SET role = 'student'
+            WHERE role IS NULL OR role = ''
+            """
+        )
+        connection.commit()
+
+
+def normalize_account_name(name):
+    return re.sub(r"\s+", " ", (name or "").strip().lower())
+
+
+def resolve_account_role(full_name):
+    normalized_name = normalize_account_name(full_name)
+    return SPECIAL_ROLE_ACCOUNTS.get(normalized_name, "student")
+
+
+def normalize_role(role):
+    return role if role in ROLE_DEFINITIONS else "student"
+
+
+def role_details(role):
+    return ROLE_DEFINITIONS[normalize_role(role)]
+
+
+def apply_predefined_roles():
+    init_users_db()
+    with closing(get_db_connection()) as connection:
+        rows = connection.execute(
+            """
+            SELECT id, full_name, role
+            FROM users
+            """
+        ).fetchall()
+        for row in rows:
+            expected_role = resolve_account_role(row["full_name"])
+            if row["role"] != expected_role:
+                connection.execute(
+                    """
+                    UPDATE users
+                    SET role = ?
+                    WHERE id = ?
+                    """,
+                    (expected_role, row["id"]),
+                )
         connection.commit()
 
 
@@ -206,10 +294,11 @@ def get_user_by_id(user_id):
         return None
 
     init_users_db()
+    apply_predefined_roles()
     with closing(get_db_connection()) as connection:
         return connection.execute(
             """
-            SELECT id, full_name, username, email, student_class, created_at
+            SELECT id, full_name, username, email, student_class, role, created_at
             FROM users
             WHERE id = ?
             """,
@@ -219,6 +308,7 @@ def get_user_by_id(user_id):
 
 def get_user_by_username_or_email(identifier):
     init_users_db()
+    apply_predefined_roles()
     normalized_identifier = identifier.strip().lower()
     with closing(get_db_connection()) as connection:
         return connection.execute(
@@ -233,6 +323,7 @@ def get_user_by_username_or_email(identifier):
 
 def create_user(full_name, username, email, student_class, password):
     init_users_db()
+    role = resolve_account_role(full_name)
     with closing(get_db_connection()) as connection:
         connection.execute(
             """
@@ -241,15 +332,17 @@ def create_user(full_name, username, email, student_class, password):
                 username,
                 email,
                 student_class,
+                role,
                 password_hash
             )
-            VALUES (?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
             (
                 full_name,
                 username,
                 email.lower(),
                 student_class,
+                role,
                 generate_password_hash(password),
             ),
         )
@@ -287,14 +380,22 @@ def current_user():
 
 @app.context_processor
 def inject_current_user():
+    account = current_user() if session.get("user_id") else None
+    account_role = account["role"] if account else None
+    account_role_details = role_details(account_role) if account else None
     return {
-        "current_user": current_user(),
+        "current_user": account,
+        "role_details": role_details,
         "user": {
-            "id": session.get("user_id"),
-            "name": session.get("user_name"),
-            "full_name": session.get("user_name"),
-            "username": session.get("username"),
-        } if session.get("user_id") else None,
+            "id": account["id"],
+            "name": account["full_name"],
+            "full_name": account["full_name"],
+            "username": account["username"],
+            "role": account_role,
+            "role_label": account_role_details["label"],
+            "role_badge": account_role_details["badge"],
+            "role_class": account_role_details["class"],
+        } if account else None,
     }
 
 
@@ -1931,6 +2032,7 @@ def login():
         session["user_id"] = account["id"]
         session["user_name"] = account["full_name"]
         session["username"] = account["username"]
+        session["role"] = normalize_role(account["role"])
 
         next_url = request.args.get("next", "")
         if next_url.startswith("/"):

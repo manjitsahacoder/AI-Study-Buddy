@@ -4,7 +4,8 @@
         <strong>&#128075; Welcome back, {{ user.full_name }}</strong>
         <span>Personalized learning is active. Your progress can be saved to your student account.</span>
     </div>
-    <span class="mode-badge verified-badge">&#128994; Verified Student</span>
+    {% set role = user.role %}
+    {% include 'components/role_badge.html' %}
 </section>
 {% else %}
 <section class="mode-banner guest-mode-banner" aria-label="Guest mode">

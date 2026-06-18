@@ -17,7 +17,8 @@
                 <span aria-hidden="true">&#128100;</span>
                 <div>
                     <strong>{{ user.full_name }}</strong>
-                    <small><span aria-hidden="true">&#128994;</span> Verified Student</small>
+                    {% set role = user.role %}
+                    {% include 'components/role_badge.html' %}
                 </div>
             </div>
             <a role="menuitem" href="{{ url_for('dashboard') }}">

@@ -545,6 +545,50 @@ body.home-page #theme-toggle:hover {
     background: rgba(31, 122, 77, 0.1);
 }
 
+.role-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: fit-content;
+    min-height: 30px;
+    padding: 6px 12px;
+    border: 1px solid rgba(107, 114, 128, 0.22);
+    border-radius: 999px;
+    color: #4b5563;
+    background: rgba(107, 114, 128, 0.08);
+    font-size: 0.82rem;
+    font-weight: 900;
+    white-space: nowrap;
+}
+
+.role-developer,
+span.role-developer {
+    border-color: rgba(49, 87, 213, 0.28);
+    color: #2446b8;
+    background: rgba(49, 87, 213, 0.12);
+}
+
+.role-technical-support,
+span.role-technical-support {
+    border-color: rgba(126, 63, 196, 0.3);
+    color: #7134b7;
+    background: rgba(126, 63, 196, 0.12);
+}
+
+.role-qa-tester,
+span.role-qa-tester {
+    border-color: rgba(31, 122, 77, 0.28);
+    color: #167245;
+    background: rgba(31, 122, 77, 0.12);
+}
+
+.role-student,
+span.role-student {
+    border-color: rgba(107, 114, 128, 0.26);
+    color: #4b5563;
+    background: rgba(107, 114, 128, 0.1);
+}
+
 .profile-dropdown-user {
     display: grid;
     grid-template-columns: 34px minmax(0, 1fr);
@@ -2756,6 +2800,7 @@ footer p {
 .dark-mode .school-mark,
 .dark-mode .guest-badge,
 .dark-mode .verified-badge,
+.dark-mode .role-badge,
 .dark-mode .footer-grid div,
 .dark-mode .tech-badges span {
     background: rgba(134, 161, 255, 0.1);
@@ -2784,6 +2829,30 @@ footer p {
 .dark-mode .secondary-auth-link {
     background: rgba(134, 161, 255, 0.1);
     border-color: rgba(134, 161, 255, 0.18);
+}
+
+.dark-mode .role-developer,
+.dark-mode span.role-developer {
+    color: #b9c8ff;
+    background: rgba(134, 161, 255, 0.16);
+}
+
+.dark-mode .role-technical-support,
+.dark-mode span.role-technical-support {
+    color: #dbc2ff;
+    background: rgba(163, 104, 255, 0.16);
+}
+
+.dark-mode .role-qa-tester,
+.dark-mode span.role-qa-tester {
+    color: #a8efc4;
+    background: rgba(31, 122, 77, 0.2);
+}
+
+.dark-mode .role-student,
+.dark-mode span.role-student {
+    color: #d7dce6;
+    background: rgba(184, 192, 207, 0.12);
 }
 
 .dark-mode .profile-menu-button:hover,
