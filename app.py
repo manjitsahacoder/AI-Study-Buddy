@@ -22,21 +22,23 @@ import google.generativeai as genai
 from html import escape
 from io import BytesIO
 from pathlib import Path
-from contextlib import closing
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from functools import lru_cache, wraps
 from difflib import SequenceMatcher
 from werkzeug.security import check_password_hash, generate_password_hash
 from urllib.parse import quote
+from sqlalchemy import and_, func, or_
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 import json
 import markdown
 import os
 import re
-import sqlite3
 from dotenv import load_dotenv
 
 load_dotenv()
 from config import GEMINI_API_KEY, GEMINI_API_KEY_2
+from database import configure_database, create_database_tables, db, rollback_database_session
+from models import DownloadedFile, LearningHistory, LearningSession, QuizHistory, User
 
 
 app = Flask(__name__)
@@ -47,23 +49,20 @@ app.config.update(
     SESSION_COOKIE_SAMESITE="Lax",
     SESSION_REFRESH_EACH_REQUEST=True,
 )
-
-
-def default_quiz_history_db():
-    render_disk_path = os.environ.get("RENDER_DISK_PATH")
-    if render_disk_path:
-        return str(Path(render_disk_path) / "quiz_history.db")
-    return str(Path(app.root_path) / "quiz_history.db")
-
-
-app.config["QUIZ_HISTORY_DB"] = os.environ.get(
-    "QUIZ_HISTORY_DB",
-    default_quiz_history_db(),
-)
+configure_database(app)
 latest_report = {}
 genai.configure(api_key=GEMINI_API_KEY)
 
 model = genai.GenerativeModel("gemini-2.5-flash")
+
+
+@app.errorhandler(SQLAlchemyError)
+def handle_database_error(error):
+    rollback_database_session(error)
+    return (
+        "The database is temporarily unavailable. Please try again in a moment.",
+        503,
+    )
 
 
 ROLE_DEFINITIONS = {
@@ -139,72 +138,17 @@ def generate_content_with_fallback(prompt):
         raise last_error
 
 
-def get_db_connection():
-    db_path = Path(app.config["QUIZ_HISTORY_DB"])
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(db_path)
-    connection.row_factory = sqlite3.Row
-    return connection
-
-
 def init_quiz_history_db():
-    with closing(get_db_connection()) as connection:
-        connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS quiz_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                student_class TEXT NOT NULL,
-                subject TEXT NOT NULL,
-                topic TEXT NOT NULL,
-                score TEXT NOT NULL,
-                grade TEXT NOT NULL,
-                questions_json TEXT NOT NULL,
-                answers_json TEXT NOT NULL,
-                report_text TEXT NOT NULL,
-                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-            )
-            """
-        )
-        existing_columns = {
-            row["name"]
-            for row in connection.execute("PRAGMA table_info(quiz_history)").fetchall()
-        }
-        if "user_id" not in existing_columns:
-            connection.execute("ALTER TABLE quiz_history ADD COLUMN user_id INTEGER")
-        connection.commit()
+    create_database_tables()
 
 
 def init_users_db():
-    with closing(get_db_connection()) as connection:
-        connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                full_name TEXT NOT NULL,
-                username TEXT NOT NULL UNIQUE,
-                email TEXT NOT NULL UNIQUE,
-                student_class TEXT NOT NULL,
-                role TEXT NOT NULL DEFAULT 'student',
-                password_hash TEXT NOT NULL,
-                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-            )
-            """
-        )
-        existing_columns = {
-            row["name"]
-            for row in connection.execute("PRAGMA table_info(users)").fetchall()
-        }
-        if "role" not in existing_columns:
-            connection.execute("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'student'")
-        connection.execute(
-            """
-            UPDATE users
-            SET role = 'student'
-            WHERE role IS NULL OR role = ''
-            """
-        )
-        connection.commit()
+    create_database_tables()
+    User.query.filter(or_(User.role.is_(None), User.role == "")).update(
+        {"role": "student"},
+        synchronize_session=False,
+    )
+    db.session.commit()
 
 
 def normalize_account_name(name):
@@ -227,79 +171,19 @@ def role_details(role):
 
 def apply_predefined_roles():
     init_users_db()
-    with closing(get_db_connection()) as connection:
-        rows = connection.execute(
-            """
-            SELECT id, full_name, username, role
-            FROM users
-            """
-        ).fetchall()
-        for row in rows:
-            expected_role = resolve_account_role(row["full_name"], row["username"])
-            if row["role"] != expected_role:
-                connection.execute(
-                    """
-                    UPDATE users
-                    SET role = ?
-                    WHERE id = ?
-                    """,
-                    (expected_role, row["id"]),
-                )
-        connection.commit()
+    for user in User.query.all():
+        expected_role = resolve_account_role(user.full_name, user.username)
+        if user.role != expected_role:
+            user.role = expected_role
+    db.session.commit()
 
 
 def init_account_activity_db():
-    with closing(get_db_connection()) as connection:
-        connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS learning_sessions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                name TEXT NOT NULL,
-                student_class TEXT NOT NULL,
-                subject TEXT NOT NULL,
-                book_name TEXT,
-                topic TEXT NOT NULL,
-                notes TEXT NOT NULL,
-                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-            )
-            """
-        )
-        connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS downloaded_files (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                file_type TEXT NOT NULL,
-                subject TEXT,
-                topic TEXT NOT NULL,
-                score TEXT,
-                grade TEXT,
-                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-            )
-            """
-        )
-        connection.commit()
+    create_database_tables()
 
 
 def init_learning_history_db():
-    with closing(get_db_connection()) as connection:
-        connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS learning_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                subject TEXT NOT NULL,
-                book_name TEXT,
-                topic TEXT NOT NULL,
-                notes TEXT NOT NULL,
-                diagram_data TEXT NOT NULL,
-                quiz_questions TEXT NOT NULL,
-                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-            )
-            """
-        )
-        connection.commit()
+    create_database_tables()
 
 
 def get_user_by_id(user_id):
@@ -308,72 +192,43 @@ def get_user_by_id(user_id):
 
     init_users_db()
     apply_predefined_roles()
-    with closing(get_db_connection()) as connection:
-        return connection.execute(
-            """
-            SELECT id, full_name, username, email, student_class, role, created_at
-            FROM users
-            WHERE id = ?
-            """,
-            (user_id,),
-        ).fetchone()
+    return db.session.get(User, user_id)
 
 
 def get_user_by_username_or_email(identifier):
     init_users_db()
     apply_predefined_roles()
     normalized_identifier = identifier.strip().lower()
-    with closing(get_db_connection()) as connection:
-        return connection.execute(
-            """
-            SELECT *
-            FROM users
-            WHERE lower(username) = ? OR lower(email) = ?
-            """,
-            (normalized_identifier, normalized_identifier),
-        ).fetchone()
+    return User.query.filter(
+        or_(
+            func.lower(User.username) == normalized_identifier,
+            func.lower(User.email) == normalized_identifier,
+        )
+    ).first()
 
 
 def create_user(full_name, username, email, student_class, password):
     init_users_db()
     role = resolve_account_role(full_name, username)
-    with closing(get_db_connection()) as connection:
-        connection.execute(
-            """
-            INSERT INTO users (
-                full_name,
-                username,
-                email,
-                student_class,
-                role,
-                password_hash
-            )
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (
-                full_name,
-                username,
-                email.lower(),
-                student_class,
-                role,
-                generate_password_hash(password),
-            ),
-        )
-        connection.commit()
+    user = User(
+        full_name=full_name,
+        username=username,
+        email=email.lower(),
+        student_class=student_class,
+        role=role,
+        password_hash=generate_password_hash(password),
+    )
+    db.session.add(user)
+    db.session.commit()
+    return user
 
 
 def update_user_password(user_id, password):
     init_users_db()
-    with closing(get_db_connection()) as connection:
-        connection.execute(
-            """
-            UPDATE users
-            SET password_hash = ?
-            WHERE id = ?
-            """,
-            (generate_password_hash(password), user_id),
-        )
-        connection.commit()
+    user = db.session.get(User, user_id)
+    if user:
+        user.password_hash = generate_password_hash(password)
+        db.session.commit()
 
 
 def validate_new_password(password, confirm_password):
@@ -514,69 +369,45 @@ def validate_registration_form(form):
 
 def save_learning_session(user_id, name, student_class, subject, book_name, topic, notes):
     init_account_activity_db()
-    with closing(get_db_connection()) as connection:
-        connection.execute(
-            """
-            INSERT INTO learning_sessions (
-                user_id,
-                name,
-                student_class,
-                subject,
-                book_name,
-                topic,
-                notes
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (user_id, name, student_class, subject, book_name, topic, notes),
-        )
-        connection.commit()
+    learning_session = LearningSession(
+        user_id=user_id,
+        name=name,
+        student_class=student_class,
+        subject=subject,
+        book_name=book_name,
+        topic=topic,
+        notes=notes,
+    )
+    db.session.add(learning_session)
+    db.session.commit()
+    return learning_session.id
 
 
 def save_learning_history(user_id, subject, book_name, topic, notes, diagram_data, quiz_questions):
     init_learning_history_db()
-    with closing(get_db_connection()) as connection:
-        duplicate = connection.execute(
-            """
-            SELECT id
-            FROM learning_history
-            WHERE user_id = ?
-                AND lower(subject) = lower(?)
-                AND lower(COALESCE(book_name, '')) = lower(?)
-                AND lower(topic) = lower(?)
-                AND created_at >= datetime('now', '-5 minutes')
-            LIMIT 1
-            """,
-            (user_id, subject, book_name or "", topic),
-        ).fetchone()
-        if duplicate:
-            return duplicate["id"]
+    duplicate_cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
+    duplicate = LearningHistory.query.filter(
+        LearningHistory.user_id == user_id,
+        func.lower(LearningHistory.subject) == subject.lower(),
+        func.lower(func.coalesce(LearningHistory.book_name, "")) == (book_name or "").lower(),
+        func.lower(LearningHistory.topic) == topic.lower(),
+        LearningHistory.created_at >= duplicate_cutoff,
+    ).first()
+    if duplicate:
+        return duplicate.id
 
-        cursor = connection.execute(
-            """
-            INSERT INTO learning_history (
-                user_id,
-                subject,
-                book_name,
-                topic,
-                notes,
-                diagram_data,
-                quiz_questions
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                user_id,
-                subject,
-                book_name,
-                topic,
-                notes,
-                json.dumps(diagram_data),
-                json.dumps(quiz_questions),
-            ),
-        )
-        connection.commit()
-        return cursor.lastrowid
+    lesson = LearningHistory(
+        user_id=user_id,
+        subject=subject,
+        book_name=book_name,
+        topic=topic,
+        notes=notes,
+        diagram_data=json.dumps(diagram_data),
+        quiz_questions=json.dumps(quiz_questions),
+    )
+    db.session.add(lesson)
+    db.session.commit()
+    return lesson.id
 
 
 LEARNING_HISTORY_FILTERS = [
@@ -602,100 +433,58 @@ def subject_filter_pattern(filter_value):
 
 def get_learning_history_entries(user_id, search="", subject_filter="all", sort_order="newest"):
     init_learning_history_db()
-    clauses = ["user_id = ?"]
-    parameters = [user_id]
+    query = LearningHistory.query.filter(LearningHistory.user_id == user_id)
     search_text = search.strip().lower()
 
     if search_text:
-        clauses.append(
-            """
-            (
-                lower(subject) LIKE ?
-                OR lower(COALESCE(book_name, '')) LIKE ?
-                OR lower(topic) LIKE ?
-            )
-            """
-        )
         like_value = f"%{search_text}%"
-        parameters.extend([like_value, like_value, like_value])
+        query = query.filter(
+            or_(
+                func.lower(LearningHistory.subject).like(like_value),
+                func.lower(func.coalesce(LearningHistory.book_name, "")).like(like_value),
+                func.lower(LearningHistory.topic).like(like_value),
+            )
+        )
 
     pattern = subject_filter_pattern(subject_filter)
     if pattern:
-        clauses.append("lower(subject) LIKE ?")
-        parameters.append(pattern)
+        query = query.filter(func.lower(LearningHistory.subject).like(pattern))
     elif subject_filter == "others":
-        clauses.append(
-            """
-            lower(subject) NOT LIKE ?
-            AND lower(subject) NOT LIKE ?
-            AND lower(subject) NOT LIKE ?
-            AND lower(subject) NOT LIKE ?
-            AND lower(subject) NOT LIKE ?
-            """
+        query = query.filter(
+            and_(
+                ~func.lower(LearningHistory.subject).like("%science%"),
+                ~func.lower(LearningHistory.subject).like("%math%"),
+                ~func.lower(LearningHistory.subject).like("%english%"),
+                ~func.lower(LearningHistory.subject).like("%social%"),
+                ~func.lower(LearningHistory.subject).like("%computer%"),
+            )
         )
-        parameters.extend(["%science%", "%math%", "%english%", "%social%", "%computer%"])
 
     if sort_order == "oldest":
-        order_clause = "datetime(created_at) ASC, id ASC"
+        query = query.order_by(LearningHistory.created_at.asc(), LearningHistory.id.asc())
     elif sort_order == "alphabetical":
-        order_clause = "lower(topic) ASC, lower(subject) ASC, datetime(created_at) DESC, id DESC"
+        query = query.order_by(
+            func.lower(LearningHistory.topic).asc(),
+            func.lower(LearningHistory.subject).asc(),
+            LearningHistory.created_at.desc(),
+            LearningHistory.id.desc(),
+        )
     else:
-        order_clause = "datetime(created_at) DESC, id DESC"
-
-    with closing(get_db_connection()) as connection:
-        return connection.execute(
-            f"""
-            SELECT
-                id,
-                user_id,
-                subject,
-                book_name,
-                topic,
-                notes,
-                diagram_data,
-                quiz_questions,
-                created_at
-            FROM learning_history
-            WHERE {" AND ".join(clauses)}
-            ORDER BY {order_clause}
-            """,
-            parameters,
-        ).fetchall()
+        query = query.order_by(LearningHistory.created_at.desc(), LearningHistory.id.desc())
+    return query.all()
 
 
 def get_learning_history_entry(entry_id, user_id):
     init_learning_history_db()
-    with closing(get_db_connection()) as connection:
-        return connection.execute(
-            """
-            SELECT
-                id,
-                user_id,
-                subject,
-                book_name,
-                topic,
-                notes,
-                diagram_data,
-                quiz_questions,
-                created_at
-            FROM learning_history
-            WHERE id = ? AND user_id = ?
-            """,
-            (entry_id, user_id),
-        ).fetchone()
+    return LearningHistory.query.filter_by(id=entry_id, user_id=user_id).first()
 
 
 def delete_learning_history_entry(entry_id, user_id):
     init_learning_history_db()
-    with closing(get_db_connection()) as connection:
-        connection.execute(
-            """
-            DELETE FROM learning_history
-            WHERE id = ? AND user_id = ?
-            """,
-            (entry_id, user_id),
-        )
-        connection.commit()
+    lesson = LearningHistory.query.filter_by(id=entry_id, user_id=user_id).first()
+    if lesson:
+        db.session.delete(lesson)
+        db.session.commit()
 
 
 def decode_json_list(value):
@@ -717,82 +506,44 @@ def decode_diagram_payload(value, subject="", topic=""):
 
 def save_downloaded_file(user_id, file_type, subject, topic, score="", grade=""):
     init_account_activity_db()
-    with closing(get_db_connection()) as connection:
-        connection.execute(
-            """
-            INSERT INTO downloaded_files (
-                user_id,
-                file_type,
-                subject,
-                topic,
-                score,
-                grade
-            )
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            (user_id, file_type, subject, topic, score, grade),
-        )
-        connection.commit()
+    downloaded_file = DownloadedFile(
+        user_id=user_id,
+        file_type=file_type,
+        subject=subject,
+        topic=topic,
+        score=score,
+        grade=grade,
+    )
+    db.session.add(downloaded_file)
+    db.session.commit()
+    return downloaded_file.id
 
 
 def save_quiz_history(name, student_class, subject, topic, score, grade, questions, answers, report_text, user_id=None):
     init_quiz_history_db()
-    with closing(get_db_connection()) as connection:
-        connection.execute(
-            """
-            INSERT INTO quiz_history (
-                user_id,
-                name,
-                student_class,
-                subject,
-                topic,
-                score,
-                grade,
-                questions_json,
-                answers_json,
-                report_text
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                user_id,
-                name,
-                student_class,
-                subject,
-                topic,
-                score,
-                grade,
-                json.dumps(questions),
-                json.dumps(answers),
-                report_text,
-            ),
-        )
-        connection.commit()
+    history = QuizHistory(
+        user_id=user_id,
+        name=name,
+        student_class=student_class,
+        subject=subject,
+        topic=topic,
+        score=score,
+        grade=grade,
+        questions_json=json.dumps(questions),
+        answers_json=json.dumps(answers),
+        report_text=report_text,
+    )
+    db.session.add(history)
+    db.session.commit()
+    return history.id
 
 
 def get_quiz_history(limit=50, user_id=None):
     init_quiz_history_db()
-    where_clause = "WHERE user_id = ?" if user_id else ""
-    parameters = (user_id, limit) if user_id else (limit,)
-    with closing(get_db_connection()) as connection:
-        return connection.execute(
-            f"""
-            SELECT
-                id,
-                name,
-                student_class,
-                subject,
-                topic,
-                score,
-                grade,
-                created_at
-            FROM quiz_history
-            {where_clause}
-            ORDER BY datetime(created_at) DESC, id DESC
-            LIMIT ?
-            """,
-            parameters,
-        ).fetchall()
+    query = QuizHistory.query
+    if user_id:
+        query = query.filter(QuizHistory.user_id == user_id)
+    return query.order_by(QuizHistory.created_at.desc(), QuizHistory.id.desc()).limit(limit).all()
 
 
 def score_to_number(score):
@@ -1063,43 +814,34 @@ def get_recent_learning_activity(user_id, limit=5):
     init_quiz_history_db()
     init_account_activity_db()
     init_learning_history_db()
-    with closing(get_db_connection()) as connection:
-        return connection.execute(
-            """
-            SELECT
-                subject,
-                topic,
-                'Not attempted' AS score,
-                created_at
-            FROM learning_history
-            WHERE user_id = ?
-            ORDER BY datetime(created_at) DESC, id DESC
-            LIMIT ?
-            """,
-            (user_id, limit),
-        ).fetchall()
+    lessons = (
+        LearningHistory.query.filter_by(user_id=user_id)
+        .order_by(LearningHistory.created_at.desc(), LearningHistory.id.desc())
+        .limit(limit)
+        .all()
+    )
+    for lesson in lessons:
+        lesson.score = "Not attempted"
+    return lessons
 
 
 def calculate_study_streak(activity_dates):
-    normalized_dates = sorted(
-        {
-            date_text[:10]
-            for date_text in activity_dates
-            if date_text
-        },
-        reverse=True,
-    )
+    normalized_dates = []
+    for date_value in activity_dates:
+        if not date_value:
+            continue
+        if isinstance(date_value, datetime):
+            normalized_dates.append(date_value.date())
+        else:
+            normalized_dates.append(datetime.fromisoformat(str(date_value)[:10]).date())
+    normalized_dates = sorted(set(normalized_dates), reverse=True)
     if not normalized_dates:
         return 0
 
     streak = 1
     current_date = normalized_dates[0]
     for next_date in normalized_dates[1:]:
-        with closing(get_db_connection()) as connection:
-            day_difference = connection.execute(
-                "SELECT julianday(?) - julianday(?)",
-                (current_date, next_date),
-            ).fetchone()[0]
+        day_difference = (current_date - next_date).days
         if day_difference == 1:
             streak += 1
             current_date = next_date
@@ -1113,31 +855,9 @@ def get_dashboard_stats(user_id):
     init_quiz_history_db()
     init_account_activity_db()
     init_learning_history_db()
-    with closing(get_db_connection()) as connection:
-        quiz_rows = connection.execute(
-            """
-            SELECT topic, score, created_at
-            FROM quiz_history
-            WHERE user_id = ?
-            """,
-            (user_id,),
-        ).fetchall()
-        lesson_rows = connection.execute(
-            """
-            SELECT topic, created_at
-            FROM learning_history
-            WHERE user_id = ?
-            """,
-            (user_id,),
-        ).fetchall()
-        downloaded_count = connection.execute(
-            """
-            SELECT COUNT(*) AS total
-            FROM downloaded_files
-            WHERE user_id = ?
-            """,
-            (user_id,),
-        ).fetchone()["total"]
+    quiz_rows = QuizHistory.query.filter_by(user_id=user_id).all()
+    lesson_rows = LearningHistory.query.filter_by(user_id=user_id).all()
+    downloaded_count = DownloadedFile.query.filter_by(user_id=user_id).count()
 
     scores = [
         numeric_score
@@ -1167,23 +887,18 @@ def get_dashboard_stats(user_id):
     }
 
 
-def count_table_rows(connection, table_name):
-    return connection.execute(f"SELECT COUNT(*) AS total FROM {table_name}").fetchone()["total"]
-
-
 def get_developer_panel_stats():
     init_users_db()
     init_quiz_history_db()
     init_account_activity_db()
     init_learning_history_db()
-    with closing(get_db_connection()) as connection:
-        table_counts = {
-            "users": count_table_rows(connection, "users"),
-            "learning_history": count_table_rows(connection, "learning_history"),
-            "learning_sessions": count_table_rows(connection, "learning_sessions"),
-            "quiz_history": count_table_rows(connection, "quiz_history"),
-            "downloaded_files": count_table_rows(connection, "downloaded_files"),
-        }
+    table_counts = {
+        "users": User.query.count(),
+        "learning_history": LearningHistory.query.count(),
+        "learning_sessions": LearningSession.query.count(),
+        "quiz_history": QuizHistory.query.count(),
+        "downloaded_files": DownloadedFile.query.count(),
+    }
 
     return {
         "total_users": table_counts["users"],
@@ -2762,7 +2477,8 @@ def register():
                 form_data["student_class"],
                 form_data["password"],
             )
-        except sqlite3.IntegrityError:
+        except IntegrityError:
+            db.session.rollback()
             flash("Username or email is already registered.", "error")
             return render_template("register.html", form_data=form_data), 400
 

@@ -1,11 +1,16 @@
 import os
 import json
-import sqlite3
 import tempfile
 import unittest
 from unittest.mock import patch
 
+TEST_DB_FD, TEST_DB_PATH = tempfile.mkstemp(suffix=".db")
+os.close(TEST_DB_FD)
+os.environ["QUIZ_HISTORY_DB"] = TEST_DB_PATH
+
 import app as app_module
+from database import db
+from models import DownloadedFile, LearningHistory, LearningSession, QuizHistory, User
 
 
 class MockResponse:
@@ -23,10 +28,11 @@ class MockModel:
 
 class RouteTests(unittest.TestCase):
     def setUp(self):
-        db_fd, self.db_path = tempfile.mkstemp()
-        os.close(db_fd)
         app_module.app.config.update(TESTING=True)
-        app_module.app.config["QUIZ_HISTORY_DB"] = self.db_path
+        with app_module.app.app_context():
+            db.session.remove()
+            db.drop_all()
+            db.create_all()
         app_module.latest_report = {}
         self.client = app_module.app.test_client()
         self.questions = [
@@ -53,8 +59,9 @@ class RouteTests(unittest.TestCase):
         return payload
 
     def tearDown(self):
-        if os.path.exists(self.db_path):
-            os.remove(self.db_path)
+        with app_module.app.app_context():
+            db.session.remove()
+            db.drop_all()
 
     def answer_payload(self):
         payload = self.quiz_payload()
@@ -427,19 +434,14 @@ Q5. What is question five?
         self.assertIn('name="evaluation_json"', page)
         self.assertIn("Clear answers", page)
 
-        connection = sqlite3.connect(self.db_path)
-        try:
-            row = connection.execute(
-                """
-                SELECT name, student_class, subject, topic, score, grade, report_text
-                FROM quiz_history
-                """
-            ).fetchone()
-        finally:
-            connection.close()
+        with app_module.app.app_context():
+            row = QuizHistory.query.first()
 
-        self.assertEqual(row[:6], ("Asha", "8", "Biology", "Plants", "7/10", "B+"))
-        saved_report = json.loads(row[6])
+        self.assertEqual(
+            (row.name, row.student_class, row.subject, row.topic, row.score, row.grade),
+            ("Asha", "8", "Biology", "Plants", "7/10", "B+"),
+        )
+        saved_report = json.loads(row.report_text)
         self.assertEqual(saved_report["summary"]["correct_answers"], 3)
         self.assertEqual(saved_report["questions"][1]["status"], "partial")
 
@@ -462,19 +464,10 @@ Grade: A
         response = self.client.post("/submit_answers", data=self.answer_payload())
 
         self.assertEqual(response.status_code, 200)
-        connection = sqlite3.connect(self.db_path)
-        try:
-            table_exists = connection.execute(
-                """
-                SELECT name
-                FROM sqlite_master
-                WHERE type = 'table' AND name = 'quiz_history'
-                """
-            ).fetchone()
-        finally:
-            connection.close()
+        with app_module.app.app_context():
+            saved_count = QuizHistory.query.count()
 
-        self.assertIsNone(table_exists)
+        self.assertEqual(saved_count, 0)
 
     def test_history_requires_login(self):
         response = self.client.get("/history")
@@ -519,26 +512,15 @@ Grade: A
         response = self.register_user()
 
         self.assertEqual(response.status_code, 302)
-        connection = sqlite3.connect(self.db_path)
-        connection.row_factory = sqlite3.Row
-        try:
-            row = connection.execute(
-                """
-                SELECT full_name, username, email, student_class, role, password_hash
-                FROM users
-                WHERE username = ?
-                """,
-                ("asha",),
-            ).fetchone()
-        finally:
-            connection.close()
+        with app_module.app.app_context():
+            row = User.query.filter_by(username="asha").first()
 
-        self.assertEqual(row["full_name"], "Asha Student")
-        self.assertEqual(row["email"], "asha@example.com")
-        self.assertEqual(row["student_class"], "8")
-        self.assertEqual(row["role"], "student")
-        self.assertNotEqual(row["password_hash"], "password123")
-        self.assertTrue(app_module.check_password_hash(row["password_hash"], "password123"))
+        self.assertEqual(row.full_name, "Asha Student")
+        self.assertEqual(row.email, "asha@example.com")
+        self.assertEqual(row.student_class, "8")
+        self.assertEqual(row.role, "student")
+        self.assertNotEqual(row.password_hash, "password123")
+        self.assertTrue(app_module.check_password_hash(row.password_hash, "password123"))
 
         duplicate_response = self.register_user(email="different@example.com")
 
@@ -557,17 +539,10 @@ Grade: A
         response = self.register_user(extra_data={"role": "developer"})
 
         self.assertEqual(response.status_code, 302)
-        connection = sqlite3.connect(self.db_path)
-        connection.row_factory = sqlite3.Row
-        try:
-            row = connection.execute(
-                "SELECT role FROM users WHERE username = ?",
-                ("asha",),
-            ).fetchone()
-        finally:
-            connection.close()
+        with app_module.app.app_context():
+            row = User.query.filter_by(username="asha").first()
 
-        self.assertEqual(row["role"], "student")
+        self.assertEqual(row.role, "student")
 
     def test_predefined_accounts_receive_role_badges(self):
         special_accounts = [
@@ -580,17 +555,10 @@ Grade: A
         for full_name, username, email, expected_role, badge_text, badge_class in special_accounts:
             with self.subTest(username=username):
                 self.register_user(username=username, email=email, full_name=full_name)
-                connection = sqlite3.connect(self.db_path)
-                connection.row_factory = sqlite3.Row
-                try:
-                    row = connection.execute(
-                        "SELECT role FROM users WHERE username = ?",
-                        (username,),
-                    ).fetchone()
-                finally:
-                    connection.close()
+                with app_module.app.app_context():
+                    row = User.query.filter_by(username=username).first()
 
-                self.assertEqual(row["role"], expected_role)
+                self.assertEqual(row.role, expected_role)
 
                 self.client.get("/logout")
                 self.login_user(identifier=username)
@@ -613,17 +581,10 @@ Grade: A
             email="copycat@example.com",
         )
 
-        connection = sqlite3.connect(self.db_path)
-        connection.row_factory = sqlite3.Row
-        try:
-            row = connection.execute(
-                "SELECT role FROM users WHERE username = ?",
-                ("not_manjit",),
-            ).fetchone()
-        finally:
-            connection.close()
+        with app_module.app.app_context():
+            row = User.query.filter_by(username="not_manjit").first()
 
-        self.assertEqual(row["role"], "student")
+        self.assertEqual(row.role, "student")
 
         self.login_user(identifier="not_manjit")
         dashboard_response = self.client.get("/dashboard")
@@ -656,20 +617,21 @@ Grade: A
         self.register_user(full_name="Manjit Saha", username="manjit", email="manjit@example.com")
         self.login_user(identifier="manjit")
 
-        app_module.save_learning_history(1, "Science", "Book", "Plants", "Notes", "Diagram", ["Q1"])
-        app_module.save_quiz_history(
-            "Manjit Saha",
-            "8",
-            "Science",
-            "Plants",
-            "8/10",
-            "A",
-            ["Q1"],
-            ["A1"],
-            "{}",
-            user_id=1,
-        )
-        app_module.save_downloaded_file(1, "performance_report", "Science", "Plants", "8/10", "A")
+        with app_module.app.app_context():
+            app_module.save_learning_history(1, "Science", "Book", "Plants", "Notes", "Diagram", ["Q1"])
+            app_module.save_quiz_history(
+                "Manjit Saha",
+                "8",
+                "Science",
+                "Plants",
+                "8/10",
+                "A",
+                ["Q1"],
+                ["A1"],
+                "{}",
+                user_id=1,
+            )
+            app_module.save_downloaded_file(1, "performance_report", "Science", "Plants", "8/10", "A")
 
         developer_response = self.client.get("/developer")
         support_response = self.client.get("/support")
@@ -840,15 +802,8 @@ Grade: A
     def test_forgot_password_resets_hash_and_allows_new_login(self):
         self.register_user()
 
-        connection = sqlite3.connect(self.db_path)
-        connection.row_factory = sqlite3.Row
-        try:
-            old_hash = connection.execute(
-                "SELECT password_hash FROM users WHERE username = ?",
-                ("asha",),
-            ).fetchone()["password_hash"]
-        finally:
-            connection.close()
+        with app_module.app.app_context():
+            old_hash = User.query.filter_by(username="asha").first().password_hash
 
         self.client.post(
             "/forgot-password",
@@ -871,15 +826,8 @@ Grade: A
         page = response.get_data(as_text=True)
         self.assertIn("Your password has been reset successfully. Please log in with your new password.", page)
 
-        connection = sqlite3.connect(self.db_path)
-        connection.row_factory = sqlite3.Row
-        try:
-            new_hash = connection.execute(
-                "SELECT password_hash FROM users WHERE username = ?",
-                ("asha",),
-            ).fetchone()["password_hash"]
-        finally:
-            connection.close()
+        with app_module.app.app_context():
+            new_hash = User.query.filter_by(username="asha").first().password_hash
 
         self.assertNotEqual(old_hash, new_hash)
         self.assertFalse(app_module.check_password_hash(new_hash, "password123"))
@@ -971,36 +919,23 @@ Q5. What is question five?
         )
 
         self.assertEqual(response.status_code, 200)
-        connection = sqlite3.connect(self.db_path)
-        try:
-            row = connection.execute(
-                """
-                SELECT user_id, subject, topic
-                FROM learning_sessions
-                """
-            ).fetchone()
-        finally:
-            connection.close()
+        with app_module.app.app_context():
+            row = LearningSession.query.first()
 
-        self.assertEqual(row, (1, "Biology", "Plants"))
+        self.assertEqual((row.user_id, row.subject, row.topic), (1, "Biology", "Plants"))
 
-        connection = sqlite3.connect(self.db_path)
-        try:
-            history_row = connection.execute(
-                """
-                SELECT user_id, subject, book_name, topic, notes, diagram_data, quiz_questions
-                FROM learning_history
-                """
-            ).fetchone()
-        finally:
-            connection.close()
+        with app_module.app.app_context():
+            history_row = LearningHistory.query.first()
 
-        self.assertEqual(history_row[0:4], (1, "Biology", "", "Plants"))
-        self.assertIn("Plant Notes", history_row[4])
-        saved_diagram = json.loads(history_row[5])
+        self.assertEqual(
+            (history_row.user_id, history_row.subject, history_row.book_name, history_row.topic),
+            (1, "Biology", "", "Plants"),
+        )
+        self.assertIn("Plant Notes", history_row.notes)
+        saved_diagram = json.loads(history_row.diagram_data)
         self.assertEqual(saved_diagram["template_key"], "flower")
         self.assertTrue(saved_diagram["available"])
-        self.assertIn("What is question one?", history_row[6])
+        self.assertIn("What is question one?", history_row.quiz_questions)
 
         self.client.post(
             "/learn",
@@ -1011,11 +946,8 @@ Q5. What is question five?
                 "topic": "Plants",
             },
         )
-        connection = sqlite3.connect(self.db_path)
-        try:
-            saved_count = connection.execute("SELECT COUNT(*) FROM learning_history").fetchone()[0]
-        finally:
-            connection.close()
+        with app_module.app.app_context():
+            saved_count = LearningHistory.query.count()
 
         self.assertEqual(saved_count, 1)
 
@@ -1100,9 +1032,10 @@ Q5. What is question five?
         self.register_user()
         self.login_user()
 
-        app_module.save_learning_history(1, "Science", "NCERT", "Zebra Topic", "Notes", [], ["Q1"])
-        app_module.save_learning_history(1, "History", "Reference", "Ancient Cities", "Notes", [], ["Q1"])
-        app_module.save_learning_history(1, "Mathematics", "NCERT", "Algebra", "Notes", [], ["Q1"])
+        with app_module.app.app_context():
+            app_module.save_learning_history(1, "Science", "NCERT", "Zebra Topic", "Notes", [], ["Q1"])
+            app_module.save_learning_history(1, "History", "Reference", "Ancient Cities", "Notes", [], ["Q1"])
+            app_module.save_learning_history(1, "Mathematics", "NCERT", "Algebra", "Notes", [], ["Q1"])
 
         alphabetical_response = self.client.get("/learning-history?sort=alphabetical")
         alphabetical_page = alphabetical_response.get_data(as_text=True)
@@ -1208,18 +1141,13 @@ Q5. What is question five?
         )
 
         self.assertEqual(response.status_code, 200)
-        connection = sqlite3.connect(self.db_path)
-        try:
-            row = connection.execute(
-                """
-                SELECT user_id, file_type, subject, topic, score, grade
-                FROM downloaded_files
-                """
-            ).fetchone()
-        finally:
-            connection.close()
+        with app_module.app.app_context():
+            row = DownloadedFile.query.first()
 
-        self.assertEqual(row, (1, "performance_report", "Biology", "Plants", "8/10", "A"))
+        self.assertEqual(
+            (row.user_id, row.file_type, row.subject, row.topic, row.score, row.grade),
+            (1, "performance_report", "Biology", "Plants", "8/10", "A"),
+        )
 
     def test_profile_page_shows_account_and_future_sections(self):
         self.register_user()
@@ -1350,3 +1278,11 @@ Grade: A
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def tearDownModule():
+    with app_module.app.app_context():
+        db.session.remove()
+        db.engine.dispose()
+    if os.path.exists(TEST_DB_PATH):
+        os.remove(TEST_DB_PATH)

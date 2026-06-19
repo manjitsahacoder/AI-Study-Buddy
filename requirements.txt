@@ -1,8 +1,10 @@
 Flask
+Flask-SQLAlchemy
 google-generativeai
 gunicorn
 Markdown
 Pillow
+psycopg2-binary
 pypdf
 python-dotenv
 reportlab

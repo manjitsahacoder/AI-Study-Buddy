@@ -13,9 +13,12 @@ services:
         sync: false
       - key: SECRET_KEY
         generateValue: true
-      - key: RENDER_DISK_PATH
-        value: /var/data
-    disk:
-      name: ai-study-buddy-data
-      mountPath: /var/data
-      sizeGB: 1
+      - key: DATABASE_URL
+        fromDatabase:
+          name: ai-study-buddy-db
+          property: connectionString
+
+databases:
+  - name: ai-study-buddy-db
+    databaseName: ai_study_buddy
+    user: ai_study_buddy_user

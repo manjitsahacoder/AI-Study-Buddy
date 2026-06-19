@@ -12,10 +12,10 @@ GEMINI_API_KEY_2=your_backup_gemini_api_key
 Optional:
 
 ```text
-QUIZ_HISTORY_DB=/path/to/quiz_history.db
+DATABASE_URL=postgresql://user:password@host:5432/database
 ```
 
-If you deploy on Render with a persistent disk mounted at `/var/data`, the app will automatically store quiz history at `/var/data/quiz_history.db`.
+If `DATABASE_URL` is set, the app uses PostgreSQL through SQLAlchemy. If it is missing, the app falls back to local SQLite for development.
 
 ## Render Settings
 
@@ -25,3 +25,4 @@ If you deploy on Render with a persistent disk mounted at `/var/data`, the app w
 
 Add `GEMINI_API_KEY` in the Render dashboard before opening the live site.
 Add `GEMINI_API_KEY_2` if you want the app to retry with a backup key when the first key reaches quota or rate limits.
+For PostgreSQL setup, see `POSTGRES_SETUP.md`.
