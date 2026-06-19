@@ -23,6 +23,7 @@ from html import escape
 from io import BytesIO
 from pathlib import Path
 from contextlib import closing
+from datetime import timedelta
 from functools import lru_cache, wraps
 from difflib import SequenceMatcher
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -38,7 +39,13 @@ from config import GEMINI_API_KEY, GEMINI_API_KEY_2
 
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY", "ai-study-buddy-dev-secret-key")
+app.config.update(
+    SECRET_KEY=os.environ.get("SECRET_KEY", "ai-study-buddy-dev-secret-key"),
+    PERMANENT_SESSION_LIFETIME=timedelta(days=7),
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_REFRESH_EACH_REQUEST=True,
+)
 
 
 def default_quiz_history_db():
@@ -381,6 +388,17 @@ def validate_new_password(password, confirm_password):
 
 def current_user():
     return get_user_by_id(session.get("user_id"))
+
+
+def start_authenticated_session(account):
+    # Authenticated sessions must be permanent so a normal page refresh keeps
+    # Flask's signed session cookie valid until explicit logout or expiry.
+    session.permanent = True
+    session.pop("password_reset_user_id", None)
+    session["user_id"] = account["id"]
+    session["user_name"] = account["full_name"]
+    session["username"] = account["username"]
+    session["role"] = normalize_role(account["role"])
 
 
 @app.context_processor
@@ -2142,11 +2160,7 @@ def login():
             flash("Invalid username/email or password.", "error")
             return render_template("login.html", identifier=identifier), 401
 
-        session.clear()
-        session["user_id"] = account["id"]
-        session["user_name"] = account["full_name"]
-        session["username"] = account["username"]
-        session["role"] = normalize_role(account["role"])
+        start_authenticated_session(account)
 
         next_url = request.args.get("next", "")
         if next_url.startswith("/"):

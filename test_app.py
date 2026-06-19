@@ -691,6 +691,24 @@ Grade: A
         self.assertNotIn(">Login</a>", page)
         self.assertNotIn(">Register</a>", page)
 
+    def test_login_session_persists_across_page_refreshes(self):
+        self.register_user()
+        self.login_user()
+
+        with self.client.session_transaction() as browser_session:
+            self.assertTrue(browser_session.permanent)
+            self.assertEqual(browser_session["username"], "asha")
+
+        first_dashboard_response = self.client.get("/dashboard")
+        refreshed_dashboard_response = self.client.get("/dashboard")
+        refreshed_profile_response = self.client.get("/profile")
+
+        self.assertEqual(first_dashboard_response.status_code, 200)
+        self.assertEqual(refreshed_dashboard_response.status_code, 200)
+        self.assertEqual(refreshed_profile_response.status_code, 200)
+        self.assertIn("Welcome back, Asha Student", refreshed_dashboard_response.get_data(as_text=True))
+        self.assertIn("Username", refreshed_profile_response.get_data(as_text=True))
+
     def test_login_page_links_to_forgot_password(self):
         response = self.client.get("/login")
 
