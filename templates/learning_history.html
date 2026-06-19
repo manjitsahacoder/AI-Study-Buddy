@@ -34,6 +34,7 @@
         <div class="locked-modal-actions">
             <a class="button-link" href="{{ url_for('login', next=url_for('learning_history')) }}">Login</a>
             <a class="button-link secondary-link" href="{{ url_for('register') }}">Register</a>
+            <a class="button-link secondary-link" href="{{ url_for('home') }}">Continue as Guest</a>
         </div>
     </section>
     {% else %}
@@ -57,6 +58,7 @@
             <select id="sort" name="sort">
                 <option value="newest" {% if sort_order == 'newest' %}selected{% endif %}>Newest First</option>
                 <option value="oldest" {% if sort_order == 'oldest' %}selected{% endif %}>Oldest First</option>
+                <option value="alphabetical" {% if sort_order == 'alphabetical' %}selected{% endif %}>Alphabetically</option>
             </select>
         </div>
 
@@ -73,12 +75,14 @@
                     <h2>{{ lesson.topic }}</h2>
                     <p><strong>&#128218; Subject</strong> {{ lesson.subject }}</p>
                     <p><strong>&#128214; Book</strong> {{ lesson.book_name or 'N/A' }}</p>
+                    <p><strong>&#128221; Topic</strong> {{ lesson.topic }}</p>
                     <p><strong>&#128197; Date</strong> {{ lesson.created_at }}</p>
                 </div>
             </div>
             <div class="lesson-card-actions">
                 <a class="button-link" href="{{ url_for('view_learning_history', lesson_id=lesson.id) }}">&#128065; View</a>
                 <a class="button-link secondary-link" href="{{ url_for('download_learning_history_pdf', lesson_id=lesson.id) }}">&#128196; Download PDF</a>
+                <button class="button-link secondary-link favourite-placeholder" type="button" disabled title="Favourite notes will be added later">&#11088; Favourite</button>
                 <form action="{{ url_for('delete_learning_history', lesson_id=lesson.id) }}" method="POST" onsubmit="return confirm('Delete this saved lesson?');">
                     <button class="danger-link" type="submit">&#128465; Delete</button>
                 </form>

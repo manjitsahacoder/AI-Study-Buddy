@@ -37,6 +37,13 @@
 
     <div class="diagram-card">
         <h2>&#128202; Diagram</h2>
+        {% if diagram_steps %}
+        <div class="diagram-data-list" aria-label="Saved diagram data">
+            {% for step in diagram_steps %}
+            <span>{{ step }}</span>
+            {% endfor %}
+        </div>
+        {% endif %}
         <img class="diagram-image" src="{{ diagram_image }}" alt="{{ lesson.topic }} diagram">
     </div>
 
@@ -55,6 +62,7 @@
 
     <div class="result-actions">
         <a class="button-link" href="{{ url_for('download_learning_history_pdf', lesson_id=lesson.id) }}">&#128196; Download PDF</a>
+        <button class="button-link secondary-link favourite-placeholder" type="button" disabled title="Favourite notes will be added later">&#11088; Favourite</button>
         <form action="{{ url_for('delete_learning_history', lesson_id=lesson.id) }}" method="POST" onsubmit="return confirm('Delete this saved lesson?');">
             <button class="danger-link" type="submit">&#128465; Delete</button>
         </form>

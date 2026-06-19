@@ -930,6 +930,23 @@ Q5. What is question five?
         self.assertIn("Plant Notes", history_row[4])
         self.assertIn("What is question one?", history_row[6])
 
+        self.client.post(
+            "/learn",
+            data={
+                "name": "Asha",
+                "student_class": "8",
+                "subject": "Biology",
+                "topic": "Plants",
+            },
+        )
+        connection = sqlite3.connect(self.db_path)
+        try:
+            saved_count = connection.execute("SELECT COUNT(*) FROM learning_history").fetchone()[0]
+        finally:
+            connection.close()
+
+        self.assertEqual(saved_count, 1)
+
     def test_guest_learning_history_shows_locked_message(self):
         response = self.client.get("/learning-history")
 
@@ -938,6 +955,7 @@ Q5. What is question five?
         self.assertIn("Learning History is available only for registered students.", page)
         self.assertIn("Login", page)
         self.assertIn("Register", page)
+        self.assertIn("Continue as Guest", page)
 
     @patch.object(app_module.model, "generate_content")
     def test_learning_history_lists_and_views_saved_lesson(self, generate_content):
@@ -986,14 +1004,38 @@ Q5. What is question five?
         self.assertIn("Science", list_page)
         self.assertIn("NCERT", list_page)
         self.assertIn("Download PDF", list_page)
+        self.assertIn("Favourite", list_page)
+        self.assertIn("Alphabetically", list_page)
+        self.assertIn("Others", list_page)
 
         detail_response = self.client.get("/learning-history/1")
         self.assertEqual(detail_response.status_code, 200)
         detail_page = detail_response.get_data(as_text=True)
         self.assertIn("Plant Notes", detail_page)
         self.assertIn("Quick Revision", detail_page)
+        self.assertIn("Seed", detail_page)
+        self.assertIn("Roots", detail_page)
         self.assertIn("data:image/png;base64,", detail_page)
         self.assertIn("What is question one?", detail_page)
+
+    def test_learning_history_filters_and_sorts_saved_lessons(self):
+        self.register_user()
+        self.login_user()
+
+        app_module.save_learning_history(1, "Science", "NCERT", "Zebra Topic", "Notes", [], ["Q1"])
+        app_module.save_learning_history(1, "History", "Reference", "Ancient Cities", "Notes", [], ["Q1"])
+        app_module.save_learning_history(1, "Mathematics", "NCERT", "Algebra", "Notes", [], ["Q1"])
+
+        alphabetical_response = self.client.get("/learning-history?sort=alphabetical")
+        alphabetical_page = alphabetical_response.get_data(as_text=True)
+        self.assertLess(alphabetical_page.index("Algebra"), alphabetical_page.index("Ancient Cities"))
+        self.assertLess(alphabetical_page.index("Ancient Cities"), alphabetical_page.index("Zebra Topic"))
+
+        others_response = self.client.get("/learning-history?subject=others")
+        others_page = others_response.get_data(as_text=True)
+        self.assertIn("Ancient Cities", others_page)
+        self.assertNotIn("Zebra Topic", others_page)
+        self.assertNotIn("Algebra", others_page)
 
     @patch.object(app_module.model, "generate_content")
     def test_learning_history_download_and_delete(self, generate_content):

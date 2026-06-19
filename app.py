@@ -535,7 +535,23 @@ def save_learning_session(user_id, name, student_class, subject, book_name, topi
 def save_learning_history(user_id, subject, book_name, topic, notes, diagram_data, quiz_questions):
     init_learning_history_db()
     with closing(get_db_connection()) as connection:
-        connection.execute(
+        duplicate = connection.execute(
+            """
+            SELECT id
+            FROM learning_history
+            WHERE user_id = ?
+                AND lower(subject) = lower(?)
+                AND lower(COALESCE(book_name, '')) = lower(?)
+                AND lower(topic) = lower(?)
+                AND created_at >= datetime('now', '-5 minutes')
+            LIMIT 1
+            """,
+            (user_id, subject, book_name or "", topic),
+        ).fetchone()
+        if duplicate:
+            return duplicate["id"]
+
+        cursor = connection.execute(
             """
             INSERT INTO learning_history (
                 user_id,
@@ -559,6 +575,7 @@ def save_learning_history(user_id, subject, book_name, topic, notes, diagram_dat
             ),
         )
         connection.commit()
+        return cursor.lastrowid
 
 
 LEARNING_HISTORY_FILTERS = [
@@ -568,6 +585,7 @@ LEARNING_HISTORY_FILTERS = [
     ("english", "English"),
     ("social-science", "Social Science"),
     ("computer", "Computer"),
+    ("others", "Others"),
 ]
 
 
@@ -604,8 +622,25 @@ def get_learning_history_entries(user_id, search="", subject_filter="all", sort_
     if pattern:
         clauses.append("lower(subject) LIKE ?")
         parameters.append(pattern)
+    elif subject_filter == "others":
+        clauses.append(
+            """
+            lower(subject) NOT LIKE ?
+            AND lower(subject) NOT LIKE ?
+            AND lower(subject) NOT LIKE ?
+            AND lower(subject) NOT LIKE ?
+            AND lower(subject) NOT LIKE ?
+            """
+        )
+        parameters.extend(["%science%", "%math%", "%english%", "%social%", "%computer%"])
 
-    direction = "ASC" if sort_order == "oldest" else "DESC"
+    if sort_order == "oldest":
+        order_clause = "datetime(created_at) ASC, id ASC"
+    elif sort_order == "alphabetical":
+        order_clause = "lower(topic) ASC, lower(subject) ASC, datetime(created_at) DESC, id DESC"
+    else:
+        order_clause = "datetime(created_at) DESC, id DESC"
+
     with closing(get_db_connection()) as connection:
         return connection.execute(
             f"""
@@ -621,7 +656,7 @@ def get_learning_history_entries(user_id, search="", subject_filter="all", sort_
                 created_at
             FROM learning_history
             WHERE {" AND ".join(clauses)}
-            ORDER BY datetime(created_at) {direction}, id {direction}
+            ORDER BY {order_clause}
             """,
             parameters,
         ).fetchall()
@@ -2301,7 +2336,7 @@ def learning_history():
     sort_order = request.args.get("sort", "newest").strip().lower()
     if subject_filter not in {value for value, _ in LEARNING_HISTORY_FILTERS}:
         subject_filter = "all"
-    if sort_order not in {"newest", "oldest"}:
+    if sort_order not in {"newest", "oldest", "alphabetical"}:
         sort_order = "newest"
 
     return render_template(
@@ -2333,6 +2368,7 @@ def view_learning_history(lesson_id):
         "learning_history_detail.html",
         lesson=lesson,
         notes_html=markdown.markdown(lesson["notes"]),
+        diagram_steps=diagram_steps,
         diagram_image=create_diagram_image(lesson["topic"], diagram_steps),
         questions=questions,
     )
