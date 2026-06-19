@@ -86,6 +86,7 @@ ROLE_DEFINITIONS = {
 }
 
 SPECIAL_ROLE_ACCOUNTS = {
+    "manjit": "developer",
     "manjit saha": "developer",
     "gyanjyoti mahanta": "technical_support",
     "lakshya tuwani": "qa_tester",

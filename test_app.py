@@ -502,6 +502,7 @@ Grade: A
 
     def test_predefined_accounts_receive_role_badges(self):
         special_accounts = [
+            ("Manjit", "manjit_short", "manjit.short@example.com", "developer", "Developer", "role-developer"),
             ("Manjit Saha", "manjit", "manjit@example.com", "developer", "Developer", "role-developer"),
             ("Gyanjyoti Mahanta", "gyanjyoti", "gyanjyoti@example.com", "technical_support", "Technical Support", "role-technical-support"),
             ("Lakshya Tuwani", "lakshya", "lakshya@example.com", "qa_tester", "Testing &amp; Quality Assurance", "role-qa-tester"),
