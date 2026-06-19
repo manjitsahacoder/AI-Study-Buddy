@@ -27,6 +27,7 @@ from datetime import timedelta
 from functools import lru_cache, wraps
 from difflib import SequenceMatcher
 from werkzeug.security import check_password_hash, generate_password_hash
+from urllib.parse import quote
 import json
 import markdown
 import os
@@ -706,6 +707,14 @@ def decode_json_list(value):
     return decoded_value if isinstance(decoded_value, list) else []
 
 
+def decode_diagram_payload(value, subject="", topic=""):
+    try:
+        decoded_value = json.loads(value or "{}")
+    except json.JSONDecodeError:
+        decoded_value = {}
+    return build_diagram_payload(subject, topic, decoded_value)
+
+
 def save_downloaded_file(user_id, file_type, subject, topic, score="", grade=""):
     init_account_activity_db()
     with closing(get_db_connection()) as connection:
@@ -1269,6 +1278,300 @@ def recommended_topics():
     ]
 
 
+DIAGRAM_TEMPLATE_DEFINITIONS = [
+    {
+        "key": "plant_cell",
+        "category": "science",
+        "diagram_type": "cell",
+        "title": "Plant Cell",
+        "terms": ["plant cell"],
+        "labels": ["Cell wall", "Cell membrane", "Nucleus", "Chloroplast", "Vacuole"],
+    },
+    {
+        "key": "animal_cell",
+        "category": "science",
+        "diagram_type": "cell",
+        "title": "Animal Cell",
+        "terms": ["animal cell"],
+        "labels": ["Cell membrane", "Nucleus", "Cytoplasm", "Mitochondria", "Vacuole"],
+    },
+    {
+        "key": "human_heart",
+        "category": "science",
+        "diagram_type": "organ",
+        "title": "Human Heart",
+        "terms": ["human heart", "heart"],
+        "labels": ["Aorta", "Right atrium", "Left atrium", "Right ventricle", "Left ventricle"],
+    },
+    {
+        "key": "digestive_system",
+        "category": "science",
+        "diagram_type": "organ",
+        "title": "Digestive System",
+        "terms": ["digestive system", "digestion"],
+        "labels": ["Mouth", "Oesophagus", "Stomach", "Small intestine", "Large intestine"],
+    },
+    {
+        "key": "photosynthesis",
+        "category": "science",
+        "diagram_type": "process",
+        "title": "Photosynthesis",
+        "terms": ["photosynthesis"],
+        "labels": ["Sunlight", "Carbon dioxide", "Water", "Chlorophyll", "Glucose and oxygen"],
+    },
+    {
+        "key": "water_cycle",
+        "category": "science",
+        "diagram_type": "cycle",
+        "title": "Water Cycle",
+        "terms": ["water cycle", "rain cycle"],
+        "labels": ["Evaporation", "Condensation", "Clouds", "Precipitation", "Collection"],
+    },
+    {
+        "key": "food_chain",
+        "category": "science",
+        "diagram_type": "chain",
+        "title": "Food Chain",
+        "terms": ["food chain"],
+        "labels": ["Sun", "Producer", "Primary consumer", "Secondary consumer", "Decomposer"],
+    },
+    {
+        "key": "solar_system",
+        "category": "science",
+        "diagram_type": "orbit",
+        "title": "Solar System",
+        "terms": ["solar system", "planets"],
+        "labels": ["Sun", "Mercury", "Venus", "Earth", "Mars"],
+    },
+    {
+        "key": "electric_circuit",
+        "category": "science",
+        "diagram_type": "circuit",
+        "title": "Electric Circuit",
+        "terms": ["electric circuit", "circuit"],
+        "labels": ["Cell", "Switch", "Bulb", "Wire", "Current path"],
+    },
+    {
+        "key": "flower",
+        "category": "science",
+        "diagram_type": "flower",
+        "title": "Flower",
+        "terms": ["flower", "parts of flower", "plant", "plants"],
+        "labels": ["Petal", "Sepal", "Stamen", "Pistil", "Ovary"],
+    },
+    {
+        "key": "eye",
+        "category": "science",
+        "diagram_type": "organ",
+        "title": "Eye",
+        "terms": ["eye", "human eye"],
+        "labels": ["Cornea", "Lens", "Iris", "Retina", "Optic nerve"],
+    },
+    {
+        "key": "ear",
+        "category": "science",
+        "diagram_type": "organ",
+        "title": "Ear",
+        "terms": ["ear", "human ear"],
+        "labels": ["Outer ear", "Ear canal", "Eardrum", "Cochlea", "Auditory nerve"],
+    },
+    {
+        "key": "india_map",
+        "category": "geography",
+        "diagram_type": "map",
+        "title": "India Map",
+        "terms": ["india map", "map of india", "india"],
+        "labels": ["North India", "West India", "East India", "South India", "Indian Ocean"],
+    },
+    {
+        "key": "world_map",
+        "category": "geography",
+        "diagram_type": "map",
+        "title": "World Map",
+        "terms": ["world map", "continents", "map of world"],
+        "labels": ["North America", "South America", "Europe", "Africa", "Asia"],
+    },
+    {
+        "key": "layers_of_earth",
+        "category": "geography",
+        "diagram_type": "layers",
+        "title": "Layers of Earth",
+        "terms": ["layers of earth", "earth layers", "interior of earth"],
+        "labels": ["Crust", "Mantle", "Outer core", "Inner core"],
+    },
+    {
+        "key": "timeline",
+        "category": "history",
+        "diagram_type": "timeline",
+        "title": "Historical Timeline",
+        "terms": ["timeline", "chronology", "history timeline"],
+        "labels": ["Event 1", "Event 2", "Event 3", "Event 4", "Event 5"],
+    },
+    {
+        "key": "kingdom_chart",
+        "category": "history",
+        "diagram_type": "chart",
+        "title": "Kingdom Chart",
+        "terms": ["kingdom", "empire", "dynasty", "kingdom chart"],
+        "labels": ["Ruler", "Capital", "Administration", "Society", "Legacy"],
+    },
+    {
+        "key": "story_flowchart",
+        "category": "english",
+        "diagram_type": "flowchart",
+        "title": "Story Flowchart",
+        "terms": ["story", "plot", "story flowchart"],
+        "labels": ["Beginning", "Problem", "Events", "Climax", "Ending"],
+    },
+    {
+        "key": "character_map",
+        "category": "english",
+        "diagram_type": "relationship",
+        "title": "Character Relationship Map",
+        "terms": ["character", "characters", "relationship map"],
+        "labels": ["Main character", "Friend", "Family", "Conflict", "Resolution"],
+    },
+    {
+        "key": "geometry",
+        "category": "mathematics",
+        "diagram_type": "geometry",
+        "title": "Geometry",
+        "terms": ["geometry", "triangle", "circle", "angle", "polygon"],
+        "labels": ["Point", "Line", "Angle", "Side", "Shape"],
+    },
+    {
+        "key": "coordinate_plane",
+        "category": "mathematics",
+        "diagram_type": "coordinate",
+        "title": "Coordinate Plane",
+        "terms": ["coordinate plane", "coordinates", "cartesian"],
+        "labels": ["X-axis", "Y-axis", "Origin", "Quadrant I", "Point"],
+    },
+    {
+        "key": "number_line",
+        "category": "mathematics",
+        "diagram_type": "number_line",
+        "title": "Number Line",
+        "terms": ["number line", "integers"],
+        "labels": ["Negative numbers", "Zero", "Positive numbers", "Equal spacing"],
+    },
+    {
+        "key": "fractions",
+        "category": "mathematics",
+        "diagram_type": "fraction",
+        "title": "Fractions",
+        "terms": ["fraction", "fractions"],
+        "labels": ["Whole", "Equal parts", "Numerator", "Denominator"],
+    },
+]
+
+
+def normalize_diagram_text(value):
+    return re.sub(r"\s+", " ", str(value or "").strip().lower())
+
+
+def find_diagram_template(subject, topic):
+    haystack = normalize_diagram_text(f"{subject} {topic}")
+    subject_text = normalize_diagram_text(subject)
+
+    for template in DIAGRAM_TEMPLATE_DEFINITIONS:
+        if any(term in haystack for term in template["terms"]):
+            return template
+
+    category_defaults = {
+        "geography": "world_map",
+        "history": "timeline",
+        "english": "story_flowchart",
+        "mathematics": "geometry",
+        "math": "geometry",
+    }
+    for subject_term, template_key in category_defaults.items():
+        if subject_term in subject_text:
+            return next(item for item in DIAGRAM_TEMPLATE_DEFINITIONS if item["key"] == template_key)
+
+    return None
+
+
+def normalize_diagram_labels(labels):
+    if not isinstance(labels, list):
+        return []
+
+    normalized_labels = []
+    for label in labels:
+        if isinstance(label, dict):
+            text = label.get("text") or label.get("label") or label.get("name") or ""
+        else:
+            text = label
+        text = re.sub(r"\s+", " ", str(text).strip())
+        if text:
+            normalized_labels.append(text[:80])
+    return normalized_labels[:8]
+
+
+def normalize_diagram_payload(raw_diagram):
+    if isinstance(raw_diagram, dict):
+        return {
+            "diagram_type": str(raw_diagram.get("diagram_type", "")).strip(),
+            "title": str(raw_diagram.get("title", "")).strip(),
+            "labels": normalize_diagram_labels(raw_diagram.get("labels", [])),
+            "arrows": normalize_diagram_labels(raw_diagram.get("arrows", [])),
+            "notes": normalize_diagram_labels(raw_diagram.get("notes", [])),
+        }
+    if isinstance(raw_diagram, list):
+        return {
+            "diagram_type": "",
+            "title": "",
+            "labels": normalize_diagram_labels(raw_diagram),
+            "arrows": [],
+            "notes": [],
+        }
+    return {
+        "diagram_type": "",
+        "title": "",
+        "labels": [],
+        "arrows": [],
+        "notes": [],
+    }
+
+
+def build_diagram_payload(subject, topic, raw_diagram=None):
+    template = find_diagram_template(subject, topic)
+    if not template:
+        return {
+            "available": False,
+            "template_key": "none",
+            "diagram_type": "none",
+            "title": f"{topic} Diagram" if topic else "Diagram",
+            "labels": [],
+            "arrows": [],
+            "notes": ["No diagram available for this topic."],
+        }
+
+    normalized = normalize_diagram_payload(raw_diagram)
+    return {
+        "available": True,
+        "template_key": template["key"],
+        "diagram_type": normalized["diagram_type"] or template["diagram_type"],
+        "title": normalized["title"] or template["title"],
+        "labels": normalized["labels"] or template["labels"],
+        "arrows": normalized["arrows"],
+        "notes": normalized["notes"],
+    }
+
+
+def extract_json_object(text):
+    cleaned_text = re.sub(r"```(?:json)?", "", text, flags=re.IGNORECASE).replace("```", "")
+    start = cleaned_text.find("{")
+    end = cleaned_text.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        return None
+    try:
+        decoded = json.loads(cleaned_text[start:end + 1])
+    except json.JSONDecodeError:
+        return None
+    return decoded if isinstance(decoded, dict) else None
+
+
 def split_learning_content(response_text):
     marker = re.search(r"(?im)^\s*#{1,6}\s+Questions\s*$", response_text)
     if not marker:
@@ -1296,11 +1599,11 @@ def split_learning_content(response_text):
 
 def split_notes_and_diagram(notes_text):
     diagram_marker = re.search(
-        r"(?im)^\s*#{1,6}\s+Diagram(?:\s+(?:Data|Plan))?\s*$",
+        r"(?im)^\s*#{1,6}\s+Diagram(?:\s+(?:JSON|Data|Plan))?\s*$",
         notes_text,
     )
     if not diagram_marker:
-        return notes_text.strip(), []
+        return notes_text.strip(), {}
 
     next_heading = re.search(r"(?m)^\s*#{1,6}\s+", notes_text[diagram_marker.end():])
     diagram_end = (
@@ -1312,6 +1615,10 @@ def split_notes_and_diagram(notes_text):
     notes_without_diagram = (
         notes_text[:diagram_marker.start()] + notes_text[diagram_end:]
     ).strip()
+
+    diagram_json = extract_json_object(diagram_text)
+    if diagram_json:
+        return notes_without_diagram, diagram_json
 
     diagram_steps = []
     for line in diagram_text.splitlines():
@@ -1357,89 +1664,372 @@ def wrap_diagram_text(draw, text, font, max_width):
     return lines[:3]
 
 
-def create_diagram_image(topic, diagram_steps):
-    steps = diagram_steps or [topic, "Important idea", "Simple example"]
-    width = 1000
-    height = 240 + (len(steps) * 110)
-    image = Image.new("RGB", (width, height), "#f6f7fb")
-    draw = ImageDraw.Draw(image)
-    title_font = load_diagram_font(34, bold=True)
-    label_font = load_diagram_font(23, bold=True)
-    body_font = load_diagram_font(22)
+def svg_text(x, y, text, css_class="label", anchor="middle"):
+    return f'<text x="{x}" y="{y}" class="{css_class}" text-anchor="{anchor}">{escape(str(text))}</text>'
 
-    draw.rounded_rectangle((40, 35, width - 40, height - 35), radius=28, fill="white")
-    title = f"{topic} Diagram"
-    title_width = draw.textlength(title, font=title_font)
-    draw.text(((width - title_width) / 2, 70), title, fill="#4f46e5", font=title_font)
 
-    colors = ["#eef2ff", "#ecfeff", "#f0fdf4", "#fff7ed", "#fdf2f8"]
-    border_colors = ["#6366f1", "#0891b2", "#16a34a", "#f97316", "#db2777"]
-    x1, x2 = 180, width - 180
-    box_height = 76
-    start_y = 145
-    gap = 34
+def svg_label_box(x, y, label, color="#3157d5"):
+    return f"""
+    <g>
+        <rect x="{x}" y="{y}" width="180" height="40" rx="12" fill="#ffffff" stroke="{color}" stroke-width="2"/>
+        {svg_text(x + 90, y + 26, label, "small")}
+    </g>
+    """
 
-    for index, step in enumerate(steps):
-        y1 = start_y + index * (box_height + gap)
-        y2 = y1 + box_height
-        color_index = index % len(colors)
 
-        draw.ellipse(
-            (82, y1 + 9, 140, y1 + 67),
-            fill=border_colors[color_index],
-        )
-        number = str(index + 1)
-        number_width = draw.textlength(number, font=label_font)
-        draw.text(
-            (111 - number_width / 2, y1 + 23),
-            number,
-            fill="white",
-            font=label_font,
-        )
+def diagram_labels(payload, minimum=4):
+    labels = normalize_diagram_labels(payload.get("labels", []))
+    if len(labels) >= minimum:
+        return labels
+    template = next(
+        (item for item in DIAGRAM_TEMPLATE_DEFINITIONS if item["key"] == payload.get("template_key")),
+        None,
+    )
+    return (labels + (template["labels"] if template else []))[:max(minimum, len(labels))]
 
-        draw.rounded_rectangle(
-            (x1, y1, x2, y2),
-            radius=18,
-            fill=colors[color_index],
-            outline=border_colors[color_index],
-            width=3,
-        )
 
-        lines = wrap_diagram_text(draw, step, body_font, x2 - x1 - 70)
-        line_height = 26
-        text_y = y1 + (box_height - (len(lines) * line_height)) / 2 - 2
-        for line in lines:
-            line_width = draw.textlength(line, font=body_font)
-            draw.text(
-                (x1 + ((x2 - x1) - line_width) / 2, text_y),
-                line,
-                fill="#1f2937",
-                font=body_font,
-            )
-            text_y += line_height
+def wrap_svg_diagram(title, body, width=900, height=560):
+    return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}" role="img" aria-label="{escape(title)}">
+    <defs>
+        <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#3157d5"/>
+        </marker>
+        <style>
+            .title {{ font: 800 30px Arial, sans-serif; fill: #172033; }}
+            .label {{ font: 800 18px Arial, sans-serif; fill: #172033; }}
+            .small {{ font: 700 14px Arial, sans-serif; fill: #172033; }}
+            .muted {{ font: 700 13px Arial, sans-serif; fill: #667085; }}
+            .line {{ stroke: #3157d5; stroke-width: 3; fill: none; marker-end: url(#arrow); }}
+        </style>
+    </defs>
+    <rect width="{width}" height="{height}" rx="26" fill="#f8fbff"/>
+    <rect x="24" y="24" width="{width - 48}" height="{height - 48}" rx="22" fill="#ffffff" stroke="#d8e2ff"/>
+    {svg_text(width / 2, 64, title, "title")}
+    {body}
+</svg>"""
 
-        if index < len(steps) - 1:
-            arrow_x = width / 2
-            arrow_top = y2 + 5
-            arrow_bottom = y2 + gap - 7
-            draw.line(
-                (arrow_x, arrow_top, arrow_x, arrow_bottom),
-                fill="#6b7280",
-                width=4,
-            )
-            draw.polygon(
-                [
-                    (arrow_x - 11, arrow_bottom - 2),
-                    (arrow_x + 11, arrow_bottom - 2),
-                    (arrow_x, arrow_bottom + 14),
-                ],
-                fill="#6b7280",
-            )
 
-    output = BytesIO()
-    image.save(output, format="PNG")
-    encoded_image = b64encode(output.getvalue()).decode("ascii")
-    return f"data:image/png;base64,{encoded_image}"
+def render_unavailable_diagram(payload):
+    body = f"""
+    <g>
+        <rect x="210" y="190" width="480" height="150" rx="24" fill="#fff7ed" stroke="#f0b35f" stroke-width="3"/>
+        {svg_text(450, 250, "No diagram available", "title")}
+        {svg_text(450, 292, "No diagram available for this topic.", "label")}
+    </g>
+    """
+    return wrap_svg_diagram(payload.get("title", "Diagram"), body)
+
+
+def render_cell_diagram(payload):
+    labels = diagram_labels(payload, minimum=5)
+    plant = payload.get("template_key") == "plant_cell"
+    shape = (
+        '<rect x="250" y="145" width="400" height="275" rx="42" fill="#e8f7df" stroke="#2f9f67" stroke-width="8"/>'
+        if plant
+        else '<ellipse cx="450" cy="285" rx="220" ry="145" fill="#eef6ff" stroke="#3157d5" stroke-width="7"/>'
+    )
+    body = f"""
+    {shape}
+    <ellipse cx="450" cy="285" rx="58" ry="46" fill="#c7d2fe" stroke="#3157d5" stroke-width="4"/>
+    <ellipse cx="350" cy="235" rx="38" ry="22" fill="#bbf7d0" stroke="#2f9f67" stroke-width="3"/>
+    <ellipse cx="545" cy="330" rx="42" ry="24" fill="#fed7aa" stroke="#f97316" stroke-width="3"/>
+    <ellipse cx="450" cy="285" rx="16" ry="12" fill="#3157d5"/>
+    {svg_label_box(75, 140, labels[0], "#2f9f67")}
+    {svg_label_box(645, 140, labels[1], "#3157d5")}
+    {svg_label_box(360, 440, labels[2], "#3157d5")}
+    {svg_label_box(75, 345, labels[3], "#2f9f67")}
+    {svg_label_box(645, 345, labels[4], "#f97316")}
+    <path class="line" d="M255 175 L205 160"/>
+    <path class="line" d="M610 170 L645 160"/>
+    <path class="line" d="M450 332 L450 440"/>
+    <path class="line" d="M350 255 L205 365"/>
+    <path class="line" d="M545 350 L645 365"/>
+    """
+    return wrap_svg_diagram(payload.get("title", "Cell"), body)
+
+
+def render_cycle_diagram(payload):
+    labels = diagram_labels(payload, minimum=5)
+    positions = [(450, 130), (650, 245), (575, 425), (325, 425), (250, 245)]
+    colors = ["#fde68a", "#bfdbfe", "#bbf7d0", "#fecaca", "#ddd6fe"]
+    body = ""
+    for index, (x, y) in enumerate(positions):
+        body += f'<circle cx="{x}" cy="{y}" r="58" fill="{colors[index]}" stroke="#3157d5" stroke-width="3"/>'
+        body += svg_text(x, y + 6, labels[index], "small")
+    for start, end in zip(positions, positions[1:] + positions[:1]):
+        body += f'<path class="line" d="M{start[0] + 42},{start[1] + 18} C{(start[0] + end[0]) / 2},{(start[1] + end[1]) / 2} {end[0] - 42},{end[1] - 18} {end[0] - 48},{end[1] - 10}"/>'
+    body += svg_text(450, 285, payload.get("diagram_type", "cycle").title(), "label")
+    return wrap_svg_diagram(payload.get("title", "Cycle"), body)
+
+
+def render_chain_diagram(payload):
+    labels = diagram_labels(payload, minimum=5)
+    body = ""
+    x_values = [70, 235, 400, 565, 730]
+    for index, label in enumerate(labels[:5]):
+        body += f'<rect x="{x_values[index]}" y="230" width="120" height="92" rx="18" fill="#f0fdf4" stroke="#2f9f67" stroke-width="3"/>'
+        body += svg_text(x_values[index] + 60, 282, label, "small")
+        if index < 4:
+            body += f'<path class="line" d="M{x_values[index] + 128},276 L{x_values[index + 1] - 12},276"/>'
+    return wrap_svg_diagram(payload.get("title", "Chain"), body)
+
+
+def render_solar_diagram(payload):
+    labels = diagram_labels(payload, minimum=5)
+    body = '<circle cx="170" cy="285" r="58" fill="#fbbf24" stroke="#f59e0b" stroke-width="4"/>'
+    body += svg_text(170, 292, labels[0], "small")
+    orbit_radii = [110, 175, 240, 305]
+    colors = ["#94a3b8", "#fca5a5", "#60a5fa", "#fb7185"]
+    for index, radius in enumerate(orbit_radii):
+        body += f'<ellipse cx="170" cy="285" rx="{radius + 115}" ry="{radius * 0.48}" fill="none" stroke="#cbd5e1" stroke-width="2"/>'
+        x = 170 + radius + 115
+        y = 285
+        body += f'<circle cx="{x}" cy="{y}" r="{18 + index * 2}" fill="{colors[index]}" stroke="#334155" stroke-width="2"/>'
+        body += svg_text(x, y + 45, labels[index + 1], "small")
+    return wrap_svg_diagram(payload.get("title", "Solar System"), body)
+
+
+def render_circuit_diagram(payload):
+    labels = diagram_labels(payload, minimum=5)
+    body = """
+    <rect x="210" y="170" width="480" height="260" rx="22" fill="none" stroke="#172033" stroke-width="8"/>
+    <line x1="285" y1="170" x2="285" y2="110" stroke="#172033" stroke-width="6"/>
+    <line x1="325" y1="170" x2="325" y2="125" stroke="#172033" stroke-width="3"/>
+    <circle cx="585" cy="300" r="48" fill="#fde68a" stroke="#f59e0b" stroke-width="5"/>
+    <line x1="535" y1="210" x2="610" y2="170" stroke="#172033" stroke-width="6"/>
+    """
+    body += svg_label_box(95, 95, labels[0], "#172033")
+    body += svg_label_box(610, 105, labels[1], "#172033")
+    body += svg_label_box(610, 355, labels[2], "#f59e0b")
+    body += svg_label_box(95, 355, labels[3], "#172033")
+    body += svg_text(450, 490, labels[4], "label")
+    return wrap_svg_diagram(payload.get("title", "Electric Circuit"), body)
+
+
+def render_layers_diagram(payload):
+    labels = diagram_labels(payload, minimum=4)
+    colors = ["#92400e", "#f97316", "#facc15", "#fde68a"]
+    radii = [155, 115, 75, 38]
+    body = ""
+    for radius, color in zip(radii, colors):
+        body += f'<circle cx="450" cy="290" r="{radius}" fill="{color}" opacity="0.88" stroke="#ffffff" stroke-width="3"/>'
+    for index, label in enumerate(labels[:4]):
+        body += svg_label_box(80 if index % 2 == 0 else 640, 155 + index * 75, label, colors[index])
+    return wrap_svg_diagram(payload.get("title", "Layers"), body)
+
+
+def render_map_diagram(payload):
+    labels = diagram_labels(payload, minimum=5)
+    is_india = payload.get("template_key") == "india_map"
+    map_shape = (
+        '<path d="M430 120 C500 145 560 225 535 310 C515 380 465 410 450 470 C420 415 345 400 350 320 C355 240 390 190 430 120 Z" fill="#dbeafe" stroke="#3157d5" stroke-width="5"/>'
+        if is_india
+        else '<path d="M120 250 C180 160 290 200 340 245 C425 155 565 180 625 250 C700 230 775 275 790 345 C700 390 560 350 500 400 C400 345 260 390 170 345 C110 330 90 285 120 250 Z" fill="#dbeafe" stroke="#3157d5" stroke-width="5"/>'
+    )
+    body = f"{map_shape}{svg_text(450, 505, 'Reference map for study use', 'muted')}"
+    for index, label in enumerate(labels[:5]):
+        body += svg_label_box(55 + (index % 3) * 275, 110 + (index // 3) * 330, label, "#3157d5")
+    return wrap_svg_diagram(payload.get("title", "Map"), body)
+
+
+def render_timeline_diagram(payload):
+    labels = diagram_labels(payload, minimum=5)
+    body = '<line x1="110" y1="300" x2="790" y2="300" stroke="#3157d5" stroke-width="6"/>'
+    for index, label in enumerate(labels[:5]):
+        x = 130 + index * 160
+        body += f'<circle cx="{x}" cy="300" r="18" fill="#3157d5"/>'
+        body += svg_label_box(x - 80, 190 if index % 2 == 0 else 345, label, "#3157d5")
+    return wrap_svg_diagram(payload.get("title", "Timeline"), body)
+
+
+def render_chart_diagram(payload):
+    labels = diagram_labels(payload, minimum=5)
+    body = f'<rect x="360" y="110" width="180" height="58" rx="14" fill="#eef2ff" stroke="#3157d5" stroke-width="3"/>{svg_text(450, 146, labels[0], "small")}'
+    for index, label in enumerate(labels[1:5]):
+        x = 105 + index * 175
+        body += f'<path class="line" d="M450,168 L{x + 75},250"/>'
+        body += f'<rect x="{x}" y="250" width="150" height="80" rx="14" fill="#f8fafc" stroke="#64748b" stroke-width="3"/>'
+        body += svg_text(x + 75, 296, label, "small")
+    return wrap_svg_diagram(payload.get("title", "Chart"), body)
+
+
+def render_geometry_diagram(payload):
+    labels = diagram_labels(payload, minimum=5)
+    body = """
+    <polygon points="275,405 450,150 625,405" fill="#ecfeff" stroke="#0891b2" stroke-width="5"/>
+    <circle cx="450" cy="150" r="7" fill="#3157d5"/>
+    <line x1="275" y1="405" x2="625" y2="405" stroke="#f97316" stroke-width="5"/>
+    <path d="M330 405 A55 55 0 0 1 360 355" fill="none" stroke="#22c55e" stroke-width="5"/>
+    """
+    body += svg_label_box(75, 130, labels[0], "#3157d5")
+    body += svg_label_box(640, 130, labels[1], "#0891b2")
+    body += svg_label_box(75, 390, labels[2], "#22c55e")
+    body += svg_label_box(640, 390, labels[3], "#f97316")
+    body += svg_text(450, 470, labels[4], "label")
+    return wrap_svg_diagram(payload.get("title", "Geometry"), body)
+
+
+def render_coordinate_diagram(payload):
+    labels = diagram_labels(payload, minimum=5)
+    body = """
+    <line x1="130" y1="300" x2="770" y2="300" stroke="#172033" stroke-width="4" marker-end="url(#arrow)"/>
+    <line x1="450" y1="480" x2="450" y2="120" stroke="#172033" stroke-width="4" marker-end="url(#arrow)"/>
+    <g stroke="#d8e2ff" stroke-width="1">
+    """
+    for x in range(170, 750, 40):
+        body += f'<line x1="{x}" y1="140" x2="{x}" y2="460"/>'
+    for y in range(140, 470, 40):
+        body += f'<line x1="150" y1="{y}" x2="750" y2="{y}"/>'
+    body += '</g><circle cx="570" cy="220" r="10" fill="#ef4444"/>'
+    body += svg_label_box(100, 95, labels[0], "#172033")
+    body += svg_label_box(620, 95, labels[1], "#172033")
+    body += svg_label_box(360, 310, labels[2], "#3157d5")
+    body += svg_label_box(600, 210, labels[4], "#ef4444")
+    return wrap_svg_diagram(payload.get("title", "Coordinate Plane"), body)
+
+
+def render_number_line_diagram(payload):
+    labels = diagram_labels(payload, minimum=4)
+    body = '<line x1="120" y1="285" x2="780" y2="285" stroke="#172033" stroke-width="5" marker-end="url(#arrow)"/>'
+    for index, value in enumerate(range(-3, 4)):
+        x = 210 + index * 80
+        body += f'<line x1="{x}" y1="265" x2="{x}" y2="305" stroke="#172033" stroke-width="3"/>'
+        body += svg_text(x, 335, value, "small")
+    body += svg_label_box(90, 170, labels[0], "#ef4444")
+    body += svg_label_box(360, 170, labels[1], "#3157d5")
+    body += svg_label_box(625, 170, labels[2], "#22c55e")
+    return wrap_svg_diagram(payload.get("title", "Number Line"), body)
+
+
+def render_fraction_diagram(payload):
+    labels = diagram_labels(payload, minimum=4)
+    colors = ["#3157d5", "#93c5fd", "#93c5fd", "#93c5fd"]
+    body = ""
+    for index, color in enumerate(colors):
+        body += f'<path d="M450 285 L450 135 A150 150 0 0 1 {450 + (index + 1) * 35} {135 + index * 42} Z" fill="{color}" opacity="0.88" stroke="#ffffff" stroke-width="3" transform="rotate({index * 90} 450 285)"/>'
+    body += '<circle cx="450" cy="285" r="150" fill="none" stroke="#172033" stroke-width="4"/>'
+    body += svg_label_box(95, 160, labels[0], "#3157d5")
+    body += svg_label_box(625, 160, labels[1], "#3157d5")
+    body += svg_label_box(95, 375, labels[2], "#3157d5")
+    body += svg_label_box(625, 375, labels[3], "#3157d5")
+    return wrap_svg_diagram(payload.get("title", "Fractions"), body)
+
+
+def render_organ_diagram(payload):
+    labels = diagram_labels(payload, minimum=5)
+    key = payload.get("template_key")
+    if key == "human_heart":
+        center = '<path d="M450 420 C300 310 315 165 405 170 C435 172 450 195 450 195 C450 195 465 172 495 170 C585 165 600 310 450 420 Z" fill="#fecaca" stroke="#dc2626" stroke-width="5"/>'
+    elif key == "digestive_system":
+        center = '<path d="M450 125 C410 175 440 215 480 240 C555 285 515 390 450 420 C375 390 370 295 430 260 C375 215 390 160 450 125 Z" fill="#fed7aa" stroke="#f97316" stroke-width="5"/>'
+    elif key == "eye":
+        center = '<path d="M210 285 C330 170 570 170 690 285 C570 400 330 400 210 285 Z" fill="#e0f2fe" stroke="#0891b2" stroke-width="5"/><circle cx="450" cy="285" r="70" fill="#ffffff" stroke="#3157d5" stroke-width="4"/><circle cx="450" cy="285" r="32" fill="#172033"/>'
+    elif key == "ear":
+        center = '<path d="M410 135 C560 145 595 300 485 345 C430 365 445 430 380 430 C300 430 300 330 345 300 C400 260 350 215 410 135 Z" fill="#fde2e2" stroke="#db2777" stroke-width="5"/>'
+    else:
+        center = '<path d="M450 420 C300 310 315 165 405 170 C435 172 450 195 450 195 C450 195 465 172 495 170 C585 165 600 310 450 420 Z" fill="#fecaca" stroke="#dc2626" stroke-width="5"/>'
+    body = center
+    positions = [(70, 120), (650, 120), (70, 370), (650, 370), (360, 455)]
+    for index, label in enumerate(labels[:5]):
+        body += svg_label_box(positions[index][0], positions[index][1], label, "#3157d5")
+    return wrap_svg_diagram(payload.get("title", "Organ"), body)
+
+
+def render_flower_diagram(payload):
+    labels = diagram_labels(payload, minimum=5)
+    body = """
+    <line x1="450" y1="330" x2="450" y2="475" stroke="#16a34a" stroke-width="10"/>
+    <ellipse cx="450" cy="225" rx="52" ry="95" fill="#f9a8d4" stroke="#db2777" stroke-width="3"/>
+    <ellipse cx="450" cy="225" rx="52" ry="95" fill="#f9a8d4" stroke="#db2777" stroke-width="3" transform="rotate(72 450 285)"/>
+    <ellipse cx="450" cy="225" rx="52" ry="95" fill="#f9a8d4" stroke="#db2777" stroke-width="3" transform="rotate(144 450 285)"/>
+    <ellipse cx="450" cy="225" rx="52" ry="95" fill="#f9a8d4" stroke="#db2777" stroke-width="3" transform="rotate(216 450 285)"/>
+    <ellipse cx="450" cy="225" rx="52" ry="95" fill="#f9a8d4" stroke="#db2777" stroke-width="3" transform="rotate(288 450 285)"/>
+    <circle cx="450" cy="285" r="42" fill="#fde68a" stroke="#f59e0b" stroke-width="4"/>
+    """
+    for index, label in enumerate(labels[:5]):
+        body += svg_label_box(70 if index % 2 == 0 else 650, 110 + index * 72, label, "#db2777")
+    return wrap_svg_diagram(payload.get("title", "Flower"), body)
+
+
+def render_flowchart_diagram(payload):
+    labels = diagram_labels(payload, minimum=5)
+    body = ""
+    y = 130
+    for index, label in enumerate(labels[:5]):
+        body += f'<rect x="330" y="{y}" width="240" height="54" rx="16" fill="#eef2ff" stroke="#3157d5" stroke-width="3"/>'
+        body += svg_text(450, y + 34, label, "small")
+        if index < 4:
+            body += f'<path class="line" d="M450,{y + 58} L450,{y + 90}"/>'
+        y += 86
+    return wrap_svg_diagram(payload.get("title", "Flowchart"), body)
+
+
+def render_relationship_diagram(payload):
+    labels = diagram_labels(payload, minimum=5)
+    positions = [(450, 285), (245, 165), (655, 165), (245, 405), (655, 405)]
+    body = ""
+    for x, y in positions[1:]:
+        body += f'<line x1="450" y1="285" x2="{x}" y2="{y}" stroke="#3157d5" stroke-width="3"/>'
+    for index, (x, y) in enumerate(positions):
+        body += f'<circle cx="{x}" cy="{y}" r="58" fill="#f8fafc" stroke="#3157d5" stroke-width="3"/>'
+        body += svg_text(x, y + 6, labels[index], "small")
+    return wrap_svg_diagram(payload.get("title", "Relationship Map"), body)
+
+
+def render_educational_diagram_svg(payload):
+    if not payload.get("available"):
+        return render_unavailable_diagram(payload)
+
+    key = payload.get("template_key")
+    diagram_type = payload.get("diagram_type")
+    if key in {"plant_cell", "animal_cell"}:
+        return render_cell_diagram(payload)
+    if key in {"photosynthesis", "water_cycle"}:
+        return render_cycle_diagram(payload)
+    if key == "food_chain":
+        return render_chain_diagram(payload)
+    if key == "solar_system":
+        return render_solar_diagram(payload)
+    if key == "electric_circuit":
+        return render_circuit_diagram(payload)
+    if key in {"india_map", "world_map"}:
+        return render_map_diagram(payload)
+    if key == "layers_of_earth":
+        return render_layers_diagram(payload)
+    if key == "timeline":
+        return render_timeline_diagram(payload)
+    if key == "kingdom_chart":
+        return render_chart_diagram(payload)
+    if key == "story_flowchart":
+        return render_flowchart_diagram(payload)
+    if key == "character_map":
+        return render_relationship_diagram(payload)
+    if key == "coordinate_plane":
+        return render_coordinate_diagram(payload)
+    if key == "number_line":
+        return render_number_line_diagram(payload)
+    if key == "fractions":
+        return render_fraction_diagram(payload)
+    if key == "geometry":
+        return render_geometry_diagram(payload)
+    if key == "flower":
+        return render_flower_diagram(payload)
+    if diagram_type == "organ" or key in {"human_heart", "digestive_system", "eye", "ear"}:
+        return render_organ_diagram(payload)
+    return render_flowchart_diagram(payload)
+
+
+def create_diagram_svg_data_uri(diagram_payload):
+    svg = render_educational_diagram_svg(diagram_payload)
+    return f"data:image/svg+xml;charset=utf-8,{quote(svg)}"
+
+
+def create_diagram_image(topic, diagram_payload):
+    if isinstance(diagram_payload, dict):
+        payload = diagram_payload
+    else:
+        payload = build_diagram_payload("", topic, diagram_payload)
+    return create_diagram_svg_data_uri(payload)
 
 
 def required_form_values(prefix, count=5):
@@ -1808,7 +2398,7 @@ def create_performance_pdf(name, subject, topic, score, grade, report_text, eval
     return buffer
 
 
-def create_learning_history_pdf(entry, diagram_steps, questions):
+def create_learning_history_pdf(entry, diagram_payload, questions):
     buffer = BytesIO()
     doc = SimpleDocTemplate(
         buffer,
@@ -1884,15 +2474,17 @@ def create_learning_history_pdf(entry, diagram_steps, questions):
     ]
     story.extend(report_text_to_flowables(entry["notes"], styles))
 
-    if diagram_steps:
+    if diagram_payload.get("available"):
+        story.append(Spacer(1, 12))
+        story.append(Paragraph(f"Diagram: {escape(diagram_payload.get('title', 'Diagram'))}", styles["SectionHeading"]))
+        story.extend(
+            Paragraph(f"&bull; {escape(label)}", styles["BulletLine"])
+            for label in diagram_payload.get("labels", [])
+        )
+    else:
         story.append(Spacer(1, 12))
         story.append(Paragraph("Diagram", styles["SectionHeading"]))
-        diagram_image = create_diagram_image(entry["topic"], diagram_steps)
-        if diagram_image.startswith("data:image/png;base64,"):
-            import base64
-
-            image_data = BytesIO(base64.b64decode(diagram_image.split(",", 1)[1]))
-            story.append(RLImage(image_data, width=5.7 * inch, height=2.2 * inch))
+        story.append(Paragraph("No diagram available for this topic.", styles["ReportBody"]))
 
     if questions:
         story.append(Spacer(1, 12))
@@ -2362,14 +2954,16 @@ def view_learning_history(lesson_id):
     if not lesson:
         abort(404)
 
-    diagram_steps = decode_json_list(lesson["diagram_data"])
+    diagram_payload = decode_diagram_payload(lesson["diagram_data"], lesson["subject"], lesson["topic"])
     questions = decode_json_list(lesson["quiz_questions"])
     return render_template(
         "learning_history_detail.html",
         lesson=lesson,
         notes_html=markdown.markdown(lesson["notes"]),
-        diagram_steps=diagram_steps,
-        diagram_image=create_diagram_image(lesson["topic"], diagram_steps),
+        diagram_payload=diagram_payload,
+        diagram_steps=diagram_payload.get("labels", []),
+        diagram_image=create_diagram_image(lesson["topic"], diagram_payload),
+        diagram_available=diagram_payload.get("available", False),
         questions=questions,
     )
 
@@ -2381,9 +2975,10 @@ def download_learning_history_pdf(lesson_id):
     if not lesson:
         abort(404)
 
+    diagram_payload = decode_diagram_payload(lesson["diagram_data"], lesson["subject"], lesson["topic"])
     pdf_file = create_learning_history_pdf(
         lesson,
-        decode_json_list(lesson["diagram_data"]),
+        diagram_payload,
         decode_json_list(lesson["quiz_questions"]),
     )
     save_downloaded_file(
@@ -2397,6 +2992,23 @@ def download_learning_history_pdf(lesson_id):
         mimetype="application/pdf",
         as_attachment=True,
         download_name=safe_notes_filename(lesson["topic"], extension="pdf"),
+    )
+
+
+@app.route("/learning-history/<int:lesson_id>/diagram/download")
+@login_required
+def download_learning_history_diagram(lesson_id):
+    lesson = get_learning_history_entry(lesson_id, session["user_id"])
+    if not lesson:
+        abort(404)
+
+    diagram_payload = decode_diagram_payload(lesson["diagram_data"], lesson["subject"], lesson["topic"])
+    svg = render_educational_diagram_svg(diagram_payload)
+    return send_file(
+        BytesIO(svg.encode("utf-8")),
+        mimetype="image/svg+xml",
+        as_attachment=True,
+        download_name=safe_notes_filename(lesson["topic"], extension="svg"),
     )
 
 
@@ -2498,16 +3110,21 @@ After the explanation create:
 ## Quick Revision
 Give 5 important revision points.
 
-## Diagram Data
+## Diagram JSON
 
-Create 3 to 5 short labels for a visual educational diagram.
-Use exactly this format:
-D1: label
-D2: label
-D3: label
+Return only a valid JSON object describing the diagram.
+Do NOT create an image.
 Do NOT create a text diagram.
-Do NOT use arrows.
-Keep each label short.
+Use this structure:
+{{
+  "diagram_type": "process, cycle, cell, organ, map, timeline, chart, flowchart, geometry, coordinate, number_line, fraction, or none",
+  "title": "short diagram title",
+  "labels": ["3 to 8 short textbook labels"],
+  "arrows": ["short arrow descriptions if useful"],
+  "notes": ["1 to 3 short notes"]
+}}
+If the topic does not support a useful educational diagram, use "diagram_type": "none" and empty labels.
+
 ## Questions
 
 Create exactly 5 short-answer questions.
@@ -2531,7 +3148,7 @@ Rules:
         abort(503, description="The learning service is unavailable. Please try again later.")
 
     try:
-        notes, diagram_steps, questions = split_learning_content(response.text)
+        notes, raw_diagram, questions = split_learning_content(response.text)
     except ValueError as error:
         print("LEARN RESPONSE ERROR:", error)
         retry_prompt = f"""
@@ -2549,10 +3166,8 @@ Rewrite the answer using this exact structure:
 - point 4
 - point 5
 
-## Diagram Data
-D1: label
-D2: label
-D3: label
+## Diagram JSON
+{{"diagram_type":"process","title":"Topic Diagram","labels":["label 1","label 2","label 3"],"arrows":[],"notes":[]}}
 
 ## Questions
 Q1. question
@@ -2571,12 +3186,13 @@ Do not invent textbook chapter content.
         try:
             print("Gemini call: Learn retry")
             response = generate_content_with_fallback(retry_prompt)
-            notes, diagram_steps, questions = split_learning_content(response.text)
+            notes, raw_diagram, questions = split_learning_content(response.text)
         except Exception as retry_error:
             print("LEARN RETRY ERROR:", retry_error)
             abort(502, description="The AI did not return a valid five-question quiz. Please try again.")
 
-    diagram_image = create_diagram_image(topic, diagram_steps)
+    diagram_payload = build_diagram_payload(subject, topic, raw_diagram)
+    diagram_image = create_diagram_image(topic, diagram_payload)
 
     if session.get("user_id"):
         save_learning_history(
@@ -2585,7 +3201,7 @@ Do not invent textbook chapter content.
             book_name,
             topic,
             notes,
-            diagram_steps,
+            diagram_payload,
             questions,
         )
         save_learning_session(
@@ -2607,8 +3223,32 @@ Do not invent textbook chapter content.
         topic=topic,
         explanation=markdown.markdown(notes),
         notes=notes,
+        diagram_payload=diagram_payload,
         diagram_image=diagram_image,
+        diagram_available=diagram_payload.get("available", False),
+        diagram_json=json.dumps(diagram_payload),
         questions=questions,
+    )
+
+
+@app.route("/download_diagram", methods=["POST"])
+def download_diagram():
+    topic = request.form.get("topic", "").strip()
+    raw_json = request.form.get("diagram_json", "").strip()
+    if not raw_json:
+        abort(400, description="Diagram data is required.")
+
+    try:
+        diagram_payload = json.loads(raw_json)
+    except json.JSONDecodeError:
+        abort(400, description="Diagram data is invalid.")
+
+    svg = render_educational_diagram_svg(diagram_payload)
+    return send_file(
+        BytesIO(svg.encode("utf-8")),
+        mimetype="image/svg+xml",
+        as_attachment=True,
+        download_name=safe_notes_filename(topic or diagram_payload.get("title", "diagram"), extension="svg"),
     )
 
 
@@ -2626,7 +3266,7 @@ def download_notes():
 
     notes_html = markdown.markdown(notes)
     diagram_html = ""
-    if diagram_image.startswith("data:image/png;base64,"):
+    if diagram_image.startswith(("data:image/png;base64,", "data:image/svg+xml")):
         diagram_html = f"""
         <section class="diagram">
             <h2>Diagram</h2>

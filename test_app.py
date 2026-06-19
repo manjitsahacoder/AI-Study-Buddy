@@ -139,12 +139,17 @@ Q5. What is question five?
         prompt = generate_content.call_args.args[0]
         self.assertIn("Subject: Biology", prompt)
         self.assertIn("Topic: Plants", prompt)
+        self.assertIn("## Diagram JSON", prompt)
         page = response.get_data(as_text=True)
         self.assertIn("Plant Notes", page)
         self.assertIn("<strong>Subject</strong> Biology", page)
         self.assertIn('<img class="diagram-image"', page)
-        self.assertIn("data:image/png;base64,", page)
+        self.assertIn("data:image/svg+xml", page)
         self.assertNotIn("D1: Seed", page)
+        self.assertIn('action="/download_diagram"', page)
+        self.assertIn('name="diagram_json"', page)
+        self.assertIn("Download Diagram", page)
+        self.assertIn("Full Screen", page)
         self.assertIn('action="/download_notes"', page)
         self.assertIn('name="notes"', page)
         self.assertIn('name="diagram_image"', page)
@@ -182,6 +187,70 @@ Q5. What is question five?
         self.assertIn("<li>Plants need light.</li>", notes)
         self.assertIn("<h2>Diagram</h2>", notes)
         self.assertIn('src="data:image/png;base64,abc"', notes)
+
+    def test_download_diagram_returns_svg_attachment(self):
+        diagram_payload = app_module.build_diagram_payload(
+            "Science",
+            "Photosynthesis",
+            {
+                "diagram_type": "process",
+                "title": "Photosynthesis",
+                "labels": ["Sunlight", "Water", "Carbon dioxide", "Leaf", "Oxygen"],
+            },
+        )
+
+        response = self.client.post(
+            "/download_diagram",
+            data={
+                "topic": "Photosynthesis",
+                "diagram_json": json.dumps(diagram_payload),
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.mimetype, "image/svg+xml")
+        self.assertIn(
+            "attachment; filename=Photosynthesis_notes.svg",
+            response.headers["Content-Disposition"],
+        )
+        self.assertIn("<svg", response.get_data(as_text=True))
+
+    @patch.object(app_module.model, "generate_content")
+    def test_learn_shows_no_diagram_when_no_template_matches(self, generate_content):
+        generate_content.return_value = MockResponse(
+            """# Abstract Notes
+This topic is best explained with text.
+
+## Diagram JSON
+{"diagram_type":"none","title":"Abstract Topic","labels":[],"arrows":[],"notes":[]}
+
+## Questions
+Q1. What is question one?
+
+Q2. What is question two?
+
+Q3. What is question three?
+
+Q4. What is question four?
+
+Q5. What is question five?
+"""
+        )
+
+        response = self.client.post(
+            "/learn",
+            data={
+                "name": "Asha",
+                "student_class": "8",
+                "subject": "Life Skills",
+                "topic": "Personal Reflection",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        self.assertIn("No diagram available for this topic.", page)
+        self.assertNotIn("Download Diagram", page)
 
     def test_download_notes_rejects_missing_notes(self):
         response = self.client.post(
@@ -928,6 +997,9 @@ Q5. What is question five?
 
         self.assertEqual(history_row[0:4], (1, "Biology", "", "Plants"))
         self.assertIn("Plant Notes", history_row[4])
+        saved_diagram = json.loads(history_row[5])
+        self.assertEqual(saved_diagram["template_key"], "flower")
+        self.assertTrue(saved_diagram["available"])
         self.assertIn("What is question one?", history_row[6])
 
         self.client.post(
@@ -1015,8 +1087,14 @@ Q5. What is question five?
         self.assertIn("Quick Revision", detail_page)
         self.assertIn("Seed", detail_page)
         self.assertIn("Roots", detail_page)
-        self.assertIn("data:image/png;base64,", detail_page)
+        self.assertIn("data:image/svg+xml", detail_page)
+        self.assertIn("Download Diagram", detail_page)
         self.assertIn("What is question one?", detail_page)
+
+        diagram_response = self.client.get("/learning-history/1/diagram/download")
+        self.assertEqual(diagram_response.status_code, 200)
+        self.assertEqual(diagram_response.mimetype, "image/svg+xml")
+        self.assertIn("<svg", diagram_response.get_data(as_text=True))
 
     def test_learning_history_filters_and_sorts_saved_lessons(self):
         self.register_user()

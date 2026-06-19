@@ -2108,6 +2108,44 @@ body.dashboard-page #theme-toggle {
     background: #ffffff;
 }
 
+.diagram-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 14px;
+}
+
+.diagram-actions form {
+    display: inline-flex;
+}
+
+.diagram-unavailable {
+    margin: 12px 0 0;
+    padding: 16px;
+    border: 1px dashed rgba(102, 112, 133, 0.45);
+    border-radius: 8px;
+    color: var(--muted);
+    background: rgba(248, 250, 252, 0.75);
+    font-weight: 800;
+}
+
+.diagram-fullscreen {
+    position: fixed;
+    inset: 18px;
+    z-index: 2000;
+    display: grid;
+    align-content: start;
+    overflow: auto;
+    margin: 0;
+    padding: 22px;
+}
+
+.diagram-fullscreen .diagram-image {
+    max-width: none;
+    max-height: calc(100vh - 150px);
+    object-fit: contain;
+}
+
 .notes-download-form,
 .quiz-start-form,
 .result-actions {
@@ -3021,6 +3059,11 @@ footer p {
     border-color: rgba(96, 165, 250, 0.24);
 }
 
+.dark-mode .diagram-unavailable {
+    background: rgba(17, 24, 39, 0.72);
+    border-color: var(--line);
+}
+
 .dark-mode p,
 .dark-mode .content,
 .dark-mode .content p,
@@ -3341,7 +3384,11 @@ footer p {
     .lesson-card-actions,
     .lesson-card-actions .button-link,
     .lesson-card-actions form,
-    .lesson-card-actions button {
+    .lesson-card-actions button,
+    .diagram-actions,
+    .diagram-actions form,
+    .diagram-actions .button-link,
+    .diagram-actions button {
         width: 100%;
     }
 
