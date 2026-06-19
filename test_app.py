@@ -502,8 +502,8 @@ Grade: A
 
     def test_predefined_accounts_receive_role_badges(self):
         special_accounts = [
-            ("Manjit", "manjit_short", "manjit.short@example.com", "developer", "Developer", "role-developer"),
             ("Manjit Saha", "manjit", "manjit@example.com", "developer", "Developer", "role-developer"),
+            ("Manjit Saha", "manjitsaha", "manjitsaha2026@example.com", "developer", "Developer", "role-developer"),
             ("Gyanjyoti Mahanta", "gyanjyoti", "gyanjyoti@example.com", "technical_support", "Technical Support", "role-technical-support"),
             ("Lakshya Tuwani", "lakshya", "lakshya@example.com", "qa_tester", "Testing &amp; Quality Assurance", "role-qa-tester"),
         ]
@@ -536,6 +536,31 @@ Grade: A
                 self.assertIn(badge_class, dashboard_page)
                 self.assertIn(badge_text, profile_page)
                 self.assertIn(badge_class, profile_page)
+
+    def test_copycat_name_does_not_receive_developer_role(self):
+        self.register_user(
+            full_name="Manjit Saha",
+            username="not_manjit",
+            email="copycat@example.com",
+        )
+
+        connection = sqlite3.connect(self.db_path)
+        connection.row_factory = sqlite3.Row
+        try:
+            row = connection.execute(
+                "SELECT role FROM users WHERE username = ?",
+                ("not_manjit",),
+            ).fetchone()
+        finally:
+            connection.close()
+
+        self.assertEqual(row["role"], "student")
+
+        self.login_user(identifier="not_manjit")
+        dashboard_response = self.client.get("/dashboard")
+        dashboard_page = dashboard_response.get_data(as_text=True)
+        self.assertIn("role-student", dashboard_page)
+        self.assertNotIn("role-developer", dashboard_page)
 
     def test_rbac_panels_require_login(self):
         for path in ["/developer", "/support", "/qa"]:

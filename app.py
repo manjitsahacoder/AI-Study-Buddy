@@ -86,10 +86,11 @@ ROLE_DEFINITIONS = {
 }
 
 SPECIAL_ROLE_ACCOUNTS = {
-    "manjit": "developer",
-    "manjit saha": "developer",
-    "gyanjyoti mahanta": "technical_support",
-    "lakshya tuwani": "qa_tester",
+    ("manjit", "manjit"): "developer",
+    ("manjit saha", "manjit"): "developer",
+    ("manjit saha", "manjitsaha"): "developer",
+    ("gyanjyoti mahanta", "gyanjyoti"): "technical_support",
+    ("lakshya tuwani", "lakshya"): "qa_tester",
 }
 
 WEBSITE_VERSION = os.environ.get("WEBSITE_VERSION", "AI Study Buddy 1.0")
@@ -202,9 +203,10 @@ def normalize_account_name(name):
     return re.sub(r"\s+", " ", (name or "").strip().lower())
 
 
-def resolve_account_role(full_name):
+def resolve_account_role(full_name, username=""):
     normalized_name = normalize_account_name(full_name)
-    return SPECIAL_ROLE_ACCOUNTS.get(normalized_name, "student")
+    normalized_username = normalize_account_name(username)
+    return SPECIAL_ROLE_ACCOUNTS.get((normalized_name, normalized_username), "student")
 
 
 def normalize_role(role):
@@ -220,12 +222,12 @@ def apply_predefined_roles():
     with closing(get_db_connection()) as connection:
         rows = connection.execute(
             """
-            SELECT id, full_name, role
+            SELECT id, full_name, username, role
             FROM users
             """
         ).fetchall()
         for row in rows:
-            expected_role = resolve_account_role(row["full_name"])
+            expected_role = resolve_account_role(row["full_name"], row["username"])
             if row["role"] != expected_role:
                 connection.execute(
                     """
@@ -326,7 +328,7 @@ def get_user_by_username_or_email(identifier):
 
 def create_user(full_name, username, email, student_class, password):
     init_users_db()
-    role = resolve_account_role(full_name)
+    role = resolve_account_role(full_name, username)
     with closing(get_db_connection()) as connection:
         connection.execute(
             """
