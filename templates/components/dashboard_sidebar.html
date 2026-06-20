@@ -20,6 +20,10 @@
             <span aria-hidden="true">&#128202;</span>
             <span>Dashboard</span>
         </a>
+        <a class="{% if active_page == 'performance' %}active{% endif %}" href="{{ url_for('performance') }}">
+            <span aria-hidden="true">&#128200;</span>
+            <span>Performance Analytics</span>
+        </a>
         <a class="{% if active_page == 'learning_history' %}active{% endif %}" href="{{ url_for('learning_history') }}">
             <span aria-hidden="true">&#128218;</span>
             <span>Learning History</span>

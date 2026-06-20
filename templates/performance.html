@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Performance Analytics - AI Study Buddy</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+
+<body class="dashboard-page">
+
+{% set active_page = 'performance' %}
+{% set overview = analytics.overview %}
+{% set summary = analytics.summary %}
+{% set subject_analysis = analytics.subject_analysis %}
+<div class="dashboard-shell">
+    {% include 'components/dashboard_sidebar.html' %}
+
+    <main class="dashboard-main">
+        <header class="dashboard-topbar">
+            <div>
+                <span class="eyebrow">Performance Analytics</span>
+                <h1>&#128200; Your Learning Progress</h1>
+                <p>Review your study activity, quiz performance, and subject trends.</p>
+                <div class="student-identity-card">
+                    <span aria-hidden="true">&#128100;</span>
+                    <div>
+                        <strong>{{ account.full_name }}</strong>
+                        {% set role = account.role %}
+                        {% include 'components/role_badge.html' %}
+                    </div>
+                </div>
+            </div>
+            <div class="dashboard-topbar-actions">
+                <button id="theme-toggle" onclick="toggleTheme()">
+                    &#127769; Dark Mode
+                </button>
+                <a class="button-link secondary-link" href="{{ url_for('dashboard') }}">Back to Dashboard</a>
+                {% include 'components/auth_nav.html' %}
+            </div>
+        </header>
+
+        {% include 'components/flash_messages.html' %}
+
+        <section class="performance-summary-card dashboard-panel">
+            <div>
+                <span class="eyebrow">Performance Summary</span>
+                <h2>Performance Summary</h2>
+            </div>
+            <div class="performance-summary-grid">
+                <div>
+                    <span>Average Score</span>
+                    <strong>{{ summary.average_score }}</strong>
+                </div>
+                <div>
+                    <span>Best Subject</span>
+                    <strong>{{ summary.best_subject }}</strong>
+                </div>
+                <div>
+                    <span>Needs Improvement</span>
+                    <strong>{{ summary.needs_improvement }}</strong>
+                </div>
+                <div>
+                    <span>Topics Studied</span>
+                    <strong>{{ summary.topics_studied }}</strong>
+                </div>
+                <div>
+                    <span>Last Active</span>
+                    <strong>{{ summary.last_active }}</strong>
+                </div>
+            </div>
+        </section>
+
+        <section class="dashboard-panel">
+            <div class="dashboard-section-heading">
+                <div>
+                    <span class="eyebrow">Performance Overview</span>
+                    <h2>Performance Overview</h2>
+                </div>
+            </div>
+            <div class="dashboard-stat-grid performance-stat-grid">
+                <article class="dashboard-stat-card">
+                    <span aria-hidden="true">&#128218;</span>
+                    <div>
+                        <p>Total Topics Studied</p>
+                        <strong>{{ overview.total_topics_studied }}</strong>
+                    </div>
+                </article>
+                <article class="dashboard-stat-card">
+                    <span aria-hidden="true">&#128221;</span>
+                    <div>
+                        <p>Total Quizzes Attempted</p>
+                        <strong>{{ overview.total_quizzes_attempted }}</strong>
+                    </div>
+                </article>
+                <article class="dashboard-stat-card">
+                    <span aria-hidden="true">&#11088;</span>
+                    <div>
+                        <p>Average Quiz Score</p>
+                        <strong>{{ overview.average_quiz_score }}</strong>
+                    </div>
+                </article>
+                <article class="dashboard-stat-card">
+                    <span aria-hidden="true">&#127942;</span>
+                    <div>
+                        <p>Highest Score</p>
+                        <strong>{{ overview.highest_score }}</strong>
+                    </div>
+                </article>
+                <article class="dashboard-stat-card">
+                    <span aria-hidden="true">&#128204;</span>
+                    <div>
+                        <p>Lowest Score</p>
+                        <strong>{{ overview.lowest_score }}</strong>
+                    </div>
+                </article>
+                <article class="dashboard-stat-card">
+                    <span aria-hidden="true">&#128214;</span>
+                    <div>
+                        <p>Subjects Studied</p>
+                        <strong>{{ overview.subjects_studied }}</strong>
+                    </div>
+                </article>
+                <article class="dashboard-stat-card">
+                    <span aria-hidden="true">&#128161;</span>
+                    <div>
+                        <p>Total Learning Sessions</p>
+                        <strong>{{ overview.total_learning_sessions }}</strong>
+                    </div>
+                </article>
+                <article class="dashboard-stat-card">
+                    <span aria-hidden="true">&#128197;</span>
+                    <div>
+                        <p>Last Study Date</p>
+                        <strong>{{ overview.last_study_date }}</strong>
+                    </div>
+                </article>
+            </div>
+        </section>
+
+        <section class="dashboard-panel">
+            <div class="dashboard-section-heading">
+                <div>
+                    <span class="eyebrow">Charts</span>
+                    <h2>Charts</h2>
+                </div>
+            </div>
+            <div class="performance-chart-grid">
+                <article class="performance-chart-card">
+                    <h3>Average Score by Subject</h3>
+                    {% if analytics.has_quiz_data and analytics.chart_data.average_score_by_subject.labels %}
+                    <canvas id="averageScoreChart" aria-label="Average score by subject bar chart"></canvas>
+                    {% else %}
+                    <div class="dashboard-empty-state">
+                        <h3>No quiz scores yet.</h3>
+                        <p>Complete a quiz to unlock this chart.</p>
+                    </div>
+                    {% endif %}
+                </article>
+                <article class="performance-chart-card">
+                    <h3>Topics Studied by Subject</h3>
+                    {% if analytics.has_topic_data %}
+                    <canvas id="topicsBySubjectChart" aria-label="Topics studied by subject pie chart"></canvas>
+                    {% else %}
+                    <div class="dashboard-empty-state">
+                        <h3>No studied topics yet.</h3>
+                        <p>Save a lesson to see your subject mix.</p>
+                    </div>
+                    {% endif %}
+                </article>
+                <article class="performance-chart-card performance-chart-card-wide">
+                    <h3>Quiz Scores Over Time</h3>
+                    {% if analytics.has_quiz_data %}
+                    <canvas id="quizScoresChart" aria-label="Quiz scores over time line chart"></canvas>
+                    {% else %}
+                    <div class="dashboard-empty-state">
+                        <h3>No quiz timeline yet.</h3>
+                        <p>Your quiz score trend will appear after your first attempt.</p>
+                    </div>
+                    {% endif %}
+                </article>
+            </div>
+        </section>
+
+        <div class="dashboard-content-grid performance-content-grid">
+            <section class="dashboard-panel">
+                <div class="dashboard-section-heading">
+                    <div>
+                        <span class="eyebrow">Subject Analysis</span>
+                        <h2>Subject Analysis</h2>
+                    </div>
+                </div>
+
+                <div class="subject-analysis-grid">
+                    <article>
+                        <span>Most Studied Subject</span>
+                        <strong>{{ subject_analysis.most_studied_subject }}</strong>
+                    </article>
+                    <article>
+                        <span>Strongest Subject</span>
+                        <strong>{{ subject_analysis.strongest_subject }}</strong>
+                    </article>
+                    <article>
+                        <span>Weakest Subject</span>
+                        <strong>{{ subject_analysis.weakest_subject }}</strong>
+                    </article>
+                </div>
+
+                {% if subject_analysis.average_score_by_subject %}
+                <div class="performance-table-wrap">
+                    <table class="history-table performance-table">
+                        <thead>
+                            <tr>
+                                <th>Subject</th>
+                                <th>Average Score</th>
+                                <th>Quizzes</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for subject, average_score in subject_analysis.average_score_by_subject.items() %}
+                            <tr>
+                                <td>{{ subject }}</td>
+                                <td><strong>{{ average_score }}%</strong></td>
+                                <td>{{ subject_analysis.quizzes_per_subject.get(subject, 0) }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="dashboard-empty-state">
+                    <h3>Not enough data yet.</h3>
+                    <p>Attempt quizzes in different subjects to compare strengths and weak spots.</p>
+                </div>
+                {% endif %}
+            </section>
+
+            <section class="dashboard-panel">
+                <div class="dashboard-section-heading">
+                    <div>
+                        <span class="eyebrow">AI Study Insights</span>
+                        <h2>AI Study Insights</h2>
+                    </div>
+                </div>
+
+                <div class="insight-list">
+                    {% for insight in analytics.insights %}
+                    <article class="insight-card">
+                        <span aria-hidden="true">&#128161;</span>
+                        <p>{{ insight }}</p>
+                    </article>
+                    {% endfor %}
+                </div>
+            </section>
+        </div>
+
+        <section class="dashboard-panel">
+            <div class="dashboard-section-heading">
+                <div>
+                    <span class="eyebrow">Recent Activity</span>
+                    <h2>Recent Activity</h2>
+                </div>
+            </div>
+
+            {% if analytics.recent_activity %}
+            <div class="activity-list">
+                {% for activity in analytics.recent_activity %}
+                <article class="activity-card performance-activity-card">
+                    <div>
+                        <strong>{{ activity.topic }}</strong>
+                        <span>{{ activity.subject }} &bull; {{ activity.type }}</span>
+                    </div>
+                    <div>
+                        <span>{{ activity.date }}</span>
+                        <strong>{{ activity.score }}</strong>
+                    </div>
+                </article>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="dashboard-empty-state">
+                <h3>No activity yet.</h3>
+                <p>Start learning or complete a quiz to build your analytics.</p>
+            </div>
+            {% endif %}
+        </section>
+
+        {% include 'components/footer.html' %}
+    </main>
+</div>
+
+<script>
+const performanceChartData = {{ analytics.chart_data|tojson }};
+
+function chartColors() {
+    return ["#3157d5", "#1f9ca6", "#f0a43a", "#2f9f67", "#e25d4f", "#7c63d8", "#12a389"];
+}
+
+function createChart(canvasId, config) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas || typeof Chart === "undefined") {
+        return;
+    }
+    new Chart(canvas, config);
+}
+
+createChart("averageScoreChart", {
+    type: "bar",
+    data: {
+        labels: performanceChartData.average_score_by_subject.labels,
+        datasets: [{
+            label: "Average Score",
+            data: performanceChartData.average_score_by_subject.values,
+            backgroundColor: chartColors()[0],
+            borderRadius: 6
+        }]
+    },
+    options: {
+        responsive: true,
+        scales: {
+            y: {
+                beginAtZero: true,
+                max: 100,
+                ticks: {
+                    callback: value => value + "%"
+                }
+            }
+        }
+    }
+});
+
+createChart("topicsBySubjectChart", {
+    type: "pie",
+    data: {
+        labels: performanceChartData.topics_by_subject.labels,
+        datasets: [{
+            data: performanceChartData.topics_by_subject.values,
+            backgroundColor: chartColors()
+        }]
+    },
+    options: {
+        responsive: true
+    }
+});
+
+createChart("quizScoresChart", {
+    type: "line",
+    data: {
+        labels: performanceChartData.quiz_scores_over_time.labels,
+        datasets: [{
+            label: "Quiz Score",
+            data: performanceChartData.quiz_scores_over_time.values,
+            borderColor: chartColors()[1],
+            backgroundColor: "rgba(31, 156, 166, 0.14)",
+            fill: true,
+            tension: 0.35,
+            pointRadius: 4
+        }]
+    },
+    options: {
+        responsive: true,
+        scales: {
+            y: {
+                beginAtZero: true,
+                max: 100,
+                ticks: {
+                    callback: value => value + "%"
+                }
+            }
+        }
+    }
+});
+
+function toggleTheme() {
+    document.body.classList.toggle("dark-mode");
+
+    let btn = document.getElementById("theme-toggle");
+    if (document.body.classList.contains("dark-mode")) {
+        btn.innerHTML = "&#9728;&#65039; Light Mode";
+    } else {
+        btn.innerHTML = "&#127769; Dark Mode";
+    }
+}
+</script>
+</body>
+</html>

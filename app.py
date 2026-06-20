@@ -10,6 +10,7 @@ from flask import (
     url_for,
 )
 from base64 import b64encode
+from collections import Counter, defaultdict
 from PIL import Image, ImageDraw, ImageFont
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER
@@ -903,6 +904,244 @@ def get_dashboard_stats(user_id):
         "average_score": average_score,
         "achievements": achievements_count,
         "study_streak": study_streak,
+    }
+
+
+def score_to_percentage(score):
+    numeric_score = score_to_number(score)
+    if numeric_score is not None:
+        return round(numeric_score * 10, 2)
+
+    match = re.search(r"(\d+(?:\.\d+)?)\s*%", score or "")
+    if match:
+        return round(float(match.group(1)), 2)
+
+    return None
+
+
+def format_percentage(value):
+    if value is None:
+        return "Not enough data yet."
+    rounded = round(value, 1)
+    return f"{int(rounded)}%" if rounded.is_integer() else f"{rounded}%"
+
+
+def normalize_subject_label(subject):
+    normalized = re.sub(r"\s+", " ", (subject or "Unspecified").strip())
+    return normalized or "Unspecified"
+
+
+def format_activity_date(date_value):
+    if not date_value:
+        return "Not available"
+    if isinstance(date_value, datetime):
+        activity_date = date_value.date()
+        if activity_date == datetime.now(timezone.utc).date():
+            return "Today"
+        return date_value.strftime("%d %b %Y")
+    return str(date_value)
+
+
+def datetime_sort_value(date_value):
+    if not date_value:
+        return 0
+    if isinstance(date_value, datetime):
+        if date_value.tzinfo is None:
+            date_value = date_value.replace(tzinfo=timezone.utc)
+        return date_value.timestamp()
+    return 0
+
+
+def performance_recent_activity(lesson_rows, quiz_rows, limit=10):
+    activities = []
+    for lesson in lesson_rows:
+        activities.append(
+            {
+                "type": "Learning",
+                "topic": lesson.topic,
+                "subject": normalize_subject_label(lesson.subject),
+                "score": "Not attempted",
+                "date": format_activity_date(lesson.created_at),
+                "created_at": lesson.created_at,
+            }
+        )
+
+    for quiz in quiz_rows:
+        activities.append(
+            {
+                "type": "Quiz",
+                "topic": quiz.topic,
+                "subject": normalize_subject_label(quiz.subject),
+                "score": quiz.score,
+                "date": format_activity_date(quiz.created_at),
+                "created_at": quiz.created_at,
+            }
+        )
+
+    activities.sort(key=lambda item: datetime_sort_value(item["created_at"]), reverse=True)
+    return activities[:limit]
+
+
+def build_performance_insights(overview, subject_analysis, quiz_scores, activity_dates):
+    insights = []
+
+    strongest = subject_analysis.get("strongest_subject")
+    weakest = subject_analysis.get("weakest_subject")
+    if strongest and strongest != "Not enough data yet.":
+        insights.append(f"{strongest} is currently your strongest subject.")
+    if weakest and weakest != "Not enough data yet." and weakest != strongest:
+        insights.append(f"{weakest} needs more practice.")
+
+    recent_scores = [item["percentage"] for item in quiz_scores[-3:]]
+    previous_scores = [item["percentage"] for item in quiz_scores[-6:-3]]
+    if len(recent_scores) >= 2 and previous_scores:
+        recent_average = sum(recent_scores) / len(recent_scores)
+        previous_average = sum(previous_scores) / len(previous_scores)
+        if recent_average > previous_average:
+            insights.append("You have improved over your recent quizzes.")
+        elif recent_average < previous_average:
+            insights.append("Recent quiz scores dipped a little, so a short revision session may help.")
+
+    studied_dates = {
+        value.date() if isinstance(value, datetime) else value
+        for value in activity_dates
+        if value
+    }
+    if len(studied_dates) >= 3:
+        insights.append("You are studying consistently.")
+
+    if overview["total_quizzes_attempted"] == 0 and overview["total_topics_studied"] == 0:
+        return ["Not enough data yet."]
+
+    return insights or ["Not enough data yet."]
+
+
+def get_performance_analytics(user_id):
+    init_quiz_history_db()
+    init_account_activity_db()
+    init_learning_history_db()
+
+    quiz_rows = (
+        QuizHistory.query.filter_by(user_id=user_id)
+        .order_by(QuizHistory.created_at.asc(), QuizHistory.id.asc())
+        .all()
+    )
+    lesson_rows = (
+        LearningHistory.query.filter_by(user_id=user_id)
+        .order_by(LearningHistory.created_at.asc(), LearningHistory.id.asc())
+        .all()
+    )
+    learning_session_count = LearningSession.query.filter_by(user_id=user_id).count()
+
+    topic_keys = {
+        (normalize_subject_label(row.subject).lower(), (row.topic or "").strip().lower())
+        for row in lesson_rows
+        if (row.topic or "").strip()
+    }
+    subject_counts = Counter(normalize_subject_label(row.subject) for row in lesson_rows)
+    quiz_subject_scores = defaultdict(list)
+    quiz_scores = []
+
+    for quiz in quiz_rows:
+        percentage = score_to_percentage(quiz.score)
+        if percentage is None:
+            continue
+        subject = normalize_subject_label(quiz.subject)
+        quiz_subject_scores[subject].append(percentage)
+        quiz_scores.append(
+            {
+                "subject": subject,
+                "topic": quiz.topic,
+                "score": quiz.score,
+                "percentage": percentage,
+                "date": format_activity_date(quiz.created_at),
+                "created_at": quiz.created_at,
+            }
+        )
+
+    score_values = [item["percentage"] for item in quiz_scores]
+    all_subjects = {
+        normalize_subject_label(row.subject)
+        for row in [*lesson_rows, *quiz_rows]
+        if normalize_subject_label(row.subject)
+    }
+    activity_dates = [row.created_at for row in lesson_rows] + [row.created_at for row in quiz_rows]
+    last_activity_date = max(activity_dates, key=datetime_sort_value) if activity_dates else None
+
+    overview = {
+        "total_topics_studied": len(topic_keys),
+        "total_quizzes_attempted": len(quiz_rows),
+        "average_quiz_score": format_percentage(sum(score_values) / len(score_values)) if score_values else "Not enough data yet.",
+        "highest_score": format_percentage(max(score_values)) if score_values else "Not enough data yet.",
+        "lowest_score": format_percentage(min(score_values)) if score_values else "Not enough data yet.",
+        "subjects_studied": len(all_subjects),
+        "total_learning_sessions": learning_session_count,
+        "last_study_date": format_activity_date(last_activity_date),
+    }
+
+    average_score_by_subject = {
+        subject: round(sum(scores) / len(scores), 1)
+        for subject, scores in sorted(quiz_subject_scores.items())
+        if scores
+    }
+    quizzes_per_subject = {
+        subject: len(scores)
+        for subject, scores in sorted(quiz_subject_scores.items())
+    }
+
+    strongest_subject = "Not enough data yet."
+    weakest_subject = "Not enough data yet."
+    if len(average_score_by_subject) >= 2:
+        strongest_subject = max(average_score_by_subject, key=average_score_by_subject.get)
+        weakest_subject = min(average_score_by_subject, key=average_score_by_subject.get)
+    elif len(average_score_by_subject) == 1:
+        strongest_subject = next(iter(average_score_by_subject))
+
+    most_studied_subject = "Not enough data yet."
+    if subject_counts:
+        most_studied_subject = subject_counts.most_common(1)[0][0]
+
+    subject_analysis = {
+        "average_score_by_subject": average_score_by_subject,
+        "quizzes_per_subject": quizzes_per_subject,
+        "most_studied_subject": most_studied_subject,
+        "weakest_subject": weakest_subject,
+        "strongest_subject": strongest_subject,
+    }
+
+    chart_data = {
+        "average_score_by_subject": {
+            "labels": list(average_score_by_subject.keys()),
+            "values": list(average_score_by_subject.values()),
+        },
+        "topics_by_subject": {
+            "labels": list(subject_counts.keys()),
+            "values": list(subject_counts.values()),
+        },
+        "quiz_scores_over_time": {
+            "labels": [item["date"] for item in quiz_scores],
+            "values": [item["percentage"] for item in quiz_scores],
+        },
+    }
+
+    summary = {
+        "average_score": overview["average_quiz_score"],
+        "best_subject": strongest_subject,
+        "needs_improvement": weakest_subject,
+        "topics_studied": overview["total_topics_studied"],
+        "last_active": overview["last_study_date"],
+    }
+
+    return {
+        "overview": overview,
+        "summary": summary,
+        "subject_analysis": subject_analysis,
+        "insights": build_performance_insights(overview, subject_analysis, quiz_scores, activity_dates),
+        "recent_activity": performance_recent_activity(lesson_rows, quiz_rows),
+        "chart_data": chart_data,
+        "has_quiz_data": bool(score_values),
+        "has_topic_data": bool(subject_counts),
+        "has_any_activity": bool(activity_dates),
     }
 
 
@@ -2611,6 +2850,17 @@ def dashboard():
         recent_activity=get_recent_learning_activity(account["id"]),
         achievements=dashboard_achievements(stats),
         recommendations=recommended_topics(),
+    )
+
+
+@app.route("/performance")
+@login_required
+def performance():
+    account = current_user()
+    return render_template(
+        "performance.html",
+        account=account,
+        analytics=get_performance_analytics(account["id"]),
     )
 
 

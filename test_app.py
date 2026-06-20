@@ -1124,6 +1124,180 @@ Q5. What is question five?
         self.assertIn("Topics Studied", page)
         self.assertIn("<strong>1</strong>", page)
 
+    def test_performance_requires_login(self):
+        response = self.client.get("/performance")
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/login?next=/performance", response.headers["Location"])
+
+    def test_performance_empty_state_for_new_user(self):
+        self.register_user()
+        self.login_user()
+
+        response = self.client.get("/performance")
+
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        self.assertIn("Performance Analytics", page)
+        self.assertIn("Performance Summary", page)
+        self.assertIn("Not enough data yet.", page)
+        self.assertIn("No quiz scores yet.", page)
+        self.assertIn("No studied topics yet.", page)
+        self.assertIn("No activity yet.", page)
+
+    def test_performance_shows_only_current_user_analytics(self):
+        self.register_user()
+        self.login_user()
+
+        with app_module.app.app_context():
+            app_module.create_user(
+                "Other Student",
+                "otherstudent",
+                "other@example.com",
+                "8",
+                "password123",
+            )
+
+            first_date = app_module.datetime(2026, 6, 17, 10, 0, tzinfo=app_module.timezone.utc)
+            second_date = app_module.datetime(2026, 6, 18, 10, 0, tzinfo=app_module.timezone.utc)
+            third_date = app_module.datetime(2026, 6, 19, 10, 0, tzinfo=app_module.timezone.utc)
+
+            db.session.add_all(
+                [
+                    LearningHistory(
+                        user_id=1,
+                        subject="Science",
+                        book_name="NCERT",
+                        topic="Plants",
+                        notes="Notes",
+                        diagram_data="{}",
+                        quiz_questions="[]",
+                        created_at=first_date,
+                    ),
+                    LearningHistory(
+                        user_id=1,
+                        subject="Science",
+                        book_name="NCERT",
+                        topic="Light",
+                        notes="Notes",
+                        diagram_data="{}",
+                        quiz_questions="[]",
+                        created_at=second_date,
+                    ),
+                    LearningHistory(
+                        user_id=1,
+                        subject="Mathematics",
+                        book_name="NCERT",
+                        topic="Algebra",
+                        notes="Notes",
+                        diagram_data="{}",
+                        quiz_questions="[]",
+                        created_at=third_date,
+                    ),
+                    LearningHistory(
+                        user_id=2,
+                        subject="Geography",
+                        book_name="Atlas",
+                        topic="Maps",
+                        notes="Other notes",
+                        diagram_data="{}",
+                        quiz_questions="[]",
+                        created_at=third_date,
+                    ),
+                    LearningSession(
+                        user_id=1,
+                        name="Asha",
+                        student_class="8",
+                        subject="Science",
+                        book_name="NCERT",
+                        topic="Plants",
+                        notes="Notes",
+                        created_at=first_date,
+                    ),
+                    LearningSession(
+                        user_id=1,
+                        name="Asha",
+                        student_class="8",
+                        subject="Mathematics",
+                        book_name="NCERT",
+                        topic="Algebra",
+                        notes="Notes",
+                        created_at=third_date,
+                    ),
+                ]
+            )
+            db.session.commit()
+
+            app_module.save_quiz_history(
+                "Asha",
+                "8",
+                "Science",
+                "Plants",
+                "8/10",
+                "A",
+                ["Q1"],
+                ["A1"],
+                "{}",
+                user_id=1,
+            )
+            app_module.save_quiz_history(
+                "Asha",
+                "8",
+                "Science",
+                "Light",
+                "6/10",
+                "B",
+                ["Q1"],
+                ["A1"],
+                "{}",
+                user_id=1,
+            )
+            app_module.save_quiz_history(
+                "Asha",
+                "8",
+                "Mathematics",
+                "Algebra",
+                "9/10",
+                "A+",
+                ["Q1"],
+                ["A1"],
+                "{}",
+                user_id=1,
+            )
+            app_module.save_quiz_history(
+                "Other Student",
+                "8",
+                "Geography",
+                "Maps",
+                "10/10",
+                "A+",
+                ["Q1"],
+                ["A1"],
+                "{}",
+                user_id=2,
+            )
+
+        response = self.client.get("/performance")
+
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        self.assertIn("Average Score", page)
+        self.assertIn("76.7%", page)
+        self.assertIn("Highest Score", page)
+        self.assertIn("90%", page)
+        self.assertIn("Lowest Score", page)
+        self.assertIn("60%", page)
+        self.assertIn("Mathematics is currently your strongest subject.", page)
+        self.assertIn("Science needs more practice.", page)
+        self.assertIn("You are studying consistently.", page)
+        self.assertIn("Total Learning Sessions", page)
+        self.assertIn("Average Score by Subject", page)
+        self.assertIn("Quiz Scores Over Time", page)
+        self.assertIn("Plants", page)
+        self.assertIn("Algebra", page)
+        self.assertNotIn("Geography", page)
+        self.assertNotIn("Maps", page)
+
     def test_logged_in_download_pdf_autosaves_file(self):
         self.register_user()
         self.login_user()
