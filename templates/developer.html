@@ -18,7 +18,7 @@
             <div>
                 <span class="eyebrow">RBAC Control</span>
                 <h1>Developer Panel</h1>
-                <p>System overview for trusted developer accounts.</p>
+                <p>Professional admin controls for monitoring users and site activity.</p>
                 <div class="student-identity-card">
                     <span aria-hidden="true">&#128100;</span>
                     <div>
@@ -30,6 +30,7 @@
             </div>
             <div class="dashboard-topbar-actions">
                 <button id="theme-toggle" onclick="toggleTheme()">&#127769; Dark Mode</button>
+                <a class="button-link" href="{{ url_for('developer_users') }}">Manage Users</a>
                 <a class="button-link secondary-link" href="{{ url_for('dashboard') }}">Back to Dashboard</a>
                 {% include 'components/auth_nav.html' %}
             </div>
@@ -46,10 +47,17 @@
                 </div>
             </article>
             <article class="dashboard-stat-card">
+                <span aria-hidden="true">&#128197;</span>
+                <div>
+                    <p>Users Registered Today</p>
+                    <strong>{{ stats.users_registered_today }}</strong>
+                </div>
+            </article>
+            <article class="dashboard-stat-card">
                 <span aria-hidden="true">&#128218;</span>
                 <div>
-                    <p>Total Lessons Generated</p>
-                    <strong>{{ stats.total_lessons }}</strong>
+                    <p>Total Topics Generated</p>
+                    <strong>{{ stats.total_topics_generated }}</strong>
                 </div>
             </article>
             <article class="dashboard-stat-card">
@@ -60,10 +68,24 @@
                 </div>
             </article>
             <article class="dashboard-stat-card">
+                <span aria-hidden="true">&#11088;</span>
+                <div>
+                    <p>Total Notes Saved</p>
+                    <strong>{{ stats.total_notes_saved }}</strong>
+                </div>
+            </article>
+            <article class="dashboard-stat-card">
                 <span aria-hidden="true">&#128196;</span>
                 <div>
-                    <p>Total PDFs Downloaded</p>
+                    <p>Total Downloads</p>
                     <strong>{{ stats.total_downloads }}</strong>
+                </div>
+            </article>
+            <article class="dashboard-stat-card">
+                <span aria-hidden="true">&#128293;</span>
+                <div>
+                    <p>Active Users Today</p>
+                    <strong>{{ stats.active_users_today }}</strong>
                 </div>
             </article>
         </section>
@@ -111,8 +133,39 @@
         <section class="dashboard-panel">
             <div class="dashboard-section-heading">
                 <div>
+                    <span class="eyebrow">Recent Registrations</span>
+                    <h2>Latest 10 Registered Users</h2>
+                </div>
+                <a class="button-link secondary-link" href="{{ url_for('developer_users') }}">View All Users</a>
+            </div>
+            {% if stats.recent_registrations %}
+            <div class="activity-list">
+                {% for user in stats.recent_registrations %}
+                <article class="activity-card">
+                    <div>
+                        <strong>{{ user.full_name }}</strong>
+                        <span>Class {{ user.student_class }}</span>
+                    </div>
+                    <div>
+                        <span>{{ user.created_at }}</span>
+                        <strong>{{ user.role|default('student')|title }}</strong>
+                    </div>
+                </article>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="dashboard-empty-state">
+                <h3>No registrations yet.</h3>
+                <p>New accounts will appear here automatically.</p>
+            </div>
+            {% endif %}
+        </section>
+
+        <section class="dashboard-panel">
+            <div class="dashboard-section-heading">
+                <div>
                     <span class="eyebrow">Database Statistics</span>
-                    <h2>SQLite Table Counts</h2>
+                    <h2>Table Counts</h2>
                 </div>
             </div>
             <div class="rbac-table-grid">

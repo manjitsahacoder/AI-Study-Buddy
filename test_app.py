@@ -593,7 +593,7 @@ Grade: A
         self.assertNotIn("role-developer", dashboard_page)
 
     def test_rbac_panels_require_login(self):
-        for path in ["/developer", "/support", "/qa"]:
+        for path in ["/developer", "/developer/users", "/developer/user/1", "/support", "/qa"]:
             with self.subTest(path=path):
                 response = self.client.get(path)
 
@@ -604,7 +604,7 @@ Grade: A
         self.register_user()
         self.login_user()
 
-        for path in ["/developer", "/support", "/qa"]:
+        for path in ["/developer", "/developer/users", "/developer/user/1", "/support", "/qa"]:
             with self.subTest(path=path):
                 response = self.client.get(path)
 
@@ -644,9 +644,14 @@ Grade: A
         page = developer_response.get_data(as_text=True)
         self.assertIn("Developer Panel", page)
         self.assertIn("Total Registered Users", page)
-        self.assertIn("Total Lessons Generated", page)
+        self.assertIn("Users Registered Today", page)
+        self.assertIn("Total Topics Generated", page)
         self.assertIn("Total Quizzes Taken", page)
-        self.assertIn("Total PDFs Downloaded", page)
+        self.assertIn("Total Notes Saved", page)
+        self.assertIn("Total Downloads", page)
+        self.assertIn("Active Users Today", page)
+        self.assertIn("Recent Registrations", page)
+        self.assertIn("Manage Users", page)
         self.assertIn("AI Provider Status", page)
         self.assertIn("Gemini", page)
         self.assertIn("Ollama", page)
@@ -656,6 +661,143 @@ Grade: A
         self.assertIn("role-developer", page)
         self.assertIn("Support Panel", page)
         self.assertIn("QA Panel", page)
+
+    def test_developer_users_page_filters_and_shows_rollups(self):
+        self.register_user(full_name="Manjit Saha", username="manjit", email="manjit@example.com")
+        self.login_user(identifier="manjit")
+
+        with app_module.app.app_context():
+            student = app_module.create_user(
+                "Asha Student",
+                "asha_student",
+                "asha.student@example.com",
+                "8",
+                "password123",
+            )
+            other_student = app_module.create_user(
+                "Ravi Learner",
+                "ravi",
+                "ravi@example.com",
+                "9",
+                "password123",
+            )
+            old_date = app_module.datetime(2026, 6, 10, 9, 0, tzinfo=app_module.timezone.utc)
+            student.created_at = old_date
+            other_student.created_at = old_date
+            db.session.commit()
+
+            app_module.save_learning_history(student.id, "Science", "Book", "Plants", "Notes", "{}", ["Q1"])
+            app_module.save_quiz_history(
+                "Asha Student",
+                "8",
+                "Science",
+                "Plants",
+                "8/10",
+                "A",
+                ["Q1"],
+                ["A1"],
+                "{}",
+                user_id=student.id,
+            )
+            app_module.save_downloaded_file(student.id, "performance_report", "Science", "Plants", "8/10", "A")
+
+        response = self.client.get("/developer/users?search=asha&student_class=8&role=student")
+
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        self.assertIn("Registered Users", page)
+        self.assertIn("Asha Student", page)
+        self.assertIn("asha.student@example.com", page)
+        self.assertIn("Total Topics Studied", page)
+        self.assertIn("Average Quiz Score", page)
+        self.assertIn("80%", page)
+        self.assertIn("Not tracked", page)
+        self.assertNotIn("Ravi Learner", page)
+
+        partial_response = self.client.get(
+            "/developer/users?search=asha&partial=1",
+            headers={"X-Requested-With": "XMLHttpRequest"},
+        )
+        partial_page = partial_response.get_data(as_text=True)
+        self.assertEqual(partial_response.status_code, 200)
+        self.assertIn("developer-users-results", partial_page)
+        self.assertIn("Asha Student", partial_page)
+        self.assertNotIn("<html", partial_page.lower())
+
+    def test_developer_users_page_paginates_25_users(self):
+        self.register_user(full_name="Manjit Saha", username="manjit", email="manjit@example.com")
+        self.login_user(identifier="manjit")
+
+        with app_module.app.app_context():
+            base_date = app_module.datetime(2026, 6, 1, 9, 0, tzinfo=app_module.timezone.utc)
+            db.session.add_all(
+                User(
+                    full_name=f"Student {index:02d}",
+                    username=f"student_{index:02d}",
+                    email=f"student_{index:02d}@example.com",
+                    student_class="8",
+                    role="student",
+                    password_hash="test-hash",
+                    created_at=base_date + app_module.timedelta(minutes=index),
+                )
+                for index in range(1, 28)
+            )
+            db.session.commit()
+
+        first_page = self.client.get("/developer/users")
+        second_page = self.client.get("/developer/users?page=2")
+
+        self.assertEqual(first_page.status_code, 200)
+        self.assertEqual(second_page.status_code, 200)
+        self.assertIn("Page 1 of 2", first_page.get_data(as_text=True))
+        self.assertIn("Next", first_page.get_data(as_text=True))
+        self.assertIn("Page 2 of 2", second_page.get_data(as_text=True))
+        self.assertIn("Previous", second_page.get_data(as_text=True))
+
+    def test_developer_user_detail_shows_account_stats_and_activity(self):
+        self.register_user(full_name="Manjit Saha", username="manjit", email="manjit@example.com")
+        self.login_user(identifier="manjit")
+
+        with app_module.app.app_context():
+            student = app_module.create_user(
+                "Asha Student",
+                "asha_student",
+                "asha.student@example.com",
+                "8",
+                "password123",
+            )
+            app_module.save_learning_history(student.id, "Science", "Book", "Plants", "Notes", "{}", ["Q1"])
+            app_module.save_quiz_history(
+                "Asha Student",
+                "8",
+                "Science",
+                "Plants",
+                "9/10",
+                "A+",
+                ["Q1"],
+                ["A1"],
+                "{}",
+                user_id=student.id,
+            )
+            app_module.save_downloaded_file(student.id, "performance_report", "Science", "Plants", "9/10", "A+")
+            student_id = student.id
+
+        response = self.client.get(f"/developer/user/{student_id}")
+
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        self.assertIn("Account Information", page)
+        self.assertIn("Asha Student", page)
+        self.assertIn("Learning Statistics", page)
+        self.assertIn("Topics Studied", page)
+        self.assertIn("Quizzes Attempted", page)
+        self.assertIn("Average Score", page)
+        self.assertIn("90%", page)
+        self.assertIn("Downloads", page)
+        self.assertIn("Saved Notes", page)
+        self.assertIn("Recent Activity", page)
+        self.assertIn("Saved Note", page)
+        self.assertIn("Quiz", page)
 
     def test_support_and_qa_panels_enforce_role_permissions(self):
         self.register_user(

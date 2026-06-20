@@ -45,6 +45,10 @@
             <span aria-hidden="true">&#128295;</span>
             <span>Developer</span>
         </a>
+        <a class="{% if active_page == 'developer_users' %}active{% endif %}" href="{{ url_for('developer_users') }}">
+            <span aria-hidden="true">&#128101;</span>
+            <span>Manage Users</span>
+        </a>
         {% endif %}
         {% if user and user.role in ['developer', 'technical_support'] %}
         <a class="{% if active_page == 'support' %}active{% endif %}" href="{{ url_for('support_panel') }}">

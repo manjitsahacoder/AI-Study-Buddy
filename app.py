@@ -118,6 +118,7 @@ SPECIAL_ROLE_ACCOUNTS = {
 }
 
 WEBSITE_VERSION = os.environ.get("WEBSITE_VERSION", "AI Study Buddy 1.0")
+DEVELOPER_USERS_PER_PAGE = 25
 
 
 def is_quota_error(error):
@@ -1211,6 +1212,7 @@ def get_performance_analytics(user_id):
 
 
 def get_developer_panel_stats():
+    today_start, tomorrow_start = utc_day_range()
     table_counts = {
         "users": User.query.count(),
         "learning_history": LearningHistory.query.count(),
@@ -1218,12 +1220,39 @@ def get_developer_panel_stats():
         "quiz_history": QuizHistory.query.count(),
         "downloaded_files": DownloadedFile.query.count(),
     }
+    active_user_ids = set()
+    for model in (LearningHistory, LearningSession, QuizHistory, DownloadedFile):
+        active_user_ids.update(
+            user_id
+            for (user_id,) in model.query.with_entities(model.user_id)
+            .filter(model.created_at >= today_start, model.created_at < tomorrow_start)
+            .distinct()
+            .all()
+            if user_id
+        )
+
+    recent_registrations = (
+        User.query.options(
+            load_only(User.id, User.full_name, User.student_class, User.role, User.created_at)
+        )
+        .order_by(User.created_at.desc(), User.id.desc())
+        .limit(10)
+        .all()
+    )
 
     return {
         "total_users": table_counts["users"],
+        "users_registered_today": User.query.filter(
+            User.created_at >= today_start,
+            User.created_at < tomorrow_start,
+        ).count(),
+        "total_topics_generated": table_counts["learning_sessions"],
         "total_lessons": table_counts["learning_history"],
         "total_quizzes": table_counts["quiz_history"],
+        "total_notes_saved": table_counts["learning_history"],
         "total_downloads": table_counts["downloaded_files"],
+        "active_users_today": len(active_user_ids),
+        "recent_registrations": recent_registrations,
         "ai_provider_status": {
             "gemini": "Configured" if GEMINI_API_KEY else "Missing API key",
             "ollama": "Placeholder",
@@ -1231,6 +1260,311 @@ def get_developer_panel_stats():
         "website_version": WEBSITE_VERSION,
         "database_statistics": table_counts,
         "server_status": "Online placeholder",
+    }
+
+
+def utc_day_range(date_value=None):
+    if date_value is None:
+        date_value = datetime.now(timezone.utc).date()
+    start = datetime(date_value.year, date_value.month, date_value.day)
+    return start, start + timedelta(days=1)
+
+
+def parse_filter_date(value):
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+def format_admin_datetime(value):
+    if not value:
+        return "Not available"
+    if isinstance(value, datetime):
+        return value.strftime("%d %b %Y, %I:%M %p")
+    return str(value)
+
+
+def apply_developer_user_filters(query, search="", student_class="", role="", registration_date=""):
+    search_text = (search or "").strip().lower()
+    if search_text:
+        like_value = f"%{search_text}%"
+        query = query.filter(
+            or_(
+                func.lower(User.full_name).like(like_value),
+                func.lower(User.username).like(like_value),
+                func.lower(User.email).like(like_value),
+            )
+        )
+
+    if student_class:
+        query = query.filter(User.student_class == student_class)
+
+    if role in ROLE_DEFINITIONS:
+        query = query.filter(User.role == role)
+
+    parsed_date = parse_filter_date(registration_date)
+    if parsed_date:
+        start, end = utc_day_range(parsed_date)
+        query = query.filter(User.created_at >= start, User.created_at < end)
+
+    return query
+
+
+def developer_user_filter_options():
+    class_rows = (
+        User.query.with_entities(User.student_class)
+        .filter(User.student_class.isnot(None), User.student_class != "")
+        .distinct()
+        .order_by(User.student_class.asc())
+        .all()
+    )
+    return {
+        "classes": [row.student_class for row in class_rows],
+        "roles": [
+            {"value": role, "label": details["label"]}
+            for role, details in ROLE_DEFINITIONS.items()
+        ],
+    }
+
+
+def empty_developer_rollup():
+    return {
+        "topics_studied": 0,
+        "quizzes_attempted": 0,
+        "average_quiz_score": "No quizzes",
+        "highest_score": "No quizzes",
+        "lowest_score": "No quizzes",
+        "downloads": 0,
+        "saved_notes": 0,
+    }
+
+
+def developer_user_rollups(user_ids):
+    rollups = {user_id: empty_developer_rollup() for user_id in user_ids}
+    if not user_ids:
+        return rollups
+
+    for user_id, total in (
+        LearningHistory.query.with_entities(
+            LearningHistory.user_id,
+            func.count(LearningHistory.id),
+        )
+        .filter(LearningHistory.user_id.in_(user_ids))
+        .group_by(LearningHistory.user_id)
+        .all()
+    ):
+        rollups[user_id]["topics_studied"] = total
+        rollups[user_id]["saved_notes"] = total
+
+    for user_id, total in (
+        QuizHistory.query.with_entities(
+            QuizHistory.user_id,
+            func.count(QuizHistory.id),
+        )
+        .filter(QuizHistory.user_id.in_(user_ids))
+        .group_by(QuizHistory.user_id)
+        .all()
+    ):
+        rollups[user_id]["quizzes_attempted"] = total
+
+    quiz_scores_by_user = defaultdict(list)
+    for user_id, score in (
+        QuizHistory.query.with_entities(QuizHistory.user_id, QuizHistory.score)
+        .filter(QuizHistory.user_id.in_(user_ids))
+        .all()
+    ):
+        percentage = score_to_percentage(score)
+        if percentage is not None:
+            quiz_scores_by_user[user_id].append(percentage)
+
+    for user_id, scores in quiz_scores_by_user.items():
+        rollups[user_id]["average_quiz_score"] = format_percentage(sum(scores) / len(scores))
+        rollups[user_id]["highest_score"] = format_percentage(max(scores))
+        rollups[user_id]["lowest_score"] = format_percentage(min(scores))
+
+    for user_id, total in (
+        DownloadedFile.query.with_entities(
+            DownloadedFile.user_id,
+            func.count(DownloadedFile.id),
+        )
+        .filter(DownloadedFile.user_id.in_(user_ids))
+        .group_by(DownloadedFile.user_id)
+        .all()
+    ):
+        rollups[user_id]["downloads"] = total
+
+    return rollups
+
+
+def get_developer_users_page(filters, page=1, per_page=DEVELOPER_USERS_PER_PAGE):
+    page = max(page, 1)
+    base_query = apply_developer_user_filters(
+        User.query,
+        search=filters.get("search", ""),
+        student_class=filters.get("student_class", ""),
+        role=filters.get("role", ""),
+        registration_date=filters.get("registration_date", ""),
+    )
+    total = base_query.order_by(None).count()
+    total_pages = max((total + per_page - 1) // per_page, 1)
+    page = min(page, total_pages)
+
+    users = (
+        base_query.options(
+            load_only(
+                User.id,
+                User.full_name,
+                User.username,
+                User.email,
+                User.student_class,
+                User.role,
+                User.created_at,
+            )
+        )
+        .order_by(User.created_at.desc(), User.id.desc())
+        .limit(per_page)
+        .offset((page - 1) * per_page)
+        .all()
+    )
+    rollups = developer_user_rollups([user.id for user in users])
+
+    return {
+        "users": users,
+        "rollups": rollups,
+        "page": page,
+        "per_page": per_page,
+        "total": total,
+        "total_pages": total_pages,
+        "has_prev": page > 1,
+        "has_next": page < total_pages,
+    }
+
+
+def get_developer_user_detail(user_id):
+    user = User.query.options(
+        load_only(
+            User.id,
+            User.full_name,
+            User.username,
+            User.email,
+            User.student_class,
+            User.role,
+            User.created_at,
+        )
+    ).filter_by(id=user_id).first()
+    if not user:
+        return None
+
+    rollup = developer_user_rollups([user.id])[user.id]
+    learning_dates = [
+        row.created_at
+        for row in LearningHistory.query.with_entities(LearningHistory.created_at)
+        .filter_by(user_id=user.id)
+        .all()
+    ]
+    quiz_dates = [
+        row.created_at
+        for row in QuizHistory.query.with_entities(QuizHistory.created_at)
+        .filter_by(user_id=user.id)
+        .all()
+    ]
+    rollup["study_streak"] = calculate_study_streak(learning_dates + quiz_dates)
+
+    return {
+        "user": user,
+        "stats": rollup,
+        "recent_activity": get_developer_user_recent_activity(user.id),
+    }
+
+
+def get_developer_user_recent_activity(user_id, limit=10):
+    activities = []
+
+    lessons = (
+        LearningHistory.query.with_entities(
+            LearningHistory.subject,
+            LearningHistory.topic,
+            LearningHistory.created_at,
+        )
+        .filter_by(user_id=user_id)
+        .order_by(LearningHistory.created_at.desc(), LearningHistory.id.desc())
+        .limit(limit)
+        .all()
+    )
+    for lesson in lessons:
+        activities.append(
+            {
+                "type": "Saved Note",
+                "subject": lesson.subject,
+                "topic": lesson.topic,
+                "score": "N/A",
+                "created_at": lesson.created_at,
+                "date": format_admin_datetime(lesson.created_at),
+            }
+        )
+
+    quizzes = (
+        QuizHistory.query.with_entities(
+            QuizHistory.subject,
+            QuizHistory.topic,
+            QuizHistory.score,
+            QuizHistory.created_at,
+        )
+        .filter_by(user_id=user_id)
+        .order_by(QuizHistory.created_at.desc(), QuizHistory.id.desc())
+        .limit(limit)
+        .all()
+    )
+    for quiz in quizzes:
+        activities.append(
+            {
+                "type": "Quiz",
+                "subject": quiz.subject,
+                "topic": quiz.topic,
+                "score": quiz.score,
+                "created_at": quiz.created_at,
+                "date": format_admin_datetime(quiz.created_at),
+            }
+        )
+
+    downloads = (
+        DownloadedFile.query.with_entities(
+            DownloadedFile.file_type,
+            DownloadedFile.subject,
+            DownloadedFile.topic,
+            DownloadedFile.score,
+            DownloadedFile.created_at,
+        )
+        .filter_by(user_id=user_id)
+        .order_by(DownloadedFile.created_at.desc(), DownloadedFile.id.desc())
+        .limit(limit)
+        .all()
+    )
+    for download in downloads:
+        activities.append(
+            {
+                "type": f"Download: {download.file_type.replace('_', ' ').title()}",
+                "subject": download.subject or "N/A",
+                "topic": download.topic,
+                "score": download.score or "N/A",
+                "created_at": download.created_at,
+                "date": format_admin_datetime(download.created_at),
+            }
+        )
+
+    activities.sort(key=lambda item: datetime_sort_value(item["created_at"]), reverse=True)
+    return activities[:limit]
+
+
+def developer_user_filters_from_request():
+    return {
+        "search": request.args.get("search", "").strip(),
+        "student_class": request.args.get("student_class", "").strip(),
+        "role": request.args.get("role", "").strip(),
+        "registration_date": request.args.get("registration_date", "").strip(),
     }
 
 
@@ -2939,6 +3273,44 @@ def developer_panel():
         "developer.html",
         account=account,
         stats=get_developer_panel_stats(),
+    )
+
+
+@app.route("/developer/users")
+@role_required("developer")
+def developer_users():
+    account = current_user()
+    filters = developer_user_filters_from_request()
+    try:
+        page = int(request.args.get("page", "1"))
+    except ValueError:
+        page = 1
+
+    users_page = get_developer_users_page(filters, page=page)
+    template_context = {
+        "account": account,
+        "filters": filters,
+        "filter_options": developer_user_filter_options(),
+        "users_page": users_page,
+    }
+
+    if request.args.get("partial") == "1" or request.headers.get("X-Requested-With") == "XMLHttpRequest":
+        return render_template("components/developer_users_table.html", **template_context)
+
+    return render_template("developer_users.html", **template_context)
+
+
+@app.route("/developer/user/<int:user_id>")
+@role_required("developer")
+def developer_user_detail(user_id):
+    account = current_user()
+    detail = get_developer_user_detail(user_id)
+    if not detail:
+        abort(404)
+    return render_template(
+        "developer_user_detail.html",
+        account=account,
+        detail=detail,
     )
 
 

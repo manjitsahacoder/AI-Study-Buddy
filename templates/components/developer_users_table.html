@@ -1,0 +1,63 @@
+<div class="developer-users-results" id="developer-users-results">
+    <div class="developer-results-summary">
+        <span>{{ users_page.total }} user{% if users_page.total != 1 %}s{% endif %} found</span>
+        <span>Page {{ users_page.page }} of {{ users_page.total_pages }}</span>
+    </div>
+
+    {% if users_page.users %}
+    <div class="history-table-wrap developer-table-wrap">
+        <table class="history-table developer-users-table">
+            <thead>
+                <tr>
+                    <th>Full Name</th>
+                    <th>Username</th>
+                    <th>Email</th>
+                    <th>Student Class</th>
+                    <th>Role</th>
+                    <th>Registration Date</th>
+                    <th>Total Topics Studied</th>
+                    <th>Total Quizzes Attempted</th>
+                    <th>Average Quiz Score</th>
+                    <th>Last Login</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for listed_user in users_page.users %}
+                {% set rollup = users_page.rollups.get(listed_user.id) %}
+                <tr>
+                    <td><a href="{{ url_for('developer_user_detail', user_id=listed_user.id) }}">{{ listed_user.full_name }}</a></td>
+                    <td>{{ listed_user.username }}</td>
+                    <td>{{ listed_user.email }}</td>
+                    <td>Class {{ listed_user.student_class }}</td>
+                    <td>{% set role = listed_user.role %}{% include 'components/role_badge.html' %}</td>
+                    <td>{{ listed_user.created_at }}</td>
+                    <td>{{ rollup.topics_studied }}</td>
+                    <td>{{ rollup.quizzes_attempted }}</td>
+                    <td><strong>{{ rollup.average_quiz_score }}</strong></td>
+                    <td>Not tracked</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="dashboard-empty-state">
+        <h3>No users found.</h3>
+        <p>Try adjusting the search or filters.</p>
+    </div>
+    {% endif %}
+
+    <nav class="developer-pagination" aria-label="User pagination">
+        {% if users_page.has_prev %}
+        <a class="button-link secondary-link" data-developer-users-link href="{{ url_for('developer_users', page=users_page.page - 1, search=filters.search, student_class=filters.student_class, role=filters.role, registration_date=filters.registration_date) }}">Previous</a>
+        {% else %}
+        <span class="button-link secondary-link disabled">Previous</span>
+        {% endif %}
+
+        {% if users_page.has_next %}
+        <a class="button-link secondary-link" data-developer-users-link href="{{ url_for('developer_users', page=users_page.page + 1, search=filters.search, student_class=filters.student_class, role=filters.role, registration_date=filters.registration_date) }}">Next</a>
+        {% else %}
+        <span class="button-link secondary-link disabled">Next</span>
+        {% endif %}
+    </nav>
+</div>

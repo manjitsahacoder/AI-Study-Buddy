@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Registered Users - AI Study Buddy</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body class="dashboard-page">
+
+{% set active_page = 'developer_users' %}
+<div class="dashboard-shell">
+    {% include 'components/dashboard_sidebar.html' %}
+
+    <main class="dashboard-main">
+        <header class="dashboard-topbar">
+            <div>
+                <span class="eyebrow">Developer Portal</span>
+                <h1>Registered Users</h1>
+                <p>Search, filter, and review student accounts with performance rollups.</p>
+                <div class="student-identity-card">
+                    <span aria-hidden="true">&#128100;</span>
+                    <div>
+                        <strong>{{ account.full_name }}</strong>
+                        {% set role = account.role %}
+                        {% include 'components/role_badge.html' %}
+                    </div>
+                </div>
+            </div>
+            <div class="dashboard-topbar-actions">
+                <button id="theme-toggle" onclick="toggleTheme()">&#127769; Dark Mode</button>
+                <a class="button-link secondary-link" href="{{ url_for('developer_panel') }}">Developer Home</a>
+                {% include 'components/auth_nav.html' %}
+            </div>
+        </header>
+
+        {% include 'components/flash_messages.html' %}
+
+        <section class="dashboard-panel">
+            <div class="dashboard-section-heading">
+                <div>
+                    <span class="eyebrow">User Management</span>
+                    <h2>Find Registered Users</h2>
+                </div>
+            </div>
+
+            <form class="developer-filter-form" id="developer-users-form" action="{{ url_for('developer_users') }}" method="GET">
+                <div class="form-field">
+                    <label for="search">&#128269; Search</label>
+                    <input id="search" type="search" name="search" value="{{ filters.search }}" placeholder="Name, username, or email">
+                </div>
+                <div class="form-field">
+                    <label for="student_class">Class</label>
+                    <select id="student_class" name="student_class">
+                        <option value="">All Classes</option>
+                        {% for class_name in filter_options.classes %}
+                        <option value="{{ class_name }}" {% if filters.student_class == class_name %}selected{% endif %}>Class {{ class_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-field">
+                    <label for="role">Role</label>
+                    <select id="role" name="role">
+                        <option value="">All Roles</option>
+                        {% for role_option in filter_options.roles %}
+                        <option value="{{ role_option.value }}" {% if filters.role == role_option.value %}selected{% endif %}>{{ role_option.label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-field">
+                    <label for="registration_date">Registration Date</label>
+                    <input id="registration_date" type="date" name="registration_date" value="{{ filters.registration_date }}">
+                </div>
+                <button type="submit">Apply</button>
+                <a class="button-link secondary-link" href="{{ url_for('developer_users') }}">Reset</a>
+            </form>
+        </section>
+
+        <section class="dashboard-panel" aria-live="polite">
+            {% include 'components/developer_users_table.html' %}
+        </section>
+
+        {% include 'components/footer.html' %}
+    </main>
+</div>
+
+<script>
+const usersForm = document.getElementById("developer-users-form");
+let usersSearchTimer = null;
+
+function usersUrl(page) {
+    const params = new URLSearchParams(new FormData(usersForm));
+    params.set("partial", "1");
+    if (page) {
+        params.set("page", page);
+    }
+    return `${usersForm.action}?${params.toString()}`;
+}
+
+function updateBrowserUrl(page) {
+    const params = new URLSearchParams(new FormData(usersForm));
+    if (page && page !== "1") {
+        params.set("page", page);
+    }
+    const query = params.toString();
+    window.history.replaceState({}, "", query ? `${usersForm.action}?${query}` : usersForm.action);
+}
+
+function loadUsers(page) {
+    fetch(usersUrl(page), {
+        headers: {
+            "X-Requested-With": "XMLHttpRequest"
+        }
+    })
+        .then(response => response.text())
+        .then(html => {
+            document.getElementById("developer-users-results").outerHTML = html;
+            updateBrowserUrl(page || "1");
+        });
+}
+
+usersForm.addEventListener("submit", event => {
+    event.preventDefault();
+    loadUsers("1");
+});
+
+usersForm.addEventListener("input", event => {
+    if (event.target.name !== "search") {
+        return;
+    }
+    window.clearTimeout(usersSearchTimer);
+    usersSearchTimer = window.setTimeout(() => loadUsers("1"), 300);
+});
+
+usersForm.addEventListener("change", () => loadUsers("1"));
+
+document.addEventListener("click", event => {
+    const link = event.target.closest("[data-developer-users-link]");
+    if (!link) {
+        return;
+    }
+    event.preventDefault();
+    const page = new URL(link.href).searchParams.get("page") || "1";
+    loadUsers(page);
+});
+
+function toggleTheme() {
+    document.body.classList.toggle("dark-mode");
+    let btn = document.getElementById("theme-toggle");
+    btn.innerHTML = document.body.classList.contains("dark-mode") ? "&#9728;&#65039; Light Mode" : "&#127769; Dark Mode";
+}
+</script>
+</body>
+</html>

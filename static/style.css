@@ -1774,6 +1774,86 @@ body.dashboard-page #theme-toggle {
     font-weight: 800;
 }
 
+.developer-filter-form {
+    display: grid;
+    grid-template-columns: minmax(220px, 1.4fr) repeat(3, minmax(150px, 1fr)) auto auto;
+    gap: 12px;
+    align-items: end;
+}
+
+.developer-results-summary,
+.developer-pagination {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.developer-results-summary {
+    margin-bottom: 14px;
+    color: var(--muted);
+    font-weight: 900;
+}
+
+.developer-table-wrap {
+    margin-bottom: 16px;
+}
+
+.developer-users-table {
+    min-width: 1180px;
+}
+
+.developer-users-table a {
+    color: var(--primary);
+    font-weight: 900;
+    text-decoration: none;
+}
+
+.developer-users-table a:hover {
+    text-decoration: underline;
+}
+
+.developer-pagination {
+    justify-content: flex-end;
+}
+
+.button-link.disabled {
+    opacity: 0.55;
+    pointer-events: none;
+}
+
+.developer-detail-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.developer-detail-grid article {
+    min-width: 0;
+    padding: 16px;
+    border: 1px solid rgba(49, 87, 213, 0.12);
+    border-radius: 8px;
+    background: rgba(255, 253, 248, 0.82);
+}
+
+.developer-detail-grid span {
+    display: block;
+    margin-bottom: 6px;
+    color: var(--muted);
+    font-size: 0.78rem;
+    font-weight: 900;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.developer-detail-grid strong {
+    display: block;
+    color: var(--ink);
+    font-size: 1rem;
+    overflow-wrap: anywhere;
+}
+
 .access-denied-card {
     display: grid;
     gap: 12px;
@@ -3092,6 +3172,7 @@ footer p {
 .dark-mode .rbac-status-list div,
 .dark-mode .rbac-table-grid article,
 .dark-mode .rbac-tool-card,
+.dark-mode .developer-detail-grid article,
 .dark-mode .score-card,
 .dark-mode .recommendation-card,
 .dark-mode .card,
@@ -3178,6 +3259,7 @@ footer p {
 .dark-mode .lesson-info-strip span,
 .dark-mode .quick-actions-grid a,
 .dark-mode .dashboard-empty-state,
+.dark-mode .developer-results-summary,
 .dark-mode .locked-feature-grid button,
 .dark-mode .history-table-wrap,
 .dark-mode .history-table th,
@@ -3220,6 +3302,7 @@ footer p {
 .dark-mode .performance-summary-grid strong,
 .dark-mode .performance-chart-card h3,
 .dark-mode .subject-analysis-grid strong,
+.dark-mode .developer-detail-grid strong,
 .dark-mode .saved-quiz-card li,
 .dark-mode .achievement-badge strong,
 .dark-mode .recommended-topic-card h3,
@@ -3360,6 +3443,8 @@ footer p {
     .performance-summary-grid,
     .performance-chart-grid,
     .subject-analysis-grid,
+    .developer-filter-form,
+    .developer-detail-grid,
     .quick-actions-grid,
     .dashboard-content-grid,
     .performance-content-grid,
@@ -3499,6 +3584,8 @@ footer p {
     .performance-summary-grid,
     .performance-chart-grid,
     .subject-analysis-grid,
+    .developer-filter-form,
+    .developer-detail-grid,
     .quick-actions-grid,
     .dashboard-content-grid,
     .performance-content-grid,
