@@ -59,13 +59,30 @@ model = genai.GenerativeModel("gemini-2.5-flash")
 def handle_database_error(error):
     rollback_database_session(error)
 
-    import traceback
-    traceback.print_exc()
+    app.logger.error(
+        "Database error while handling %s %s",
+        request.method,
+        request.path,
+        exc_info=(type(error), error, error.__traceback__),
+    )
 
     return (
-        f"<h2>Database Error</h2><pre>{error}</pre>",
+        "<h2>Database Error</h2><p>The database is temporarily unavailable.</p>",
         503,
     )
+
+
+def initialize_database():
+    with app.app_context():
+        create_database_tables()
+        app.logger.info("Database tables are ready.")
+
+
+try:
+    initialize_database()
+except SQLAlchemyError:
+    app.logger.exception("Database initialization failed during application startup.")
+    raise
 
 ROLE_DEFINITIONS = {
     "developer": {
