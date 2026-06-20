@@ -740,6 +740,23 @@ Grade: A
         self.assertIn("Welcome back, Asha Student", refreshed_dashboard_response.get_data(as_text=True))
         self.assertIn("Username", refreshed_profile_response.get_data(as_text=True))
 
+    def test_request_helpers_do_not_run_create_all(self):
+        self.register_user()
+        self.login_user()
+
+        with patch.object(app_module, "create_database_tables") as create_tables:
+            app_module.init_users_db()
+            app_module.init_quiz_history_db()
+            app_module.init_learning_history_db()
+            app_module.init_account_activity_db()
+            with app_module.app.app_context():
+                app_module.get_user_by_id(1)
+                app_module.get_user_by_username_or_email("asha")
+            dashboard_response = self.client.get("/dashboard")
+
+        self.assertEqual(dashboard_response.status_code, 200)
+        create_tables.assert_not_called()
+
     def test_login_page_links_to_forgot_password(self):
         response = self.client.get("/login")
 

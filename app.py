@@ -2,6 +2,7 @@ from flask import (
     Flask,
     abort,
     flash,
+    g,
     redirect,
     render_template,
     request,
@@ -30,6 +31,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from urllib.parse import quote
 from sqlalchemy import and_, func, or_
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+from sqlalchemy.orm import load_only
 import json
 import markdown
 import os
@@ -76,14 +78,9 @@ def handle_database_error(error):
 def initialize_database():
     with app.app_context():
         create_database_tables()
+        ensure_user_roles()
         app.logger.info("Database tables are ready.")
 
-
-try:
-    initialize_database()
-except SQLAlchemyError:
-    app.logger.exception("Database initialization failed during application startup.")
-    raise
 
 ROLE_DEFINITIONS = {
     "developer": {
@@ -159,16 +156,11 @@ def generate_content_with_fallback(prompt):
 
 
 def init_quiz_history_db():
-    create_database_tables()
+    return None
 
 
 def init_users_db():
-    create_database_tables()
-    User.query.filter(or_(User.role.is_(None), User.role == "")).update(
-        {"role": "student"},
-        synchronize_session=False,
-    )
-    db.session.commit()
+    return None
 
 
 def normalize_account_name(name):
@@ -189,35 +181,40 @@ def role_details(role):
     return ROLE_DEFINITIONS[normalize_role(role)]
 
 
-def apply_predefined_roles():
-    init_users_db()
-    for user in User.query.all():
-        expected_role = resolve_account_role(user.full_name, user.username)
-        if user.role != expected_role:
-            user.role = expected_role
+def ensure_user_roles():
+    User.query.filter(or_(User.role.is_(None), User.role == "")).update(
+        {"role": "student"},
+        synchronize_session=False,
+    )
+    for (normalized_name, normalized_username), role in SPECIAL_ROLE_ACCOUNTS.items():
+        User.query.filter(
+            func.lower(User.full_name) == normalized_name,
+            func.lower(User.username) == normalized_username,
+            User.role != role,
+        ).update({"role": role}, synchronize_session=False)
     db.session.commit()
 
 
+def apply_predefined_roles():
+    ensure_user_roles()
+
+
 def init_account_activity_db():
-    create_database_tables()
+    return None
 
 
 def init_learning_history_db():
-    create_database_tables()
+    return None
 
 
 def get_user_by_id(user_id):
     if not user_id:
         return None
 
-    init_users_db()
-    apply_predefined_roles()
     return db.session.get(User, user_id)
 
 
 def get_user_by_username_or_email(identifier):
-    init_users_db()
-    apply_predefined_roles()
     normalized_identifier = identifier.strip().lower()
     return User.query.filter(
         or_(
@@ -227,8 +224,31 @@ def get_user_by_username_or_email(identifier):
     ).first()
 
 
+def find_registration_conflicts(username, email):
+    identifiers = [
+        value
+        for value in {(username or "").strip().lower(), (email or "").strip().lower()}
+        if value
+    ]
+    if not identifiers:
+        return []
+
+    return User.query.filter(
+        or_(
+            func.lower(User.username).in_(identifiers),
+            func.lower(User.email).in_(identifiers),
+        )
+    ).all()
+
+
+try:
+    initialize_database()
+except SQLAlchemyError:
+    app.logger.exception("Database initialization failed during application startup.")
+    raise
+
+
 def create_user(full_name, username, email, student_class, password):
-    init_users_db()
     role = resolve_account_role(full_name, username)
     user = User(
         full_name=full_name,
@@ -244,7 +264,6 @@ def create_user(full_name, username, email, student_class, password):
 
 
 def update_user_password(user_id, password):
-    init_users_db()
     user = db.session.get(User, user_id)
     if user:
         user.password_hash = generate_password_hash(password)
@@ -263,7 +282,9 @@ def validate_new_password(password, confirm_password):
 
 
 def current_user():
-    return get_user_by_id(session.get("user_id"))
+    if not hasattr(g, "_current_user"):
+        g._current_user = get_user_by_id(session.get("user_id"))
+    return g._current_user
 
 
 def start_authenticated_session(account):
@@ -388,7 +409,6 @@ def validate_registration_form(form):
 
 
 def save_learning_session(user_id, name, student_class, subject, book_name, topic, notes):
-    init_account_activity_db()
     learning_session = LearningSession(
         user_id=user_id,
         name=name,
@@ -404,7 +424,6 @@ def save_learning_session(user_id, name, student_class, subject, book_name, topi
 
 
 def save_learning_history(user_id, subject, book_name, topic, notes, diagram_data, quiz_questions):
-    init_learning_history_db()
     duplicate_cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
     duplicate = LearningHistory.query.filter(
         LearningHistory.user_id == user_id,
@@ -452,8 +471,15 @@ def subject_filter_pattern(filter_value):
 
 
 def get_learning_history_entries(user_id, search="", subject_filter="all", sort_order="newest"):
-    init_learning_history_db()
-    query = LearningHistory.query.filter(LearningHistory.user_id == user_id)
+    query = LearningHistory.query.options(
+        load_only(
+            LearningHistory.id,
+            LearningHistory.subject,
+            LearningHistory.book_name,
+            LearningHistory.topic,
+            LearningHistory.created_at,
+        )
+    ).filter(LearningHistory.user_id == user_id)
     search_text = search.strip().lower()
 
     if search_text:
@@ -495,12 +521,10 @@ def get_learning_history_entries(user_id, search="", subject_filter="all", sort_
 
 
 def get_learning_history_entry(entry_id, user_id):
-    init_learning_history_db()
     return LearningHistory.query.filter_by(id=entry_id, user_id=user_id).first()
 
 
 def delete_learning_history_entry(entry_id, user_id):
-    init_learning_history_db()
     lesson = LearningHistory.query.filter_by(id=entry_id, user_id=user_id).first()
     if lesson:
         db.session.delete(lesson)
@@ -525,7 +549,6 @@ def decode_diagram_payload(value, subject="", topic=""):
 
 
 def save_downloaded_file(user_id, file_type, subject, topic, score="", grade=""):
-    init_account_activity_db()
     downloaded_file = DownloadedFile(
         user_id=user_id,
         file_type=file_type,
@@ -540,7 +563,6 @@ def save_downloaded_file(user_id, file_type, subject, topic, score="", grade="")
 
 
 def save_quiz_history(name, student_class, subject, topic, score, grade, questions, answers, report_text, user_id=None):
-    init_quiz_history_db()
     history = QuizHistory(
         user_id=user_id,
         name=name,
@@ -559,8 +581,18 @@ def save_quiz_history(name, student_class, subject, topic, score, grade, questio
 
 
 def get_quiz_history(limit=50, user_id=None):
-    init_quiz_history_db()
-    query = QuizHistory.query
+    query = QuizHistory.query.options(
+        load_only(
+            QuizHistory.id,
+            QuizHistory.created_at,
+            QuizHistory.name,
+            QuizHistory.student_class,
+            QuizHistory.subject,
+            QuizHistory.topic,
+            QuizHistory.score,
+            QuizHistory.grade,
+        )
+    )
     if user_id:
         query = query.filter(QuizHistory.user_id == user_id)
     return query.order_by(QuizHistory.created_at.desc(), QuizHistory.id.desc()).limit(limit).all()
@@ -830,19 +862,33 @@ def structured_evaluation_to_markdown(evaluation):
     return "\n".join(lines)
 
 
+def format_model_datetime(value):
+    if isinstance(value, datetime):
+        return value.strftime("%Y-%m-%d %H:%M:%S")
+    return value
+
+
 def get_recent_learning_activity(user_id, limit=5):
-    init_quiz_history_db()
-    init_account_activity_db()
-    init_learning_history_db()
     lessons = (
-        LearningHistory.query.filter_by(user_id=user_id)
+        LearningHistory.query.with_entities(
+            LearningHistory.subject,
+            LearningHistory.topic,
+            LearningHistory.created_at,
+        )
+        .filter_by(user_id=user_id)
         .order_by(LearningHistory.created_at.desc(), LearningHistory.id.desc())
         .limit(limit)
         .all()
     )
-    for lesson in lessons:
-        lesson.score = "Not attempted"
-    return lessons
+    return [
+        {
+            "subject": lesson.subject,
+            "topic": lesson.topic,
+            "created_at": format_model_datetime(lesson.created_at),
+            "score": "Not attempted",
+        }
+        for lesson in lessons
+    ]
 
 
 def calculate_study_streak(activity_dates):
@@ -872,23 +918,29 @@ def calculate_study_streak(activity_dates):
 
 
 def get_dashboard_stats(user_id):
-    init_quiz_history_db()
-    init_account_activity_db()
-    init_learning_history_db()
-    quiz_rows = QuizHistory.query.filter_by(user_id=user_id).all()
-    lesson_rows = LearningHistory.query.filter_by(user_id=user_id).all()
+    quiz_rows = (
+        QuizHistory.query.with_entities(QuizHistory.score, QuizHistory.created_at)
+        .filter_by(user_id=user_id)
+        .all()
+    )
+    lesson_dates = [
+        row.created_at
+        for row in LearningHistory.query.with_entities(LearningHistory.created_at)
+        .filter_by(user_id=user_id)
+        .all()
+    ]
+    topics_studied = len(lesson_dates)
+    quizzes_attempted = len(quiz_rows)
     downloaded_count = DownloadedFile.query.filter_by(user_id=user_id).count()
 
     scores = [
         numeric_score
-        for numeric_score in (score_to_number(row["score"]) for row in quiz_rows)
+        for numeric_score in (score_to_number(row.score) for row in quiz_rows)
         if numeric_score is not None
     ]
-    topics_studied = len(lesson_rows)
-    quizzes_attempted = len(quiz_rows)
     average_score = f"{sum(scores) / len(scores):.1f}/10" if scores else "0"
     study_streak = calculate_study_streak(
-        [row["created_at"] for row in lesson_rows] + [row["created_at"] for row in quiz_rows]
+        lesson_dates + [row.created_at for row in quiz_rows]
     )
     achievements_count = (
         1
@@ -1017,17 +1069,30 @@ def build_performance_insights(overview, subject_analysis, quiz_scores, activity
 
 
 def get_performance_analytics(user_id):
-    init_quiz_history_db()
-    init_account_activity_db()
-    init_learning_history_db()
-
     quiz_rows = (
-        QuizHistory.query.filter_by(user_id=user_id)
+        QuizHistory.query.options(
+            load_only(
+                QuizHistory.id,
+                QuizHistory.subject,
+                QuizHistory.topic,
+                QuizHistory.score,
+                QuizHistory.created_at,
+            )
+        )
+        .filter_by(user_id=user_id)
         .order_by(QuizHistory.created_at.asc(), QuizHistory.id.asc())
         .all()
     )
     lesson_rows = (
-        LearningHistory.query.filter_by(user_id=user_id)
+        LearningHistory.query.options(
+            load_only(
+                LearningHistory.id,
+                LearningHistory.subject,
+                LearningHistory.topic,
+                LearningHistory.created_at,
+            )
+        )
+        .filter_by(user_id=user_id)
         .order_by(LearningHistory.created_at.asc(), LearningHistory.id.asc())
         .all()
     )
@@ -1146,10 +1211,6 @@ def get_performance_analytics(user_id):
 
 
 def get_developer_panel_stats():
-    init_users_db()
-    init_quiz_history_db()
-    init_account_activity_db()
-    init_learning_history_db()
     table_counts = {
         "users": User.query.count(),
         "learning_history": LearningHistory.query.count(),
@@ -2702,7 +2763,6 @@ def home():
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
-    init_users_db()
     form_data = {
         "full_name": "",
         "username": "",
@@ -2714,12 +2774,19 @@ def register():
         form_data, errors = validate_registration_form(request.form)
 
         if not errors:
-            existing_user = get_user_by_username_or_email(form_data["username"])
-            existing_email = get_user_by_username_or_email(form_data["email"])
+            conflicts = find_registration_conflicts(form_data["username"], form_data["email"])
+            normalized_username = form_data["username"].lower()
+            normalized_email = form_data["email"].lower()
 
-            if existing_user:
+            if any(
+                normalized_username in {user.username.lower(), user.email.lower()}
+                for user in conflicts
+            ):
                 errors.append("That username is already taken.")
-            if existing_email:
+            if any(
+                normalized_email in {user.username.lower(), user.email.lower()}
+                for user in conflicts
+            ):
                 errors.append("That email is already registered.")
 
         if errors:
