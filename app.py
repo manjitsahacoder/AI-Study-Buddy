@@ -55,15 +55,17 @@ genai.configure(api_key=GEMINI_API_KEY)
 
 model = genai.GenerativeModel("gemini-2.5-flash")
 
-
 @app.errorhandler(SQLAlchemyError)
 def handle_database_error(error):
     rollback_database_session(error)
+
+    import traceback
+    traceback.print_exc()
+
     return (
-        "The database is temporarily unavailable. Please try again in a moment.",
+        f"<h2>Database Error</h2><pre>{error}</pre>",
         503,
     )
-
 
 ROLE_DEFINITIONS = {
     "developer": {

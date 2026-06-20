@@ -38,6 +38,8 @@ def configure_database(app):
     )
     db.init_app(app)
 
+    print("DATABASE_URL =",app.config["SQLALCHEMY_DATABASE_URI"])
+
 
 def create_database_tables():
     db.create_all()
