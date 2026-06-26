@@ -30,7 +30,7 @@ from functools import lru_cache, wraps
 from difflib import SequenceMatcher
 from werkzeug.security import check_password_hash, generate_password_hash
 from urllib.parse import quote
-from sqlalchemy import and_, func, or_
+from sqlalchemy import and_, func, or_, text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import load_only
 import json
@@ -43,7 +43,15 @@ load_dotenv()
 from config import GEMINI_API_KEY, GEMINI_API_KEY_2
 from ai_tutor import build_tutor_prompt, render_tutor_markdown
 from database import configure_database, create_database_tables, db, rollback_database_session
-from models import DownloadedFile, LearningHistory, LearningSession, QuizHistory, User
+from models import (
+    DownloadedFile,
+    LearningHistory,
+    LearningSession,
+    QuizHistory,
+    TutorLesson,
+    TutorMessage,
+    User,
+)
 from tutor_repository import (
     get_or_create_tutor_lesson,
     get_recent_tutor_messages,
@@ -88,6 +96,7 @@ def handle_database_error(error):
 def initialize_database():
     with app.app_context():
         create_database_tables()
+        ensure_sqlite_schema_compatibility()
         ensure_user_roles()
         app.logger.info("Database tables are ready.")
 
@@ -172,6 +181,21 @@ def init_quiz_history_db():
 
 def init_users_db():
     return None
+
+
+def ensure_sqlite_schema_compatibility():
+    if db.engine.dialect.name != "sqlite":
+        return
+
+    user_columns = {
+        row[1]
+        for row in db.session.execute(text("PRAGMA table_info(users)")).fetchall()
+    }
+    if "role" not in user_columns:
+        db.session.execute(
+            text("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'student'")
+        )
+        db.session.commit()
 
 
 def normalize_account_name(name):
@@ -314,8 +338,11 @@ def inject_current_user():
     account = current_user() if session.get("user_id") else None
     account_role = account["role"] if account else None
     account_role_details = role_details(account_role) if account else None
+    exhibition_mode = bool(session.get("exhibition_mode"))
     return {
         "current_user": account,
+        "exhibition_mode": exhibition_mode,
+        "is_developer": account_role == "developer",
         "role_details": role_details,
         "user": {
             "id": account["id"],
@@ -882,6 +909,7 @@ def format_model_datetime(value):
 def get_recent_learning_activity(user_id, limit=5):
     lessons = (
         LearningHistory.query.with_entities(
+            LearningHistory.id,
             LearningHistory.subject,
             LearningHistory.topic,
             LearningHistory.created_at,
@@ -893,6 +921,7 @@ def get_recent_learning_activity(user_id, limit=5):
     )
     return [
         {
+            "id": lesson.id,
             "subject": lesson.subject,
             "topic": lesson.topic,
             "created_at": format_model_datetime(lesson.created_at),
@@ -1616,6 +1645,173 @@ def qa_panel_items():
             {"name": "Performance Analytics", "status": "Coming Soon"},
             {"name": "AI Recommendations", "status": "Coming Soon"},
         ],
+    }
+
+
+def dashboard_daily_quote():
+    quotes = [
+        {
+            "text": "Small steps every day turn difficult chapters into familiar friends.",
+            "author": "AI Study Buddy",
+        },
+        {
+            "text": "A focused twenty minutes today can make tomorrow's revision feel lighter.",
+            "author": "AI Study Buddy",
+        },
+        {
+            "text": "Curiosity is practice in disguise. Ask one more question.",
+            "author": "AI Study Buddy",
+        },
+        {
+            "text": "Progress is not always loud. Sometimes it is one clear idea clicking into place.",
+            "author": "AI Study Buddy",
+        },
+        {
+            "text": "Your future confidence is being built by today's effort.",
+            "author": "AI Study Buddy",
+        },
+        {
+            "text": "Review, retry, repeat. That is how tough topics become yours.",
+            "author": "AI Study Buddy",
+        },
+        {
+            "text": "Learning feels alive when you keep moving, even gently.",
+            "author": "AI Study Buddy",
+        },
+    ]
+    return quotes[datetime.now(timezone.utc).toordinal() % len(quotes)]
+
+
+def get_continue_lesson(user_id):
+    lesson = (
+        LearningHistory.query.options(
+            load_only(
+                LearningHistory.id,
+                LearningHistory.subject,
+                LearningHistory.topic,
+                LearningHistory.created_at,
+            )
+        )
+        .filter_by(user_id=user_id)
+        .order_by(LearningHistory.created_at.desc(), LearningHistory.id.desc())
+        .first()
+    )
+    if not lesson:
+        return None
+
+    return {
+        "id": lesson.id,
+        "subject": lesson.subject,
+        "topic": lesson.topic,
+        "created_at": format_activity_date(lesson.created_at),
+    }
+
+
+def get_recent_tutor_conversation(user_id):
+    message = (
+        TutorMessage.query.join(TutorLesson)
+        .filter(TutorMessage.user_id == user_id, TutorLesson.user_id == user_id)
+        .order_by(TutorMessage.created_at.desc(), TutorMessage.id.desc())
+        .first()
+    )
+    if not message:
+        return None
+
+    tutor_lesson = message.tutor_lesson
+    snippet = re.sub(r"\s+", " ", message.content or "").strip()
+    if len(snippet) > 150:
+        snippet = f"{snippet[:147].rstrip()}..."
+
+    return {
+        "tutor_lesson_id": tutor_lesson.id,
+        "subject": tutor_lesson.subject,
+        "topic": tutor_lesson.chapter,
+        "sender": "You" if message.sender == "student" else "AI Tutor",
+        "snippet": snippet,
+        "created_at": format_activity_date(message.created_at),
+    }
+
+
+def get_weekly_study_summary(user_id):
+    week_start = datetime.now(timezone.utc) - timedelta(days=7)
+    lessons_this_week = LearningHistory.query.filter(
+        LearningHistory.user_id == user_id,
+        LearningHistory.created_at >= week_start,
+    ).count()
+    quizzes_this_week = QuizHistory.query.filter(
+        QuizHistory.user_id == user_id,
+        QuizHistory.created_at >= week_start,
+    ).count()
+    tutor_messages_this_week = TutorMessage.query.filter(
+        TutorMessage.user_id == user_id,
+        TutorMessage.created_at >= week_start,
+    ).count()
+    total_actions = lessons_this_week + quizzes_this_week + tutor_messages_this_week
+    goal = 5
+    progress = min(100, int((total_actions / goal) * 100)) if total_actions else 0
+
+    if total_actions >= goal:
+        summary = "Weekly goal reached. Keep the rhythm going."
+    elif total_actions:
+        remaining = goal - total_actions
+        summary = f"{remaining} more study action{'s' if remaining != 1 else ''} to reach this week's goal."
+    else:
+        summary = "A new week is ready for your first study action."
+
+    return {
+        "lessons": lessons_this_week,
+        "quizzes": quizzes_this_week,
+        "tutor_messages": tutor_messages_this_week,
+        "total_actions": total_actions,
+        "goal": goal,
+        "progress": progress,
+        "summary": summary,
+    }
+
+
+def dashboard_learning_progress(stats, weekly_summary):
+    topic_points = min(stats["topics_studied"], 8) * 6
+    quiz_points = min(stats["quizzes_attempted"], 6) * 6
+    streak_points = min(stats["study_streak"], 7) * 2
+    weekly_points = min(weekly_summary["total_actions"], weekly_summary["goal"]) * 4
+    percentage = min(100, topic_points + quiz_points + streak_points + weekly_points)
+
+    if percentage >= 80:
+        label = "Advanced momentum"
+    elif percentage >= 45:
+        label = "Building momentum"
+    elif percentage > 0:
+        label = "Getting started"
+    else:
+        label = "Ready to begin"
+
+    return {
+        "percentage": percentage,
+        "label": label,
+        "next_milestone": "Reach 80% by mixing lessons, quizzes, and tutor practice.",
+    }
+
+
+def get_today_recommendation(stats, continue_lesson):
+    if continue_lesson:
+        return {
+            "title": f"Review {continue_lesson['topic']}",
+            "description": "Open your latest saved lesson, skim the notes, then ask the AI Tutor one follow-up question.",
+            "cta": "Continue lesson",
+            "url": url_for("view_learning_history", lesson_id=continue_lesson["id"]),
+        }
+    if stats["quizzes_attempted"] == 0 and stats["topics_studied"] > 0:
+        return {
+            "title": "Turn a lesson into a quiz",
+            "description": "You already have notes saved. Try a quiz to check what stuck.",
+            "cta": "Take quiz",
+            "url": url_for("home") + "#lesson-form",
+        }
+    return {
+        "title": "Start with a focused lesson",
+        "description": "Pick one topic you want to understand better and build from there.",
+        "cta": "Start learning",
+        "url": url_for("home") + "#lesson-form",
     }
 
 
@@ -3249,15 +3445,40 @@ def logout():
     return redirect(url_for("home"))
 
 
+@app.route("/exhibition-mode", methods=["POST"])
+@role_required("developer")
+def toggle_exhibition_mode():
+    enabled = request.form.get("enabled") == "1"
+    session["exhibition_mode"] = enabled
+    flash(
+        "Exhibition Mode enabled. Visitor-facing controls are now focused for demos."
+        if enabled
+        else "Exhibition Mode disabled. Developer controls are visible again.",
+        "success",
+    )
+    next_url = request.form.get("next", "")
+    if next_url.startswith("/"):
+        return redirect(next_url)
+    return redirect(url_for("home"))
+
+
 @app.route("/dashboard")
 @login_required
 def dashboard():
     account = current_user()
     stats = get_dashboard_stats(account["id"])
+    continue_lesson = get_continue_lesson(account["id"])
+    weekly_summary = get_weekly_study_summary(account["id"])
     return render_template(
         "dashboard.html",
         account=account,
         stats=stats,
+        daily_quote=dashboard_daily_quote(),
+        continue_lesson=continue_lesson,
+        recent_tutor_conversation=get_recent_tutor_conversation(account["id"]),
+        learning_progress=dashboard_learning_progress(stats, weekly_summary),
+        weekly_summary=weekly_summary,
+        today_recommendation=get_today_recommendation(stats, continue_lesson),
         recent_activity=get_recent_learning_activity(account["id"]),
         achievements=dashboard_achievements(stats),
         recommendations=recommended_topics(),

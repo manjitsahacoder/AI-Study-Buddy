@@ -1,0 +1,20 @@
+{% if exhibition_mode %}
+<nav class="exhibition-flow-ribbon" aria-label="Exhibition learning flow">
+    <a class="{% if exhibition_step == 'notes' %}active{% endif %}" href="{{ url_for('home') }}#lesson-form">
+        <span>1</span>
+        <strong>Notes</strong>
+    </a>
+    <a class="{% if exhibition_step == 'tutor' %}active{% endif %}" href="{{ url_for('learning_history') if user else url_for('home') }}#lesson-form">
+        <span>2</span>
+        <strong>AI Tutor</strong>
+    </a>
+    <a class="{% if exhibition_step == 'quiz' %}active{% endif %}" href="{{ url_for('home') }}#lesson-form">
+        <span>3</span>
+        <strong>Quiz</strong>
+    </a>
+    <a class="{% if exhibition_step == 'performance' %}active{% endif %}" href="{{ url_for('performance') if user else url_for('home') }}#lesson-form">
+        <span>4</span>
+        <strong>Performance</strong>
+    </a>
+</nav>
+{% endif %}

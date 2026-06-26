@@ -8,7 +8,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 
-<body class="dashboard-page">
+<body class="dashboard-page {% if exhibition_mode %}exhibition-mode{% endif %}">
 
 {% set active_page = 'performance' %}
 {% set overview = analytics.overview %}
@@ -42,6 +42,9 @@
         </header>
 
         {% include 'components/flash_messages.html' %}
+
+        {% set exhibition_step = 'performance' %}
+        {% include 'components/exhibition_flow.html' %}
 
         <section class="performance-summary-card dashboard-panel">
             <div>

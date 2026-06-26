@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 
-<body class="dashboard-page">
+<body class="dashboard-page {% if exhibition_mode %}exhibition-mode{% endif %}">
 
 {% set active_page = 'dashboard' %}
 <div class="dashboard-shell">
@@ -38,6 +38,30 @@
         </header>
 
         {% include 'components/flash_messages.html' %}
+
+        <section class="dashboard-hero-grid" aria-label="Daily learning focus">
+            <article class="dashboard-panel dashboard-quote-card">
+                <span class="eyebrow">Daily Motivation</span>
+                <blockquote>
+                    <p>{{ daily_quote.text }}</p>
+                    <cite>{{ daily_quote.author }}</cite>
+                </blockquote>
+            </article>
+
+            <article class="dashboard-panel dashboard-progress-card">
+                <div class="dashboard-section-heading compact-heading">
+                    <div>
+                        <span class="eyebrow">Learning Progress</span>
+                        <h2>{{ learning_progress.label }}</h2>
+                    </div>
+                    <strong>{{ learning_progress.percentage }}%</strong>
+                </div>
+                <div class="learning-progress-track" aria-label="Learning progress">
+                    <span style="width: {{ learning_progress.percentage }}%"></span>
+                </div>
+                <p>{{ learning_progress.next_milestone }}</p>
+            </article>
+        </section>
 
         <section class="dashboard-stat-grid" aria-label="Learning statistics">
             <article class="dashboard-stat-card">
@@ -77,6 +101,123 @@
             </article>
         </section>
 
+        <section class="dashboard-panel continue-dashboard-panel">
+            <div class="continue-dashboard-copy">
+                <span class="eyebrow">Continue Learning</span>
+                {% if continue_lesson %}
+                <h2>Continue previous lesson</h2>
+                <p>{{ continue_lesson.subject }} &bull; {{ continue_lesson.topic }} &bull; {{ continue_lesson.created_at }}</p>
+                {% else %}
+                <h2>Your next lesson is waiting</h2>
+                <p>Start a topic today and this space will turn into your personal launchpad.</p>
+                {% endif %}
+            </div>
+            {% if continue_lesson %}
+            <a class="button-link continue-learning-button" href="{{ url_for('view_learning_history', lesson_id=continue_lesson.id) }}">Continue learning</a>
+            {% else %}
+            <a class="button-link continue-learning-button" href="{{ url_for('home') }}#lesson-form">Continue learning</a>
+            {% endif %}
+        </section>
+
+        <div class="dashboard-content-grid">
+            <section class="dashboard-panel">
+                <div class="dashboard-section-heading">
+                    <div>
+                        <span class="eyebrow">Recent Lessons</span>
+                        <h2>Last 5 Saved Lessons</h2>
+                    </div>
+                </div>
+
+                {% if recent_activity %}
+                <div class="activity-list">
+                    {% for activity in recent_activity %}
+                    <article class="activity-card">
+                        <div>
+                            <strong>{{ activity.subject }}</strong>
+                            <span>{{ activity.topic }}</span>
+                        </div>
+                        <div>
+                            <span>{{ activity.created_at }}</span>
+                            <strong>{{ activity.score }}</strong>
+                        </div>
+                    </article>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="dashboard-empty-state beautiful-empty-state">
+                    <h3>No learning activity yet.</h3>
+                    <p>Start a lesson or complete a quiz to see your activity bloom here.</p>
+                    <a class="button-link secondary-link" href="{{ url_for('home') }}#lesson-form">Start New Lesson</a>
+                </div>
+                {% endif %}
+            </section>
+
+            <section class="dashboard-panel tutor-preview-panel">
+                <div class="dashboard-section-heading">
+                    <div>
+                        <span class="eyebrow">AI Tutor</span>
+                        <h2>Recent AI Tutor conversation</h2>
+                    </div>
+                </div>
+                {% if recent_tutor_conversation %}
+                <article class="tutor-preview-card">
+                    <span aria-hidden="true">&#129302;</span>
+                    <div>
+                        <strong>{{ recent_tutor_conversation.subject }} &bull; {{ recent_tutor_conversation.topic }}</strong>
+                        <p>{{ recent_tutor_conversation.sender }}: {{ recent_tutor_conversation.snippet }}</p>
+                        <small>{{ recent_tutor_conversation.created_at }}</small>
+                    </div>
+                    <a class="button-link secondary-link" href="{{ url_for('ai_tutor', tutor_lesson_id=recent_tutor_conversation.tutor_lesson_id) }}">Open Tutor</a>
+                </article>
+                {% else %}
+                <div class="dashboard-empty-state beautiful-empty-state tutor-empty-state">
+                    <h3>No tutor conversation yet.</h3>
+                    <p>Save a lesson, open the AI Tutor, and your latest question will appear here.</p>
+                    {% if continue_lesson %}
+                    <a class="button-link secondary-link" href="{{ url_for('view_learning_history', lesson_id=continue_lesson.id) }}">Open Latest Lesson</a>
+                    {% else %}
+                    <a class="button-link secondary-link" href="{{ url_for('home') }}#lesson-form">Create a Lesson</a>
+                    {% endif %}
+                </div>
+                {% endif %}
+            </section>
+        </div>
+
+        <section class="dashboard-insight-grid" aria-label="Study summary and recommendations">
+            <article class="dashboard-panel weekly-summary-panel">
+                <div class="dashboard-section-heading">
+                    <div>
+                        <span class="eyebrow">This Week</span>
+                        <h2>Weekly study summary</h2>
+                    </div>
+                    <strong>{{ weekly_summary.total_actions }}/{{ weekly_summary.goal }}</strong>
+                </div>
+                <div class="weekly-summary-track">
+                    <span style="width: {{ weekly_summary.progress }}%"></span>
+                </div>
+                <p>{{ weekly_summary.summary }}</p>
+                <div class="weekly-summary-grid">
+                    <span><strong>{{ weekly_summary.lessons }}</strong> Lessons</span>
+                    <span><strong>{{ weekly_summary.quizzes }}</strong> Quizzes</span>
+                    <span><strong>{{ weekly_summary.tutor_messages }}</strong> Tutor chats</span>
+                </div>
+            </article>
+
+            <article class="dashboard-panel recommendation-focus-card">
+                <span class="eyebrow">Today's Recommendation</span>
+                <h2>{{ today_recommendation.title }}</h2>
+                <p>{{ today_recommendation.description }}</p>
+                <a class="button-link" href="{{ today_recommendation.url }}">{{ today_recommendation.cta }}</a>
+            </article>
+
+            <article class="dashboard-panel chart-panel">
+                <span class="chart-icon" aria-hidden="true">&#128200;</span>
+                <h2>Performance Analytics</h2>
+                <p>Track scores, subjects, study habits, and recent progress.</p>
+                <a class="button-link" href="{{ url_for('performance') }}">View Analytics</a>
+            </article>
+        </section>
+
         <section class="dashboard-panel">
             <div class="dashboard-section-heading">
                 <div>
@@ -107,46 +248,6 @@
                 </a>
             </div>
         </section>
-
-        <div class="dashboard-content-grid">
-            <section class="dashboard-panel">
-                <div class="dashboard-section-heading">
-                    <div>
-                        <span class="eyebrow">Recent Lessons</span>
-                        <h2>Last 5 Saved Lessons</h2>
-                    </div>
-                </div>
-
-                {% if recent_activity %}
-                <div class="activity-list">
-                    {% for activity in recent_activity %}
-                    <article class="activity-card">
-                        <div>
-                            <strong>{{ activity.subject }}</strong>
-                            <span>{{ activity.topic }}</span>
-                        </div>
-                        <div>
-                            <span>{{ activity.created_at }}</span>
-                            <strong>{{ activity.score }}</strong>
-                        </div>
-                    </article>
-                    {% endfor %}
-                </div>
-                {% else %}
-                <div class="dashboard-empty-state">
-                    <h3>No learning activity yet.</h3>
-                    <p>Start a lesson or complete a quiz to see your activity here.</p>
-                </div>
-                {% endif %}
-            </section>
-
-            <section class="dashboard-panel chart-panel">
-                <span class="chart-icon" aria-hidden="true">&#128200;</span>
-                <h2>Performance Analytics</h2>
-                <p>Track scores, subjects, study habits, and recent progress.</p>
-                <a class="button-link" href="{{ url_for('performance') }}">View Analytics</a>
-            </section>
-        </div>
 
         <section class="dashboard-panel">
             <div class="dashboard-section-heading">

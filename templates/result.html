@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 
-<body class="result-page">
+<body class="result-page {% if exhibition_mode %}exhibition-mode{% endif %}">
 <div class="page-illustrations result-illustrations" aria-hidden="true">
     <img class="bg-illustration bg-illustration-large bg-top-left" src="{{ url_for('static', filename='images/backgrounds/result-success.svg') }}" alt="">
     <img class="bg-illustration bg-illustration-medium bg-top-right" src="{{ url_for('static', filename='images/backgrounds/ai-brain-circuit.svg') }}" alt="">
@@ -19,6 +19,9 @@
 </button>
 
 <div class="learn-container">
+    {% set exhibition_step = 'performance' %}
+    {% include 'components/exhibition_flow.html' %}
+
     <h1>&#128202; Performance Report</h1>
     <div class="badge">&#127942; Active Learner</div>
 

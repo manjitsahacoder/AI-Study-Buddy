@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 
-<body class="home-page">
+<body class="home-page {% if exhibition_mode %}exhibition-mode{% endif %}">
 <div class="page-illustrations home-illustrations" aria-hidden="true">
     <img class="bg-illustration bg-illustration-large bg-top-left" src="{{ url_for('static', filename='images/backgrounds/home-education.svg') }}" alt="">
     <img class="bg-illustration bg-illustration-medium bg-top-right" src="{{ url_for('static', filename='images/backgrounds/ai-brain-circuit.svg') }}" alt="">
@@ -26,6 +26,11 @@
     </div>
     <h2>AI is preparing your lesson...</h2>
     <p id="loader-message">&#128214; Reading your request...</p>
+    <div class="loader-skeleton-stack" aria-hidden="true">
+        <span></span>
+        <span></span>
+        <span></span>
+    </div>
 </div>
 
 <div class="container">
@@ -59,6 +64,20 @@
     {% include 'components/flash_messages.html' %}
     {% include 'components/mode_banner.html' %}
 
+    {% if exhibition_mode %}
+    <section class="exhibition-welcome-screen" data-tour-title="Welcome to Exhibition Mode" data-tour-body="This welcome screen gives judges a fast overview of the project and a direct path into the student demo.">
+        <div>
+            <span class="eyebrow">Exhibition Mode</span>
+            <h2>Understand AI Study Buddy in minutes</h2>
+            <p>Follow the student journey from AI-generated notes to AI Tutor support, quiz practice, performance feedback, and saved progress.</p>
+        </div>
+        <div class="exhibition-welcome-actions">
+            <a class="button-link" href="#lesson-form">Start Live Demo</a>
+            <button type="button" class="secondary-link" data-start-tour>Guided Tour</button>
+        </div>
+    </section>
+    {% endif %}
+
     <section class="welcome-card">
         <span class="eyebrow">Smarter Learning</span>
         <h2>Welcome to AI Study Buddy</h2>
@@ -83,26 +102,26 @@
     </section>
     {% endif %}
 
-    <div class="features">
-        <div class="feature-card">
+    <div class="features" data-tour-title="Student Features" data-tour-body="These are the core features students use: notes, textbook support, quizzes, performance feedback, PDFs, and diagrams.">
+        <div class="feature-card exhibition-feature-highlight">
             <div class="feature-icon">&#129302;</div>
             <h3>AI Notes</h3>
             <p>Generate easy-to-understand notes.</p>
         </div>
 
-        <div class="feature-card">
+        <div class="feature-card exhibition-feature-highlight">
             <div class="feature-icon">&#128218;</div>
             <h3>Textbook Support</h3>
             <p>Learn directly from supported NCERT textbooks.</p>
         </div>
 
-        <div class="feature-card">
+        <div class="feature-card exhibition-feature-highlight">
             <div class="feature-icon">&#128221;</div>
             <h3>Smart Quiz</h3>
             <p>Automatically generate chapter-based questions.</p>
         </div>
 
-        <div class="feature-card">
+        <div class="feature-card exhibition-feature-highlight">
             <div class="feature-icon">&#128200;</div>
             <h3>Performance Analysis</h3>
             <p>Receive AI-based evaluation and feedback.</p>
@@ -170,7 +189,36 @@
         <span><strong>Science</strong> + <strong>Photosynthesis</strong> = notes, diagram, quiz</span>
     </div>
 
-    <form id="lesson-form" class="study-form" action="{{ url_for('learn') }}" method="POST" onsubmit="showLoader()">
+    {% if exhibition_mode %}
+    <section class="exhibition-demo-panel" data-tour-title="Quick Demo Buttons" data-tour-body="Pick a demo topic to fill the lesson form instantly, then press Start Learning to run the real app flow.">
+        <div class="dashboard-section-heading">
+            <div>
+                <span class="eyebrow">Quick Demo</span>
+                <h2>Choose a ready-made example</h2>
+            </div>
+            <p>Great for showing judges the project quickly.</p>
+        </div>
+        <div class="exhibition-demo-grid">
+            <button type="button" data-demo-name="Exhibition Visitor" data-demo-class="9" data-demo-subject="Science" data-demo-book="" data-demo-topic="Photosynthesis">
+                <span aria-hidden="true">&#128300;</span>
+                <strong>Science Demo</strong>
+                <small>Photosynthesis</small>
+            </button>
+            <button type="button" data-demo-name="Exhibition Visitor" data-demo-class="9" data-demo-subject="Maths" data-demo-book="" data-demo-topic="Linear Equations">
+                <span aria-hidden="true">&#8721;</span>
+                <strong>Maths Demo</strong>
+                <small>Linear Equations</small>
+            </button>
+            <button type="button" data-demo-name="Exhibition Visitor" data-demo-class="9" data-demo-subject="English" data-demo-book="Beehive" data-demo-topic="Grammar Revision">
+                <span aria-hidden="true">Aa</span>
+                <strong>English Demo</strong>
+                <small>Grammar Revision</small>
+            </button>
+        </div>
+    </section>
+    {% endif %}
+
+    <form id="lesson-form" class="study-form" action="{{ url_for('learn') }}" method="POST" onsubmit="showLoader()" data-tour-title="Live Lesson Generator" data-tour-body="This form starts the real learning workflow. It generates notes, a diagram, quiz questions, and saved history for logged-in students.">
         <div class="form-grid">
             <div class="form-field">
                 <label for="name">&#128100; Your Name</label>
@@ -307,6 +355,23 @@
 
 {% if not user %}
 {% include 'components/login_required_modal.html' %}
+{% endif %}
+
+{% if exhibition_mode %}
+<div class="exhibition-tour-backdrop" data-exhibition-tour hidden>
+    <section class="exhibition-tour-card" role="dialog" aria-modal="true" aria-labelledby="exhibition-tour-title">
+        <span class="eyebrow">Guided Tour</span>
+        <h2 id="exhibition-tour-title">Welcome to AI Study Buddy</h2>
+        <p data-tour-copy>This short tour highlights how judges can understand the project quickly.</p>
+        <div class="exhibition-tour-progress" aria-hidden="true">
+            <span data-tour-progress></span>
+        </div>
+        <div class="exhibition-tour-actions">
+            <button type="button" class="secondary-link" data-tour-skip>Skip</button>
+            <button type="button" data-tour-next>Next</button>
+        </div>
+    </section>
+</div>
 {% endif %}
 
 <script>

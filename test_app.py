@@ -1051,6 +1051,45 @@ Grade: A
         self.assertIn("sidebar-nav", page)
         self.assertIn('class="profile-menu-button"', page)
 
+    def test_exhibition_mode_toggle_requires_developer(self):
+        self.register_user()
+        self.login_user()
+
+        response = self.client.post(
+            "/exhibition-mode",
+            data={"enabled": "1", "next": "/"},
+            follow_redirects=True,
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_developer_can_enable_exhibition_mode_and_hide_admin_links(self):
+        self.register_user(
+            full_name="Manjit Saha",
+            username="manjit",
+            email="manjit@example.com",
+        )
+        self.login_user(identifier="manjit")
+
+        toggle_response = self.client.post(
+            "/exhibition-mode",
+            data={"enabled": "1", "next": "/"},
+            follow_redirects=True,
+        )
+
+        self.assertEqual(toggle_response.status_code, 200)
+        home_page = toggle_response.get_data(as_text=True)
+        self.assertIn("Exhibition Mode", home_page)
+        self.assertIn("Quick Demo", home_page)
+        self.assertIn("Guided Tour", home_page)
+
+        dashboard_response = self.client.get("/dashboard")
+        dashboard_page = dashboard_response.get_data(as_text=True)
+        self.assertIn("Exhibition Mode", dashboard_page)
+        self.assertNotIn("Developer Panel", dashboard_page)
+        self.assertNotIn(">Developer</span>", dashboard_page)
+        self.assertNotIn("Manage Users", dashboard_page)
+
     @patch.object(app_module.model, "generate_content")
     def test_logged_in_learn_autosaves_learning_session(self, generate_content):
         self.register_user()

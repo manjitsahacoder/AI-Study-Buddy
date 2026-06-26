@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 
-<body class="tutor-page">
+<body class="tutor-page {% if exhibition_mode %}exhibition-mode{% endif %}">
 <div class="page-illustrations learn-illustrations" aria-hidden="true">
     <img class="bg-illustration bg-illustration-large bg-top-left" src="{{ url_for('static', filename='images/backgrounds/learn-doodles.svg') }}" alt="">
     <img class="bg-illustration bg-illustration-medium bg-top-right" src="{{ url_for('static', filename='images/backgrounds/ai-brain-circuit.svg') }}" alt="">
@@ -20,6 +20,9 @@
 </button>
 
 <main class="tutor-shell">
+    {% set exhibition_step = 'tutor' %}
+    {% include 'components/exhibition_flow.html' %}
+
     <header class="tutor-header">
         <div>
             <span class="eyebrow">&#128104;&#8205;&#127979; AI Tutor</span>
@@ -153,7 +156,9 @@
     </div>
 </template>
 
+{% include 'components/exhibition_toolbar.html' %}
 <script src="{{ url_for('static', filename='tutor.js') }}"></script>
+<script src="{{ url_for('static', filename='motion.js') }}" defer></script>
 <script>
 function toggleTheme() {
     document.body.classList.toggle("dark-mode");

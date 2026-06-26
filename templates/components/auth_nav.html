@@ -41,19 +41,19 @@
                 <span aria-hidden="true">&#128196;</span>
                 <span>Downloaded Reports</span>
             </a>
-            {% if user.role == 'developer' %}
+            {% if user.role == 'developer' and not exhibition_mode %}
             <a role="menuitem" href="{{ url_for('developer_panel') }}">
                 <span aria-hidden="true">&#128295;</span>
                 <span>Developer Panel</span>
             </a>
             {% endif %}
-            {% if user.role in ['developer', 'technical_support'] %}
+            {% if user.role in ['developer', 'technical_support'] and not exhibition_mode %}
             <a role="menuitem" href="{{ url_for('support_panel') }}">
                 <span aria-hidden="true">&#127911;</span>
                 <span>Support Panel</span>
             </a>
             {% endif %}
-            {% if user.role in ['developer', 'qa_tester'] %}
+            {% if user.role in ['developer', 'qa_tester'] and not exhibition_mode %}
             <a role="menuitem" href="{{ url_for('qa_panel') }}">
                 <span aria-hidden="true">&#9989;</span>
                 <span>QA Panel</span>

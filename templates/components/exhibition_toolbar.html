@@ -1,0 +1,15 @@
+{% if is_developer %}
+<div class="exhibition-toolbar" role="region" aria-label="Developer exhibition controls">
+    <div>
+        <strong>Exhibition Mode</strong>
+        <span>{{ 'On' if exhibition_mode else 'Off' }}</span>
+    </div>
+    <form action="{{ url_for('toggle_exhibition_mode') }}" method="POST">
+        <input type="hidden" name="enabled" value="{{ '0' if exhibition_mode else '1' }}">
+        <input type="hidden" name="next" value="{{ request.full_path if request.query_string else request.path }}">
+        <button type="submit" class="{{ 'secondary-link' if exhibition_mode else '' }}">
+            {{ 'Turn Off' if exhibition_mode else 'Turn On' }}
+        </button>
+    </form>
+</div>
+{% endif %}
