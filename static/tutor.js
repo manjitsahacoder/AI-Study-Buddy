@@ -166,6 +166,8 @@
         resizeInput();
         input.disabled = true;
         sendButton.disabled = true;
+        form.classList.add("is-sending");
+        form.setAttribute("aria-busy", "true");
 
         const typing = addTyping();
         try {
@@ -190,6 +192,8 @@
         } finally {
             input.disabled = false;
             sendButton.disabled = false;
+            form.classList.remove("is-sending");
+            form.setAttribute("aria-busy", "false");
             input.focus();
         }
     });

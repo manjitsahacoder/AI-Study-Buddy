@@ -1,7 +1,7 @@
 services:
   - type: web
     name: ai-study-buddy
-    env: python
+    runtime: python
     plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app:app
@@ -14,4 +14,12 @@ services:
       - key: SECRET_KEY
         generateValue: true
       - key: DATABASE_URL
-        sync: false
+        fromDatabase:
+          name: ai-study-buddy-db
+          property: connectionString
+
+databases:
+  - name: ai-study-buddy-db
+    databaseName: ai_study_buddy
+    user: ai_study_buddy
+    plan: free

@@ -108,6 +108,12 @@ function updateBrowserUrl(page) {
 }
 
 function loadUsers(page) {
+    const results = document.getElementById("developer-users-results");
+    if (results) {
+        results.classList.add("is-loading");
+        results.setAttribute("aria-busy", "true");
+    }
+
     fetch(usersUrl(page), {
         headers: {
             "X-Requested-With": "XMLHttpRequest"
@@ -117,6 +123,13 @@ function loadUsers(page) {
         .then(html => {
             document.getElementById("developer-users-results").outerHTML = html;
             updateBrowserUrl(page || "1");
+        })
+        .catch(error => {
+            if (results) {
+                results.classList.remove("is-loading");
+                results.setAttribute("aria-busy", "false");
+            }
+            throw error;
         });
 }
 
