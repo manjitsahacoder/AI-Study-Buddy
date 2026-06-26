@@ -10,7 +10,15 @@ os.environ["QUIZ_HISTORY_DB"] = TEST_DB_PATH
 
 import app as app_module
 from database import db
-from models import DownloadedFile, LearningHistory, LearningSession, QuizHistory, User
+from models import (
+    DownloadedFile,
+    LearningHistory,
+    LearningSession,
+    QuizHistory,
+    TutorLesson,
+    TutorMessage,
+    User,
+)
 
 
 class MockResponse:
@@ -1109,6 +1117,109 @@ Q5. What is question five?
             saved_count = LearningHistory.query.count()
 
         self.assertEqual(saved_count, 1)
+
+    @patch.object(app_module.model, "generate_content")
+    def test_start_tutor_uses_saved_lesson_without_calling_ai(self, generate_content):
+        self.register_user()
+        self.login_user()
+        with app_module.app.app_context():
+            lesson = LearningHistory(
+                user_id=1,
+                subject="Science",
+                book_name="NCERT",
+                topic="Photosynthesis",
+                notes="Plants make food using sunlight.",
+                diagram_data="{}",
+                quiz_questions=json.dumps(self.questions),
+            )
+            db.session.add(lesson)
+            db.session.commit()
+            lesson_id = lesson.id
+
+        response = self.client.post(
+            "/tutor/start",
+            data={
+                "lesson_id": lesson_id,
+                "name": "Asha",
+                "student_class": "8",
+            },
+            follow_redirects=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        generate_content.assert_not_called()
+        page = response.get_data(as_text=True)
+        self.assertIn("AI Tutor", page)
+        self.assertIn("Photosynthesis", page)
+        self.assertIn("Ask anything about this lesson", page)
+        self.assertIn("Continue to Quiz", page)
+        with app_module.app.app_context():
+            tutor_lesson = TutorLesson.query.first()
+
+        self.assertEqual(
+            (
+                tutor_lesson.user_id,
+                tutor_lesson.learning_history_id,
+                tutor_lesson.student_class,
+                tutor_lesson.subject,
+                tutor_lesson.chapter,
+            ),
+            (1, lesson_id, "8", "Science", "Photosynthesis"),
+        )
+
+    @patch.object(app_module.model, "generate_content")
+    def test_tutor_message_saves_memory_and_reuses_context(self, generate_content):
+        self.register_user()
+        self.login_user()
+        generate_content.side_effect = [
+            MockResponse("Chlorophyll is the green pigment that helps leaves catch sunlight."),
+            MockResponse("More simply, chlorophyll is like a tiny sunlight catcher in leaves."),
+        ]
+        with app_module.app.app_context():
+            lesson = LearningHistory(
+                user_id=1,
+                subject="Science",
+                book_name="NCERT",
+                topic="Photosynthesis",
+                notes="# Photosynthesis\nChlorophyll helps leaves absorb sunlight.",
+                diagram_data="{}",
+                quiz_questions=json.dumps(self.questions),
+            )
+            db.session.add(lesson)
+            db.session.commit()
+            tutor_lesson = app_module.get_or_create_tutor_lesson(
+                1,
+                lesson,
+                "Asha",
+                "8",
+            )
+            tutor_lesson_id = tutor_lesson.id
+
+        first = self.client.post(
+            f"/api/tutor/{tutor_lesson_id}/message",
+            json={"message": "Explain chlorophyll."},
+        )
+        second = self.client.post(
+            f"/api/tutor/{tutor_lesson_id}/message",
+            json={"message": "Explain it more simply."},
+        )
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.assertIn("reply_html", second.get_json())
+        prompt = generate_content.call_args.args[0]
+        self.assertIn("Class: 8", prompt)
+        self.assertIn("Subject: Science", prompt)
+        self.assertIn("Book: NCERT", prompt)
+        self.assertIn("Current chapter or lesson: Photosynthesis", prompt)
+        self.assertIn("Chlorophyll helps leaves absorb sunlight.", prompt)
+        self.assertIn("Student: Explain chlorophyll.", prompt)
+        self.assertIn("AI Tutor: Chlorophyll is the green pigment", prompt)
+        self.assertIn("Student's latest question:\nExplain it more simply.", prompt)
+        with app_module.app.app_context():
+            messages = TutorMessage.query.order_by(TutorMessage.id.asc()).all()
+
+        self.assertEqual([message.sender for message in messages], ["student", "assistant", "student", "assistant"])
 
     def test_guest_learning_history_shows_locked_message(self):
         response = self.client.get("/learning-history")

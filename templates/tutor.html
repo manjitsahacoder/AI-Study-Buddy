@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ tutor_lesson.chapter }} AI Tutor - AI Study Buddy</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body class="tutor-page">
+<div class="page-illustrations learn-illustrations" aria-hidden="true">
+    <img class="bg-illustration bg-illustration-large bg-top-left" src="{{ url_for('static', filename='images/backgrounds/learn-doodles.svg') }}" alt="">
+    <img class="bg-illustration bg-illustration-medium bg-top-right" src="{{ url_for('static', filename='images/backgrounds/ai-brain-circuit.svg') }}" alt="">
+    <img class="bg-illustration bg-illustration-small bg-mid-left" src="{{ url_for('static', filename='images/backgrounds/pencil.svg') }}" alt="">
+    <img class="bg-illustration bg-illustration-medium bg-bottom-right" src="{{ url_for('static', filename='images/backgrounds/quiz-doodles.svg') }}" alt="">
+</div>
+
+<button id="theme-toggle" onclick="toggleTheme()">
+    &#127769; Dark Mode
+</button>
+
+<main class="tutor-shell">
+    <header class="tutor-header">
+        <div>
+            <span class="eyebrow">&#128104;&#8205;&#127979; AI Tutor</span>
+            <h1>{{ tutor_lesson.chapter }}</h1>
+            <p>Ask anything about this lesson. Your tutor already knows the notes, class, subject, book, and chapter.</p>
+        </div>
+        <div class="tutor-header-actions">
+            <a class="button-link secondary-link" href="{{ url_for('view_learning_history', lesson_id=lesson.id) }}">Back to Notes</a>
+            {% include 'components/auth_nav.html' %}
+        </div>
+    </header>
+
+    <section class="tutor-lesson-strip" aria-label="Tutor lesson context">
+        <span><strong>Student</strong> {{ tutor_lesson.name }}</span>
+        <span><strong>Class</strong> {{ tutor_lesson.student_class }}</span>
+        <span><strong>Subject</strong> {{ tutor_lesson.subject }}</span>
+        <span><strong>Book</strong> {{ tutor_lesson.book_name or 'N/A' }}</span>
+        <span><strong>Chapter</strong> {{ tutor_lesson.chapter }}</span>
+    </section>
+
+    <section class="tutor-chat-panel" aria-label="AI Tutor conversation">
+        <div class="tutor-messages" id="tutor-messages" aria-live="polite">
+            <article class="tutor-message-row assistant">
+                <div class="tutor-avatar" aria-hidden="true">&#127979;</div>
+                <div class="tutor-message">
+                    <div class="tutor-message-meta">AI Tutor</div>
+                    <div class="tutor-message-content">
+                        <p>Hello {{ tutor_lesson.name }}. I am ready to teach <strong>{{ tutor_lesson.chapter }}</strong>. Ask me where you got stuck, or ask me to explain any part more simply.</p>
+                    </div>
+                </div>
+            </article>
+
+            {% for message in messages %}
+            <article class="tutor-message-row {{ 'student' if message.sender == 'student' else 'assistant' }}">
+                {% if message.sender != 'student' %}
+                <div class="tutor-avatar" aria-hidden="true">&#127979;</div>
+                {% endif %}
+                <div class="tutor-message">
+                    <div class="tutor-message-meta">{{ 'You' if message.sender == 'student' else 'AI Tutor' }}</div>
+                    <div class="tutor-message-content">
+                        {% if message.sender == 'student' %}
+                        {{ message.content }}
+                        {% else %}
+                        {{ message.html|safe }}
+                        {% endif %}
+                    </div>
+                    {% if message.sender == 'assistant' %}
+                    <textarea class="tutor-message-source" hidden readonly>{{ message.content }}</textarea>
+                    <div class="tutor-message-actions">
+                        <button type="button" class="copy-response-button" data-copy-response>Copy response</button>
+                    </div>
+                    <div class="tutor-quiz-cta">
+                        <div>
+                            <strong>Ready to test yourself?</strong>
+                        </div>
+                        <form action="{{ url_for('quiz') }}" method="POST">
+                            <input type="hidden" name="name" value="{{ tutor_lesson.name }}">
+                            <input type="hidden" name="student_class" value="{{ tutor_lesson.student_class }}">
+                            <input type="hidden" name="subject" value="{{ tutor_lesson.subject }}">
+                            <input type="hidden" name="topic" value="{{ tutor_lesson.chapter }}">
+                            {% for question in questions %}
+                            <input type="hidden" name="question{{ loop.index }}" value="{{ question }}">
+                            {% endfor %}
+                            <button type="submit">Continue to Quiz</button>
+                        </form>
+                    </div>
+                    {% endif %}
+                </div>
+            </article>
+            {% endfor %}
+        </div>
+
+        <form
+            class="tutor-composer"
+            id="tutor-form"
+            data-endpoint="{{ url_for('tutor_message', tutor_lesson_id=tutor_lesson.id) }}">
+            <label for="tutor-input">Ask your AI Tutor</label>
+            <div class="tutor-input-row">
+                <textarea
+                    id="tutor-input"
+                    name="message"
+                    rows="2"
+                    placeholder="Ask a follow-up question..."
+                    autocomplete="off"
+                    required></textarea>
+                <button type="submit" id="tutor-send">Send</button>
+            </div>
+            <p>Enter sends. Shift+Enter adds a new line.</p>
+        </form>
+    </section>
+</main>
+
+<template id="tutor-quiz-cta-template">
+    <div class="tutor-quiz-cta">
+        <div>
+            <strong>Ready to test yourself?</strong>
+        </div>
+        <form action="{{ url_for('quiz') }}" method="POST">
+            <input type="hidden" name="name" value="{{ tutor_lesson.name }}">
+            <input type="hidden" name="student_class" value="{{ tutor_lesson.student_class }}">
+            <input type="hidden" name="subject" value="{{ tutor_lesson.subject }}">
+            <input type="hidden" name="topic" value="{{ tutor_lesson.chapter }}">
+            {% for question in questions %}
+            <input type="hidden" name="question{{ loop.index }}" value="{{ question }}">
+            {% endfor %}
+            <button type="submit">Continue to Quiz</button>
+        </form>
+    </div>
+</template>
+
+<script src="{{ url_for('static', filename='tutor.js') }}"></script>
+<script>
+function toggleTheme() {
+    document.body.classList.toggle("dark-mode");
+
+    let btn = document.getElementById("theme-toggle");
+    if (document.body.classList.contains("dark-mode")) {
+        btn.innerHTML = "&#9728;&#65039; Light Mode";
+    } else {
+        btn.innerHTML = "&#127769; Dark Mode";
+    }
+}
+</script>
+</body>
+</html>

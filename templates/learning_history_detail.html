@@ -69,6 +69,10 @@
     </section>
 
     <div class="result-actions">
+        <form action="{{ url_for('start_ai_tutor') }}" method="POST">
+            <input type="hidden" name="lesson_id" value="{{ lesson.id }}">
+            <button type="submit">&#128104;&#8205;&#127979; Start AI Tutor</button>
+        </form>
         <a class="button-link" href="{{ url_for('download_learning_history_pdf', lesson_id=lesson.id) }}">&#128196; Download PDF</a>
         <button class="button-link secondary-link favourite-placeholder" type="button" disabled title="Favourite notes will be added later">&#11088; Favourite</button>
         <form action="{{ url_for('delete_learning_history', lesson_id=lesson.id) }}" method="POST" onsubmit="return confirm('Delete this saved lesson?');">

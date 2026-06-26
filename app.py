@@ -3,6 +3,7 @@ from flask import (
     abort,
     flash,
     g,
+    jsonify,
     redirect,
     render_template,
     request,
@@ -40,8 +41,17 @@ from dotenv import load_dotenv
 
 load_dotenv()
 from config import GEMINI_API_KEY, GEMINI_API_KEY_2
+from ai_tutor import build_tutor_prompt, render_tutor_markdown
 from database import configure_database, create_database_tables, db, rollback_database_session
 from models import DownloadedFile, LearningHistory, LearningSession, QuizHistory, User
+from tutor_repository import (
+    get_or_create_tutor_lesson,
+    get_recent_tutor_messages,
+    get_tutor_lesson_for_user,
+    get_tutor_messages,
+    get_user_lesson,
+    save_tutor_exchange,
+)
 
 
 app = Flask(__name__)
@@ -3444,6 +3454,100 @@ def delete_learning_history(lesson_id):
     return redirect(url_for("learning_history"))
 
 
+@app.route("/tutor/start", methods=["POST"])
+@login_required
+def start_ai_tutor():
+    lesson_id = request.form.get("lesson_id", type=int)
+    if not lesson_id:
+        abort(400, description="A saved lesson is required to start the AI Tutor.")
+
+    lesson = get_user_lesson(lesson_id, session["user_id"])
+    if not lesson:
+        abort(404)
+
+    account = current_user()
+    name = request.form.get("name", "").strip() or account["full_name"]
+    student_class = request.form.get("student_class", "").strip() or account["student_class"]
+    tutor_lesson = get_or_create_tutor_lesson(
+        session["user_id"],
+        lesson,
+        name,
+        student_class,
+    )
+    return redirect(url_for("ai_tutor", tutor_lesson_id=tutor_lesson.id))
+
+
+@app.route("/tutor/<int:tutor_lesson_id>")
+@login_required
+def ai_tutor(tutor_lesson_id):
+    tutor_lesson = get_tutor_lesson_for_user(tutor_lesson_id, session["user_id"])
+    if not tutor_lesson:
+        abort(404)
+
+    lesson = tutor_lesson.learning_history
+    questions = decode_json_list(lesson.quiz_questions)
+    messages = [
+        {
+            "sender": message.sender,
+            "content": message.content,
+            "html": render_tutor_markdown(message.content)
+            if message.sender == "assistant"
+            else "",
+        }
+        for message in get_tutor_messages(tutor_lesson.id)
+    ]
+
+    return render_template(
+        "tutor.html",
+        tutor_lesson=tutor_lesson,
+        lesson=lesson,
+        messages=messages,
+        questions=questions,
+    )
+
+
+@app.route("/api/tutor/<int:tutor_lesson_id>/message", methods=["POST"])
+@login_required
+def tutor_message(tutor_lesson_id):
+    tutor_lesson = get_tutor_lesson_for_user(tutor_lesson_id, session["user_id"])
+    if not tutor_lesson:
+        abort(404)
+
+    payload = request.get_json(silent=True) or {}
+    student_message = (payload.get("message") or "").strip()
+    if not student_message:
+        return jsonify({"error": "Please type a question for your tutor."}), 400
+    if len(student_message) > 2500:
+        return jsonify({"error": "Please keep your question under 2500 characters."}), 400
+
+    previous_messages = get_recent_tutor_messages(tutor_lesson.id)
+    prompt = build_tutor_prompt(
+        tutor_lesson,
+        tutor_lesson.learning_history.notes,
+        previous_messages,
+        student_message,
+    )
+
+    try:
+        print("Gemini call: AI Tutor")
+        response = generate_content_with_fallback(prompt)
+    except Exception as error:
+        print("AI TUTOR ERROR:", error)
+        return jsonify({"error": "The AI Tutor is unavailable right now. Please try again."}), 503
+
+    tutor_response = (getattr(response, "text", "") or "").strip()
+    if not tutor_response:
+        return jsonify({"error": "The AI Tutor could not prepare a response. Please try again."}), 502
+
+    save_tutor_exchange(tutor_lesson, student_message, tutor_response)
+    return jsonify(
+        {
+            "reply": tutor_response,
+            "reply_html": render_tutor_markdown(tutor_response),
+        }
+    )
+
+
 @app.route("/downloaded-reports")
 @login_required
 def downloaded_reports():
@@ -3618,8 +3722,9 @@ Do not invent textbook chapter content.
     diagram_payload = build_diagram_payload(subject, topic, raw_diagram)
     diagram_image = create_diagram_image(topic, diagram_payload)
 
+    lesson_id = None
     if session.get("user_id"):
-        save_learning_history(
+        lesson_id = save_learning_history(
             session["user_id"],
             subject,
             book_name,
@@ -3652,6 +3757,7 @@ Do not invent textbook chapter content.
         diagram_available=diagram_payload.get("available", False),
         diagram_json=json.dumps(diagram_payload),
         questions=questions,
+        lesson_id=lesson_id,
     )
 
 

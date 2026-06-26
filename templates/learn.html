@@ -69,6 +69,26 @@
         </button>
     </form>
 
+    <section class="continue-learning-card" aria-labelledby="continue-learning-title">
+        <div class="continue-learning-icon" aria-hidden="true">&#128104;&#8205;&#127979;</div>
+        <div class="continue-learning-copy">
+            <span class="eyebrow">&#127919; Continue Learning</span>
+            <h2 id="continue-learning-title">Still have questions?</h2>
+            <h3>&#128104;&#8205;&#127979; Learn with AI Tutor</h3>
+            <p>Learn interactively with an AI teacher who already understands this lesson.</p>
+        </div>
+        {% if lesson_id %}
+        <form action="{{ url_for('start_ai_tutor') }}" method="POST" class="tutor-start-form">
+            <input type="hidden" name="lesson_id" value="{{ lesson_id }}">
+            <input type="hidden" name="name" value="{{ name }}">
+            <input type="hidden" name="student_class" value="{{ student_class }}">
+            <button type="submit">Start AI Tutor</button>
+        </form>
+        {% else %}
+        <a class="button-link" href="{{ url_for('login', next=url_for('home')) }}">Start AI Tutor</a>
+        {% endif %}
+    </section>
+
     <form action="{{ url_for('quiz') }}" method="POST" class="quiz-start-form">
         <input type="hidden" name="name" value="{{ name }}">
         <input type="hidden" name="student_class" value="{{ student_class }}">
