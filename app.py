@@ -3493,6 +3493,12 @@ def ai_tutor(tutor_lesson_id):
             "html": render_tutor_markdown(message.content)
             if message.sender == "assistant"
             else "",
+            "timestamp": message.created_at.strftime("%d %b %Y, %I:%M %p")
+            if message.created_at
+            else "",
+            "timestamp_title": message.created_at.isoformat()
+            if message.created_at
+            else "",
         }
         for message in get_tutor_messages(tutor_lesson.id)
     ]

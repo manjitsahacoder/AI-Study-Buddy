@@ -2548,12 +2548,26 @@ body.dashboard-page #theme-toggle {
 }
 
 .tutor-message-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px 12px;
     margin-bottom: 8px;
     color: var(--muted);
     font-size: 0.78rem;
     font-weight: 900;
     letter-spacing: 0.06em;
     text-transform: uppercase;
+}
+
+.tutor-message-meta time {
+    color: inherit;
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0;
+    text-transform: none;
+    opacity: 0.78;
 }
 
 .student .tutor-message-meta {
@@ -2629,11 +2643,14 @@ body.dashboard-page #theme-toggle {
 
 .tutor-message-actions {
     display: flex;
+    flex-wrap: wrap;
     justify-content: flex-end;
+    gap: 8px;
     margin-top: 12px;
 }
 
-.copy-response-button {
+.copy-response-button,
+.regenerate-response-button {
     min-height: 34px;
     padding: 7px 10px;
     color: var(--primary);
@@ -2643,8 +2660,51 @@ body.dashboard-page #theme-toggle {
     font-size: 0.84rem;
 }
 
-.copy-response-button:hover {
+.regenerate-response-button {
+    color: var(--teal);
+    background: rgba(4, 125, 135, 0.08);
+    border-color: rgba(4, 125, 135, 0.18);
+}
+
+.copy-response-button:hover,
+.regenerate-response-button:hover {
     color: #ffffff;
+}
+
+.tutor-starter-prompts,
+.tutor-suggestion-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 14px;
+}
+
+.tutor-starter-prompts button,
+.tutor-suggestion-chips button {
+    width: auto;
+    min-height: 34px;
+    padding: 7px 11px;
+    border: 1px solid rgba(49, 87, 213, 0.16);
+    border-radius: 999px;
+    color: var(--primary);
+    background: rgba(49, 87, 213, 0.07);
+    box-shadow: none;
+    font-size: 0.82rem;
+    font-weight: 900;
+    line-height: 1.25;
+    white-space: normal;
+}
+
+.tutor-starter-prompts button {
+    color: var(--teal);
+    background: rgba(4, 125, 135, 0.08);
+    border-color: rgba(4, 125, 135, 0.18);
+}
+
+.tutor-starter-prompts button:hover,
+.tutor-suggestion-chips button:hover {
+    color: #ffffff;
+    transform: translateY(-1px);
 }
 
 .tutor-quiz-cta {
@@ -2675,6 +2735,13 @@ body.dashboard-page #theme-toggle {
     align-items: center;
     gap: 5px;
     min-height: 30px;
+}
+
+.thinking-label {
+    margin-bottom: 8px;
+    color: var(--primary);
+    font-size: 0.9rem;
+    font-weight: 900;
 }
 
 .typing-indicator span {
@@ -4440,9 +4507,17 @@ textarea:focus {
 .dark-mode .developer-results-summary,
 .dark-mode .quiz-question,
 .dark-mode .tutor-quiz-cta,
+.dark-mode .tutor-starter-prompts button,
+.dark-mode .tutor-suggestion-chips button,
 .dark-mode .performance-chart-card canvas {
     background: rgba(134, 161, 255, 0.08);
     border-color: rgba(134, 161, 255, 0.16);
+}
+
+.dark-mode .copy-response-button,
+.dark-mode .regenerate-response-button {
+    background: rgba(134, 161, 255, 0.1);
+    border-color: rgba(134, 161, 255, 0.18);
 }
 
 .dark-mode .assistant .tutor-message {

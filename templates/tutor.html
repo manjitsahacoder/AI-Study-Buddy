@@ -45,9 +45,18 @@
             <article class="tutor-message-row assistant">
                 <div class="tutor-avatar" aria-hidden="true">&#127979;</div>
                 <div class="tutor-message">
-                    <div class="tutor-message-meta">AI Tutor</div>
+                    <div class="tutor-message-meta">
+                        <span>AI Tutor</span>
+                        <time datetime="">Just now</time>
+                    </div>
                     <div class="tutor-message-content">
-                        <p>Hello {{ tutor_lesson.name }}. I am ready to teach <strong>{{ tutor_lesson.chapter }}</strong>. Ask me where you got stuck, or ask me to explain any part more simply.</p>
+                        <p>Welcome, {{ tutor_lesson.name }}. I am ready to help you study <strong>{{ tutor_lesson.chapter }}</strong> from your saved lesson notes. Pick a starter question below or ask me exactly where you got stuck.</p>
+                    </div>
+                    <div class="tutor-starter-prompts" aria-label="Suggested starter questions">
+                        <button type="button" data-prompt="Give me a quick overview of this lesson.">Give me a quick overview</button>
+                        <button type="button" data-prompt="What are the most important points I should remember from this lesson?">Key points to remember</button>
+                        <button type="button" data-prompt="Explain the hardest part of this lesson in simple words.">Explain the hardest part</button>
+                        <button type="button" data-prompt="Quiz me with a few warm-up questions from this lesson.">Warm-up quiz</button>
                     </div>
                 </div>
             </article>
@@ -58,7 +67,12 @@
                 <div class="tutor-avatar" aria-hidden="true">&#127979;</div>
                 {% endif %}
                 <div class="tutor-message">
-                    <div class="tutor-message-meta">{{ 'You' if message.sender == 'student' else 'AI Tutor' }}</div>
+                    <div class="tutor-message-meta">
+                        <span>{{ 'You' if message.sender == 'student' else 'AI Tutor' }}</span>
+                        {% if message.timestamp %}
+                        <time datetime="{{ message.timestamp_title }}">{{ message.timestamp }}</time>
+                        {% endif %}
+                    </div>
                     <div class="tutor-message-content">
                         {% if message.sender == 'student' %}
                         {{ message.content }}
@@ -70,6 +84,15 @@
                     <textarea class="tutor-message-source" hidden readonly>{{ message.content }}</textarea>
                     <div class="tutor-message-actions">
                         <button type="button" class="copy-response-button" data-copy-response>Copy response</button>
+                        <button type="button" class="regenerate-response-button" data-regenerate-response>Regenerate</button>
+                    </div>
+                    <div class="tutor-suggestion-chips" aria-label="Quick follow-up suggestions">
+                        <button type="button" data-prompt="Explain your last answer more simply for this lesson.">Explain more simply</button>
+                        <button type="button" data-prompt="Give an example based on this lesson.">Give an example</button>
+                        <button type="button" data-prompt="Explain this with an analogy.">Explain with analogy</button>
+                        <button type="button" data-prompt="Ask me one question to check my understanding.">Ask me a question</button>
+                        <button type="button" data-prompt="Summarize your last answer in a few bullet points.">Summarize</button>
+                        <button type="button" data-prompt="Generate practice questions from this lesson.">Generate practice questions</button>
                     </div>
                     <div class="tutor-quiz-cta">
                         <div>
