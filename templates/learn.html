@@ -55,53 +55,96 @@
 
     <hr>
 
-    <form action="{{ url_for('download_notes') }}" method="POST" class="notes-download-form">
-        <input type="hidden" name="name" value="{{ name }}">
-        <input type="hidden" name="student_class" value="{{ student_class }}">
-        <input type="hidden" name="subject" value="{{ subject }}">
-        <input type="hidden" name="book_name" value="{{ book_name }}">
-        <input type="hidden" name="topic" value="{{ topic }}">
-        <textarea name="notes" hidden>{{ notes }}</textarea>
-        <textarea name="diagram_image" hidden>{{ diagram_image }}</textarea>
-
-        <button type="submit">
-            &#128196; Download Notes
-        </button>
-    </form>
-
-    <section class="continue-learning-card" aria-labelledby="continue-learning-title">
-        <div class="continue-learning-icon" aria-hidden="true">&#128104;&#8205;&#127979;</div>
-        <div class="continue-learning-copy">
+    <section class="continue-learning-section" aria-labelledby="continue-learning-title">
+        <div class="continue-learning-heading">
             <span class="eyebrow">&#127919; Continue Learning</span>
-            <h2 id="continue-learning-title">Still have questions?</h2>
-            <h3>&#128104;&#8205;&#127979; Learn with AI Tutor</h3>
-            <p>Learn interactively with an AI teacher who already understands this lesson.</p>
+            <h2 id="continue-learning-title">Your next study step is ready</h2>
+            <p>Turn these notes into practice, feedback, and revision while the lesson is still fresh.</p>
         </div>
-        {% if lesson_id %}
-        <form action="{{ url_for('start_ai_tutor') }}" method="POST" class="tutor-start-form">
-            <input type="hidden" name="lesson_id" value="{{ lesson_id }}">
-            <input type="hidden" name="name" value="{{ name }}">
-            <input type="hidden" name="student_class" value="{{ student_class }}">
-            <button type="submit">Start AI Tutor</button>
-        </form>
-        {% else %}
-        <a class="button-link" href="{{ url_for('login', next=url_for('home')) }}">Start AI Tutor</a>
-        {% endif %}
+
+        <div class="continue-learning-grid">
+            <article class="learning-action-card learning-card-tutor">
+                <span class="learning-card-icon" aria-hidden="true">&#128104;&#8205;&#127979;</span>
+                <div class="learning-card-copy">
+                    <h3>Learn with AI Tutor</h3>
+                    <p>Ask doubts, request examples, and revise this exact lesson with a guided AI teacher.</p>
+                </div>
+                {% if lesson_id %}
+                <form action="{{ url_for('start_ai_tutor') }}" method="POST" class="learning-card-form">
+                    <input type="hidden" name="lesson_id" value="{{ lesson_id }}">
+                    <input type="hidden" name="name" value="{{ name }}">
+                    <input type="hidden" name="student_class" value="{{ student_class }}">
+                    <button type="submit" class="learning-card-button">Start Tutor <span aria-hidden="true">&rarr;</span></button>
+                </form>
+                {% else %}
+                <a class="learning-card-button" href="{{ url_for('login', next=url_for('home')) }}">Start Tutor <span aria-hidden="true">&rarr;</span></a>
+                {% endif %}
+            </article>
+
+            <form action="{{ url_for('quiz') }}" method="POST" class="learning-action-card learning-card-quiz">
+                <input type="hidden" name="name" value="{{ name }}">
+                <input type="hidden" name="student_class" value="{{ student_class }}">
+                <input type="hidden" name="subject" value="{{ subject }}">
+                <input type="hidden" name="topic" value="{{ topic }}">
+                {% for question in questions %}
+                <input type="hidden" name="question{{ loop.index }}" value="{{ question }}">
+                {% endfor %}
+                <button type="submit" class="learning-card-plain-button">
+                    <span class="learning-card-icon" aria-hidden="true">&#128221;</span>
+                    <span class="learning-card-copy">
+                        <strong>Take Quiz</strong>
+                        <span>Test your understanding with five questions made from these notes.</span>
+                    </span>
+                    <span class="learning-card-arrow" aria-hidden="true">&rarr;</span>
+                </button>
+            </form>
+
+            <form action="{{ url_for('download_notes') }}" method="POST" class="learning-action-card learning-card-download">
+                <input type="hidden" name="name" value="{{ name }}">
+                <input type="hidden" name="student_class" value="{{ student_class }}">
+                <input type="hidden" name="subject" value="{{ subject }}">
+                <input type="hidden" name="book_name" value="{{ book_name }}">
+                <input type="hidden" name="topic" value="{{ topic }}">
+                <textarea name="notes" hidden>{{ notes }}</textarea>
+                <textarea name="diagram_image" hidden>{{ diagram_image }}</textarea>
+                <button type="submit" class="learning-card-plain-button">
+                    <span class="learning-card-icon" aria-hidden="true">&#128196;</span>
+                    <span class="learning-card-copy">
+                        <strong>Download Notes</strong>
+                        <span>Save a clean copy of the lesson for offline study and revision.</span>
+                    </span>
+                    <span class="learning-card-arrow" aria-hidden="true">&rarr;</span>
+                </button>
+            </form>
+
+            <article class="learning-action-card is-coming-soon learning-card-flashcards">
+                <span class="learning-card-icon" aria-hidden="true">&#129504;</span>
+                <div class="learning-card-copy">
+                    <h3>Generate Flashcards</h3>
+                    <p>Practice key terms and definitions with quick recall cards.</p>
+                </div>
+                <span class="coming-soon-pill">Coming Soon</span>
+            </article>
+
+            <article class="learning-action-card is-coming-soon learning-card-mindmap">
+                <span class="learning-card-icon" aria-hidden="true">&#128506;</span>
+                <div class="learning-card-copy">
+                    <h3>Mind Map</h3>
+                    <p>See the topic as connected ideas so the chapter feels easier to remember.</p>
+                </div>
+                <span class="coming-soon-pill">Coming Soon</span>
+            </article>
+
+            <article class="learning-action-card is-coming-soon learning-card-revision">
+                <span class="learning-card-icon" aria-hidden="true">&#128214;</span>
+                <div class="learning-card-copy">
+                    <h3>Quick Revision</h3>
+                    <p>Review the most important points in a short exam-ready recap.</p>
+                </div>
+                <span class="coming-soon-pill">Coming Soon</span>
+            </article>
+        </div>
     </section>
-
-    <form action="{{ url_for('quiz') }}" method="POST" class="quiz-start-form">
-        <input type="hidden" name="name" value="{{ name }}">
-        <input type="hidden" name="student_class" value="{{ student_class }}">
-        <input type="hidden" name="subject" value="{{ subject }}">
-        <input type="hidden" name="topic" value="{{ topic }}">
-        {% for question in questions %}
-        <input type="hidden" name="question{{ loop.index }}" value="{{ question }}">
-        {% endfor %}
-
-        <button type="submit">
-            &#128221; Start Quiz
-        </button>
-    </form>
 
     <a class="button-link back-btn" href="{{ url_for('home') }}">
         &larr; Back to Home

@@ -2374,49 +2374,233 @@ body.dashboard-page #theme-toggle {
     margin: 8px 12px 8px 0;
 }
 
-.continue-learning-card {
-    display: grid;
-    grid-template-columns: 64px minmax(0, 1fr) auto;
-    gap: 18px;
-    align-items: center;
-    margin: 28px 0;
-    padding: clamp(20px, 3vw, 30px);
-    border: 1px solid rgba(4, 125, 135, 0.22);
+.continue-learning-section {
+    position: relative;
+    overflow: hidden;
+    margin: 34px 0 18px;
+    padding: clamp(20px, 3vw, 32px);
+    border: 1px solid rgba(49, 87, 213, 0.16);
     border-radius: 8px;
     background:
-        linear-gradient(135deg, rgba(4, 125, 135, 0.1), rgba(49, 87, 213, 0.08)),
-        rgba(255, 253, 248, 0.95);
+        linear-gradient(135deg, rgba(49, 87, 213, 0.09), rgba(4, 125, 135, 0.08) 46%, rgba(189, 138, 32, 0.08)),
+        rgba(255, 253, 248, 0.96);
     box-shadow: var(--soft-shadow);
+    animation: fadeInUp 0.55s ease both;
 }
 
-.continue-learning-icon {
+.continue-learning-section::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+        linear-gradient(90deg, rgba(255, 255, 255, 0.36), transparent 35%),
+        radial-gradient(circle at 86% 12%, rgba(4, 125, 135, 0.14), transparent 28%);
+}
+
+.continue-learning-section > * {
+    position: relative;
+}
+
+.continue-learning-heading {
     display: grid;
-    place-items: center;
-    width: 64px;
-    height: 64px;
-    border-radius: 8px;
-    color: #ffffff;
-    background: var(--teal);
-    font-size: 1.8rem;
+    gap: 6px;
+    max-width: 760px;
+    margin-bottom: 22px;
 }
 
-.continue-learning-copy h2 {
-    margin-bottom: 6px;
+.continue-learning-heading .eyebrow {
+    margin-bottom: 4px;
 }
 
-.continue-learning-copy h3 {
-    margin-bottom: 8px;
-    color: var(--primary);
-}
-
-.continue-learning-copy p {
+.continue-learning-heading h2,
+.continue-learning-heading p {
     margin-bottom: 0;
+}
+
+.continue-learning-heading p {
     color: #445064;
     font-weight: 700;
 }
 
-.tutor-start-form {
+.continue-learning-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+}
+
+.learning-action-card {
+    position: relative;
+    min-width: 0;
+    min-height: 220px;
+    padding: 18px;
+    border: 1px solid rgba(231, 223, 210, 0.95);
+    border-radius: 8px;
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(255, 253, 248, 0.96)),
+        rgba(255, 253, 248, 0.96);
+    box-shadow: 0 12px 28px rgba(30, 40, 58, 0.08);
+    transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease, background 0.22s ease;
+}
+
+.learning-action-card:hover,
+.learning-action-card:focus-within {
+    transform: translateY(-5px);
+    border-color: rgba(49, 87, 213, 0.26);
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 253, 248, 0.99)),
+        rgba(255, 253, 248, 0.98);
+    box-shadow: 0 20px 42px rgba(30, 40, 58, 0.14);
+}
+
+.learning-card-tutor,
+.learning-action-card.is-coming-soon {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.learning-card-icon {
+    display: grid;
+    place-items: center;
+    width: 48px;
+    height: 48px;
+    flex: 0 0 auto;
+    border-radius: 8px;
+    color: #ffffff;
+    background: var(--primary);
+    font-size: 1.45rem;
+    box-shadow: 0 12px 24px rgba(49, 87, 213, 0.18);
+}
+
+.learning-card-quiz .learning-card-icon {
+    background: var(--teal);
+}
+
+.learning-card-download .learning-card-icon {
+    background: var(--coral);
+}
+
+.learning-card-flashcards .learning-card-icon {
+    background: var(--green);
+}
+
+.learning-card-mindmap .learning-card-icon {
+    background: var(--amber);
+}
+
+.learning-card-revision .learning-card-icon {
+    background: var(--gold);
+}
+
+.learning-card-copy {
+    min-width: 0;
+}
+
+.learning-card-copy h3,
+.learning-card-copy strong {
+    display: block;
+    margin-bottom: 8px;
+    color: var(--ink);
+    font-size: 1.08rem;
+    line-height: 1.25;
+}
+
+.learning-card-copy p,
+.learning-card-copy span {
+    display: block;
+    margin-bottom: 0;
+    color: var(--muted);
+    font-size: 0.96rem;
+    font-weight: 700;
+    line-height: 1.55;
+}
+
+.learning-card-form {
+    display: flex;
+    margin-top: auto;
+}
+
+.learning-card-button {
+    width: fit-content;
+    margin-top: auto;
+    min-height: 42px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 0.94rem;
+    text-decoration: none;
+}
+
+.learning-card-plain-button {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    align-items: start;
+    justify-items: start;
+    gap: 14px;
+    width: 100%;
+    min-height: 100%;
+    padding: 18px;
+    border: 0;
+    border-radius: 8px;
+    color: var(--ink);
+    background: transparent;
+    box-shadow: none;
+    text-align: left;
+}
+
+.learning-card-plain-button:hover,
+.learning-card-plain-button:focus-visible {
+    transform: none;
+    background: transparent;
+    box-shadow: none;
+}
+
+.learning-card-arrow {
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    margin-top: auto;
+    border-radius: 999px;
+    color: var(--primary);
+    background: rgba(49, 87, 213, 0.1);
+    font-weight: 900;
+    transition: transform 0.2s ease, color 0.2s ease, background 0.2s ease;
+}
+
+.learning-action-card:hover .learning-card-arrow,
+.learning-action-card:focus-within .learning-card-arrow {
+    transform: translateX(3px);
+    color: #ffffff;
+    background: var(--primary);
+}
+
+.is-coming-soon {
+    opacity: 0.92;
+}
+
+.is-coming-soon:hover {
+    transform: translateY(-3px);
+}
+
+.coming-soon-pill {
     display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: fit-content;
+    margin-top: auto;
+    min-height: 32px;
+    padding: 6px 10px;
+    border: 1px solid rgba(169, 109, 19, 0.22);
+    border-radius: 999px;
+    color: var(--amber);
+    background: rgba(189, 138, 32, 0.1);
+    font-size: 0.78rem;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
 }
 
 .tutor-shell {
@@ -3613,7 +3797,8 @@ textarea,
 .saved-quiz-card,
 .quiz-box,
 .diagram-card,
-.continue-learning-card,
+.continue-learning-section,
+.learning-action-card,
 .tutor-header,
 .tutor-chat-panel,
 .tutor-lesson-strip span,
@@ -3631,7 +3816,7 @@ footer {
 .chart-icon,
 .lesson-card-icon,
 .tutor-avatar,
-.continue-learning-icon,
+.learning-card-icon,
 .achievement-badge span,
 .insight-card span {
     border-radius: 12px;
@@ -4247,7 +4432,8 @@ textarea:focus {
 .dark-mode .card,
 .dark-mode .quiz-box,
 .dark-mode .diagram-card,
-.dark-mode .continue-learning-card,
+.dark-mode .continue-learning-section,
+.dark-mode .learning-action-card,
 .dark-mode .tutor-header,
 .dark-mode .tutor-chat-panel,
 .dark-mode .tutor-lesson-strip span,
@@ -4448,11 +4634,49 @@ textarea:focus {
     border-color: rgba(134, 161, 255, 0.18);
 }
 
-.dark-mode .continue-learning-copy p,
+.dark-mode .continue-learning-heading p,
+.dark-mode .learning-card-copy p,
+.dark-mode .learning-card-copy span,
 .dark-mode .tutor-header p,
 .dark-mode .tutor-message-content,
 .dark-mode .tutor-composer p {
     color: var(--muted);
+}
+
+.dark-mode .continue-learning-section {
+    background:
+        linear-gradient(135deg, rgba(134, 161, 255, 0.12), rgba(92, 203, 211, 0.1) 46%, rgba(240, 179, 95, 0.08)),
+        rgba(21, 27, 41, 0.94);
+}
+
+.dark-mode .continue-learning-section::before {
+    background:
+        linear-gradient(90deg, rgba(134, 161, 255, 0.08), transparent 35%),
+        radial-gradient(circle at 86% 12%, rgba(92, 203, 211, 0.12), transparent 28%);
+}
+
+.dark-mode .learning-action-card {
+    background:
+        linear-gradient(180deg, rgba(32, 40, 58, 0.9), rgba(21, 27, 41, 0.98)),
+        rgba(21, 27, 41, 0.94);
+}
+
+.dark-mode .learning-action-card:hover,
+.dark-mode .learning-action-card:focus-within {
+    background:
+        linear-gradient(180deg, rgba(39, 49, 73, 0.96), rgba(21, 27, 41, 0.99)),
+        rgba(21, 27, 41, 0.96);
+}
+
+.dark-mode .learning-card-copy h3,
+.dark-mode .learning-card-copy strong {
+    color: var(--ink);
+}
+
+.dark-mode .coming-soon-pill {
+    color: #ffe1ad;
+    border-color: rgba(240, 179, 95, 0.28);
+    background: rgba(240, 179, 95, 0.12);
 }
 
 .dark-mode .student .tutor-message-content {
@@ -4570,15 +4794,13 @@ textarea:focus {
 }
 
 @media (max-width: 900px) {
-    .continue-learning-card,
     .tutor-header {
         grid-template-columns: 1fr;
         display: grid;
     }
 
-    .continue-learning-icon {
-        width: 54px;
-        height: 54px;
+    .continue-learning-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
     .tutor-header-actions {
@@ -4669,6 +4891,7 @@ textarea:focus {
     .performance-content-grid,
     .achievement-badge-grid,
     .recommended-topic-grid,
+    .continue-learning-grid,
     .rbac-tool-grid,
     .rbac-table-grid,
     .history-tools,
@@ -4814,6 +5037,7 @@ textarea:focus {
     .performance-content-grid,
     .achievement-badge-grid,
     .recommended-topic-grid,
+    .continue-learning-grid,
     .rbac-tool-grid,
     .rbac-table-grid,
     .history-tools,
@@ -4855,7 +5079,11 @@ textarea:focus {
     .diagram-actions form,
     .diagram-actions .button-link,
     .diagram-actions button,
-    .continue-learning-card,
+    .continue-learning-grid,
+    .learning-action-card,
+    .learning-card-form,
+    .learning-card-form button,
+    .learning-card-button,
     .tutor-start-form,
     .tutor-start-form button,
     .tutor-quiz-cta,
