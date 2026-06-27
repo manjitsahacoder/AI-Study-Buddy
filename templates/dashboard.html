@@ -80,6 +80,7 @@
                 <span>Revision <strong>+{{ gamification.xp_values.revision }}</strong></span>
                 <span>Mind Map <strong>+{{ gamification.xp_values.mind_map }}</strong></span>
                 <span>Flashcards <strong>+{{ gamification.xp_values.flashcards }}</strong></span>
+                <span>Memory Match <strong>+{{ gamification.xp_values.memory_match }}</strong></span>
                 <span>Tutor <strong>+{{ gamification.xp_values.tutor }}</strong></span>
                 <span>Quiz <strong>+{{ gamification.xp_values.quiz }}</strong></span>
             </div>
@@ -161,6 +162,14 @@
                 <div>
                     <p>Important Question Sets Generated</p>
                     <strong>{{ stats.important_question_sets_generated }}</strong>
+                </div>
+            </article>
+            <article class="dashboard-stat-card memory-match-dashboard-card">
+                <span aria-hidden="true">&#129504;</span>
+                <div>
+                    <p>Memory Match</p>
+                    <strong>{{ stats.memory_match.games_played }}</strong>
+                    <small>Best {{ stats.memory_match.best_time }} &middot; Avg {{ stats.memory_match.average_accuracy }} &middot; {{ stats.memory_match.total_xp_earned }} XP</small>
                 </div>
             </article>
         </section>

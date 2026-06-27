@@ -67,6 +67,20 @@
                 </a>
             </article>
 
+            {% if has_flashcards %}
+            <article class="learning-action-card learning-card-memory">
+                <span class="learning-card-icon" aria-hidden="true">&#129504;</span>
+                <div class="learning-card-copy">
+                    <h3>Memory Match</h3>
+                    <p>Match each saved flashcard front with its back in a timed challenge.</p>
+                </div>
+                <a class="learning-card-button" href="{{ url_for('memory_match', lesson_id=lesson.id) }}">
+                    Open Memory Match
+                    <span aria-hidden="true">&rarr;</span>
+                </a>
+            </article>
+            {% endif %}
+
             <article class="learning-action-card learning-card-mindmap">
                 <span class="learning-card-icon" aria-hidden="true">&#129504;</span>
                 <div class="learning-card-copy">
@@ -115,6 +129,9 @@
         <a class="button-link" href="{{ url_for('mindmap', lesson_id=lesson.id) }}">&#129504; {% if has_mind_map %}Open Mind Map{% else %}Generate Mind Map{% endif %}</a>
         <a class="button-link" href="{{ url_for('important_questions', lesson_id=lesson.id) }}">&#11088; {% if has_important_questions %}Open Important Questions{% else %}Generate Questions{% endif %}</a>
         <a class="button-link" href="{{ url_for('flashcards', lesson_id=lesson.id) }}">&#127183; Open Flashcards</a>
+        {% if has_flashcards %}
+        <a class="button-link" href="{{ url_for('memory_match', lesson_id=lesson.id) }}">&#129504; Open Memory Match</a>
+        {% endif %}
         <form action="{{ url_for('start_ai_tutor') }}" method="POST">
             <input type="hidden" name="lesson_id" value="{{ lesson.id }}">
             <button type="submit">&#128104;&#8205;&#127979; Start AI Tutor</button>

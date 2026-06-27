@@ -47,6 +47,7 @@ class User(ModelMappingMixin, db.Model):
     downloaded_files = db.relationship("DownloadedFile", back_populates="user", lazy=True)
     tutor_lessons = db.relationship("TutorLesson", back_populates="user", lazy=True)
     flashcard_sets = db.relationship("FlashcardSet", back_populates="user", lazy=True)
+    memory_challenges = db.relationship("MemoryChallenge", back_populates="user", lazy=True)
     revision_sheets = db.relationship("RevisionSheet", back_populates="user", lazy=True)
     mind_maps = db.relationship("MindMap", back_populates="user", lazy=True)
     important_question_sets = db.relationship("ImportantQuestionSet", back_populates="user", lazy=True)
@@ -130,6 +131,12 @@ class LearningHistory(ModelMappingMixin, db.Model):
     )
     revision_sheets = db.relationship(
         "RevisionSheet",
+        back_populates="learning_history",
+        cascade="all, delete-orphan",
+        lazy=True,
+    )
+    memory_challenges = db.relationship(
+        "MemoryChallenge",
         back_populates="learning_history",
         cascade="all, delete-orphan",
         lazy=True,
@@ -278,6 +285,28 @@ class Flashcard(ModelMappingMixin, db.Model):
     created_at = db.Column(db.DateTime, nullable=False, default=utc_now, index=True)
 
     flashcard_set = db.relationship("FlashcardSet", back_populates="flashcards")
+
+
+class MemoryChallenge(ModelMappingMixin, db.Model):
+    __tablename__ = "memory_challenges"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    lesson_id = db.Column(
+        db.Integer,
+        db.ForeignKey("learning_history.id"),
+        nullable=False,
+        index=True,
+    )
+    difficulty = db.Column(db.Text, nullable=False, default="easy", index=True)
+    best_time = db.Column(db.Integer, nullable=False, default=0)
+    moves = db.Column(db.Integer, nullable=False, default=0)
+    accuracy = db.Column(db.Float, nullable=False, default=0.0)
+    xp_earned = db.Column(db.Integer, nullable=False, default=0)
+    completed_at = db.Column(db.DateTime, nullable=False, default=utc_now, index=True)
+
+    user = db.relationship("User", back_populates="memory_challenges")
+    learning_history = db.relationship("LearningHistory", back_populates="memory_challenges")
 
 
 class TutorLesson(ModelMappingMixin, db.Model):

@@ -36,6 +36,7 @@ from sqlalchemy.orm import load_only
 import json
 import markdown
 import os
+import random
 import re
 import time
 from dotenv import load_dotenv
@@ -56,6 +57,7 @@ from models import (
     ImportantQuestionSet,
     LearningHistory,
     LearningSession,
+    MemoryChallenge,
     MindMap,
     QuizHistory,
     RevisionSheet,
@@ -164,9 +166,16 @@ GAMIFICATION_XP_VALUES = {
     "revision": 15,
     "mind_map": 20,
     "flashcards": 15,
+    "memory_match": 20,
     "tutor": 10,
     "quiz": 25,
 }
+MEMORY_MATCH_DIFFICULTIES = {
+    "easy": 6,
+    "medium": 10,
+    "hard": 15,
+}
+ALL_ROUND_LEARNER_ACTIVITIES = ("notes", "revision", "mind_map", "flashcards", "tutor", "quiz")
 GAMIFICATION_LEVEL_XP = 100
 LEARN_BUSY_MESSAGE = "AI Study Buddy is temporarily busy. Please try again in a moment."
 LEARN_MAX_TEXTBOOK_CONTEXT_CHARS = int(os.environ.get("LEARN_MAX_TEXTBOOK_CONTEXT_CHARS", "7000"))
@@ -724,6 +733,12 @@ def account_data_export(user):
             .order_by(Flashcard.created_at.asc(), Flashcard.id.asc())
             .all()
         ],
+        "memory_challenges": [
+            serialize_model_record(row)
+            for row in MemoryChallenge.query.filter_by(user_id=user_id)
+            .order_by(MemoryChallenge.completed_at.asc(), MemoryChallenge.id.asc())
+            .all()
+        ],
         "revision_sheets": [
             serialize_model_record(row)
             for row in RevisionSheet.query.filter_by(user_id=user_id)
@@ -751,6 +766,7 @@ def delete_account_data(user):
     TutorLesson.query.filter_by(user_id=user_id).delete(synchronize_session=False)
     Flashcard.query.filter_by(user_id=user_id).delete(synchronize_session=False)
     FlashcardSet.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+    MemoryChallenge.query.filter_by(user_id=user_id).delete(synchronize_session=False)
     RevisionSheet.query.filter_by(user_id=user_id).delete(synchronize_session=False)
     MindMap.query.filter_by(user_id=user_id).delete(synchronize_session=False)
     ImportantQuestionSet.query.filter_by(user_id=user_id).delete(synchronize_session=False)
@@ -2031,6 +2047,110 @@ def get_flashcards_for_set(flashcard_set_id, user_id):
     )
 
 
+def normalize_memory_difficulty(difficulty):
+    normalized = (difficulty or "easy").strip().lower()
+    return normalized if normalized in MEMORY_MATCH_DIFFICULTIES else "easy"
+
+
+def memory_pair_limit(difficulty, available_count):
+    return min(MEMORY_MATCH_DIFFICULTIES[normalize_memory_difficulty(difficulty)], max(0, available_count))
+
+
+def calculate_memory_accuracy(matched_pairs, moves):
+    if moves <= 0:
+        return 0.0
+    return round((max(0, matched_pairs) / moves) * 100, 1)
+
+
+def calculate_memory_xp(difficulty, accuracy):
+    return GAMIFICATION_XP_VALUES["memory_match"] if accuracy > 0 else 0
+
+
+def format_duration(total_seconds):
+    seconds = max(0, int(total_seconds or 0))
+    minutes, seconds = divmod(seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours}:{minutes:02d}:{seconds:02d}"
+    return f"{minutes}:{seconds:02d}"
+
+
+def build_memory_match_cards(flashcards, difficulty, shuffle=True):
+    selected_cards = list(flashcards)[:memory_pair_limit(difficulty, len(flashcards))]
+    game_cards = []
+    for card in selected_cards:
+        game_cards.extend(
+            [
+                {
+                    "id": f"{card.id}-front",
+                    "pairId": card.id,
+                    "kind": "front",
+                    "label": "Front",
+                    "text": card.front,
+                },
+                {
+                    "id": f"{card.id}-back",
+                    "pairId": card.id,
+                    "kind": "back",
+                    "label": "Back",
+                    "text": card.back,
+                },
+            ]
+        )
+    if shuffle:
+        random.shuffle(game_cards)
+    return game_cards
+
+
+def memory_best_time_for_user(user_id, lesson_id, difficulty, elapsed_seconds):
+    previous_best = (
+        MemoryChallenge.query.with_entities(func.min(MemoryChallenge.best_time))
+        .filter_by(
+            user_id=user_id,
+            lesson_id=lesson_id,
+            difficulty=normalize_memory_difficulty(difficulty),
+        )
+        .scalar()
+    )
+    if previous_best:
+        return min(previous_best, elapsed_seconds)
+    return elapsed_seconds
+
+
+def summarize_memory_match_dashboard(user_id):
+    rows = (
+        MemoryChallenge.query.with_entities(
+            func.count(MemoryChallenge.id),
+            func.min(MemoryChallenge.best_time),
+            func.avg(MemoryChallenge.accuracy),
+            func.coalesce(func.sum(MemoryChallenge.xp_earned), 0),
+        )
+        .filter(MemoryChallenge.user_id == user_id)
+        .first()
+    )
+    games_played, best_time, average_accuracy, total_xp = rows if rows else (0, None, None, 0)
+    return {
+        "games_played": games_played or 0,
+        "best_time": format_duration(best_time) if best_time else "No games yet",
+        "average_accuracy": f"{round(average_accuracy or 0, 1)}%",
+        "total_xp_earned": int(total_xp or 0),
+    }
+
+
+def unlocked_titles(items):
+    return {item["title"] for item in items if item.get("unlocked")}
+
+
+def newly_unlocked_gamification(before, after):
+    before_titles = unlocked_titles(before["badges"]) | unlocked_titles(before["achievements"])
+    unlocked_items = [
+        item["title"]
+        for item in after["badges"] + after["achievements"]
+        if item.get("unlocked") and item["title"] not in before_titles
+    ]
+    return unlocked_items
+
+
 def structured_evaluation_to_markdown(evaluation):
     summary = evaluation["summary"]
     report = evaluation["teacher_report"]
@@ -2189,6 +2309,7 @@ def get_dashboard_stats(user_id):
         "revision_sheets_generated": revision_sheets_generated,
         "mind_maps_generated": mind_maps_generated,
         "important_question_sets_generated": important_question_sets_generated,
+        "memory_match": summarize_memory_match_dashboard(user_id),
         "total_xp": gamification["total_xp"],
         "level": gamification["level"]["level"],
         "badges_unlocked": gamification["badges_unlocked"],
@@ -2256,12 +2377,15 @@ def count_user_rows(model, user_id):
 
 
 def count_user_rows_between(model, user_id, start, end):
+    timestamp_column = getattr(model, "created_at", None)
+    if timestamp_column is None:
+        timestamp_column = getattr(model, "completed_at")
     return (
         model.query.with_entities(func.count(model.id))
         .filter(
             model.user_id == user_id,
-            model.created_at >= start,
-            model.created_at < end,
+            timestamp_column >= start,
+            timestamp_column < end,
         )
         .scalar()
         or 0
@@ -2274,6 +2398,7 @@ def get_gamification_counts(user_id):
         "revision": count_user_rows(RevisionSheet, user_id),
         "mind_map": count_user_rows(MindMap, user_id),
         "flashcards": count_user_rows(FlashcardSet, user_id),
+        "memory_match": count_user_rows(MemoryChallenge, user_id),
         "tutor": count_user_rows(TutorLesson, user_id),
         "quiz": count_user_rows(QuizHistory, user_id),
     }
@@ -2311,6 +2436,12 @@ def get_gamification_activity_dates(user_id):
             .filter_by(user_id=user_id)
             .all()
         )
+    activity_dates.extend(
+        row.completed_at
+        for row in MemoryChallenge.query.with_entities(MemoryChallenge.completed_at)
+        .filter_by(user_id=user_id)
+        .all()
+    )
     return activity_dates
 
 
@@ -2347,6 +2478,12 @@ def build_gamification_badges(counts, total_xp, study_streak):
             "unlocked": counts["flashcards"] >= 1,
         },
         {
+            "icon": "&#129504;",
+            "title": "Memory Matcher",
+            "description": "Complete your first Memory Match.",
+            "unlocked": counts["memory_match"] >= 1,
+        },
+        {
             "icon": "&#128293;",
             "title": "Streak Spark",
             "description": "Reach a 3-day study streak.",
@@ -2362,7 +2499,7 @@ def build_gamification_badges(counts, total_xp, study_streak):
             "icon": "&#9989;",
             "title": "All-round Learner",
             "description": "Use every XP activity once.",
-            "unlocked": all(counts.get(activity, 0) > 0 for activity in GAMIFICATION_XP_VALUES),
+            "unlocked": all(counts.get(activity, 0) > 0 for activity in ALL_ROUND_LEARNER_ACTIVITIES),
         },
     ]
 
@@ -2373,6 +2510,7 @@ def build_gamification_achievements(counts, total_xp, study_streak):
         ("Revision Ready", "Generate a quick revision sheet.", counts["revision"], 1),
         ("Visual Thinker", "Create a mind map.", counts["mind_map"], 1),
         ("Card Collector", "Generate flashcards.", counts["flashcards"], 1),
+        ("Memory Master", "Complete a Memory Match game.", counts["memory_match"], 1),
         ("Tutor Time", "Start an AI Tutor lesson.", counts["tutor"], 1),
         ("Quiz Courage", "Complete a quiz.", counts["quiz"], 1),
         ("XP 250", "Earn 250 XP.", total_xp, 250),
@@ -2398,6 +2536,7 @@ def get_today_gamification_counts(user_id):
         "revision": count_user_rows_between(RevisionSheet, user_id, today_start, tomorrow_start),
         "mind_map": count_user_rows_between(MindMap, user_id, today_start, tomorrow_start),
         "flashcards": count_user_rows_between(FlashcardSet, user_id, today_start, tomorrow_start),
+        "memory_match": count_user_rows_between(MemoryChallenge, user_id, today_start, tomorrow_start),
         "tutor": count_user_rows_between(TutorLesson, user_id, today_start, tomorrow_start),
         "tutor_messages": count_user_rows_between(TutorMessage, user_id, today_start, tomorrow_start),
         "quiz": count_user_rows_between(QuizHistory, user_id, today_start, tomorrow_start),
@@ -2505,6 +2644,7 @@ def get_gamification_rollups(user_ids):
         (RevisionSheet, "revision"),
         (MindMap, "mind_map"),
         (FlashcardSet, "flashcards"),
+        (MemoryChallenge, "memory_match"),
         (TutorLesson, "tutor"),
         (QuizHistory, "quiz"),
     )
@@ -2921,23 +3061,25 @@ def get_developer_panel_stats():
         "revision_sheets": RevisionSheet.query.count(),
         "mind_maps": MindMap.query.count(),
         "flashcard_sets": FlashcardSet.query.count(),
+        "memory_challenges": MemoryChallenge.query.count(),
         "tutor_lessons": TutorLesson.query.count(),
     }
     active_user_ids = set()
-    for model in (
-        LearningHistory,
-        LearningSession,
-        RevisionSheet,
-        MindMap,
-        FlashcardSet,
-        TutorLesson,
-        QuizHistory,
-        DownloadedFile,
+    for model, timestamp_column in (
+        (LearningHistory, LearningHistory.created_at),
+        (LearningSession, LearningSession.created_at),
+        (RevisionSheet, RevisionSheet.created_at),
+        (MindMap, MindMap.created_at),
+        (FlashcardSet, FlashcardSet.created_at),
+        (MemoryChallenge, MemoryChallenge.completed_at),
+        (TutorLesson, TutorLesson.created_at),
+        (QuizHistory, QuizHistory.created_at),
+        (DownloadedFile, DownloadedFile.created_at),
     ):
         active_user_ids.update(
             user_id
             for (user_id,) in model.query.with_entities(model.user_id)
-            .filter(model.created_at >= today_start, model.created_at < tomorrow_start)
+            .filter(timestamp_column >= today_start, timestamp_column < tomorrow_start)
             .distinct()
             .all()
             if user_id
@@ -6017,6 +6159,94 @@ def flashcards(lesson_id):
             }
             for card in flashcards_for_lesson
         ],
+    )
+
+
+@app.route("/memory-match/<int:lesson_id>")
+@login_required
+def memory_match(lesson_id):
+    lesson = get_flashcard_lesson(lesson_id, session["user_id"])
+    if not lesson:
+        abort(404)
+
+    difficulty = normalize_memory_difficulty(request.args.get("difficulty"))
+    flashcard_set = existing_flashcard_set(lesson.id, session["user_id"])
+    flashcards_for_lesson = (
+        get_flashcards_for_set(flashcard_set.id, session["user_id"])
+        if flashcard_set
+        else []
+    )
+    pair_count = memory_pair_limit(difficulty, len(flashcards_for_lesson))
+    memory_cards = build_memory_match_cards(flashcards_for_lesson, difficulty)
+
+    return render_template(
+        "memory_match.html",
+        lesson=lesson,
+        difficulty=difficulty,
+        difficulties=MEMORY_MATCH_DIFFICULTIES,
+        available_flashcards=len(flashcards_for_lesson),
+        pair_count=pair_count,
+        memory_cards=memory_cards,
+        xp_value=GAMIFICATION_XP_VALUES["memory_match"],
+    )
+
+
+@app.route("/api/memory-match/<int:lesson_id>/complete", methods=["POST"])
+@login_required
+def complete_memory_match(lesson_id):
+    lesson = get_flashcard_lesson(lesson_id, session["user_id"])
+    if not lesson:
+        abort(404)
+
+    flashcard_set = existing_flashcard_set(lesson.id, session["user_id"])
+    if not flashcard_set:
+        abort(404)
+
+    flashcards_for_lesson = get_flashcards_for_set(flashcard_set.id, session["user_id"])
+    payload = request.get_json(silent=True) or {}
+    difficulty = normalize_memory_difficulty(payload.get("difficulty"))
+    pair_count = memory_pair_limit(difficulty, len(flashcards_for_lesson))
+    try:
+        elapsed_seconds = max(1, int(payload.get("elapsed_seconds", 0)))
+        moves = max(1, int(payload.get("moves", 0)))
+        matched_pairs = max(0, int(payload.get("matched_pairs", 0)))
+    except (TypeError, ValueError):
+        abort(400, description="Valid game statistics are required.")
+
+    if pair_count <= 0 or matched_pairs < pair_count:
+        abort(400, description="Only completed Memory Match games can be saved.")
+
+    before_summary = get_gamification_summary(session["user_id"])
+    accuracy = calculate_memory_accuracy(pair_count, moves)
+    xp_earned = calculate_memory_xp(difficulty, accuracy)
+    best_time = memory_best_time_for_user(
+        session["user_id"],
+        lesson.id,
+        difficulty,
+        elapsed_seconds,
+    )
+    challenge = MemoryChallenge(
+        user_id=session["user_id"],
+        lesson_id=lesson.id,
+        difficulty=difficulty,
+        best_time=best_time,
+        moves=moves,
+        accuracy=accuracy,
+        xp_earned=xp_earned,
+    )
+    db.session.add(challenge)
+    db.session.commit()
+
+    after_summary = get_gamification_summary(session["user_id"])
+    return jsonify(
+        {
+            "time": format_duration(elapsed_seconds),
+            "accuracy": accuracy,
+            "moves": moves,
+            "xp_earned": xp_earned,
+            "level": after_summary["level"],
+            "newly_unlocked_badges": newly_unlocked_gamification(before_summary, after_summary),
+        }
     )
 
 

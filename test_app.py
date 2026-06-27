@@ -18,6 +18,7 @@ from models import (
     ImportantQuestionSet,
     LearningHistory,
     LearningSession,
+    MemoryChallenge,
     MindMap,
     QuizHistory,
     RevisionSheet,
@@ -1543,6 +1544,36 @@ Grade: A
             )
         )
 
+    def create_saved_flashcards(self, user_id=1, count=12, topic="Photosynthesis"):
+        lesson_id = app_module.save_learning_history(
+            user_id,
+            "Science",
+            "NCERT",
+            topic,
+            "Plant notes",
+            "{}",
+            ["Q1"],
+        )
+        flashcard_set = FlashcardSet(
+            user_id=user_id,
+            learning_history_id=lesson_id,
+        )
+        db.session.add(flashcard_set)
+        db.session.flush()
+        db.session.add_all(
+            Flashcard(
+                flashcard_set_id=flashcard_set.id,
+                user_id=user_id,
+                learning_history_id=lesson_id,
+                position=index,
+                front=f"Concept {index}",
+                back=f"Explanation {index}",
+            )
+            for index in range(1, count + 1)
+        )
+        db.session.commit()
+        return lesson_id
+
     def revision_response(self):
         return MockResponse(
             """# Quick Revision: Photosynthesis
@@ -2134,6 +2165,120 @@ Photosynthesis helps plants prepare food and release oxygen.
         dashboard_page = dashboard_response.get_data(as_text=True)
         self.assertIn("Flashcards Studied", dashboard_page)
         self.assertIn("<strong>10</strong>", dashboard_page)
+
+    @patch.object(app_module, "generate_content_with_fallback")
+    def test_memory_match_loads_existing_flashcards_without_gemini(self, generate_content):
+        self.register_user()
+        self.login_user()
+        with app_module.app.app_context():
+            lesson_id = self.create_saved_flashcards(count=8)
+
+        response = self.client.get(f"/memory-match/{lesson_id}?difficulty=easy")
+
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        self.assertIn("Memory Challenge", page)
+        self.assertIn("No new AI content is generated.", page)
+        self.assertIn("Concept 1", page)
+        self.assertIn("Explanation 1", page)
+        self.assertIn("Open Flashcards", page)
+        self.assertNotIn("Concept 7", page)
+        generate_content.assert_not_called()
+
+    def test_memory_match_pair_generation_shuffles_and_limits_cards(self):
+        self.register_user()
+        with app_module.app.app_context():
+            lesson_id = self.create_saved_flashcards(count=12)
+            flashcard_set = FlashcardSet.query.filter_by(learning_history_id=lesson_id).first()
+            cards = app_module.get_flashcards_for_set(flashcard_set.id, 1)
+
+            easy_cards = app_module.build_memory_match_cards(cards, "easy", shuffle=False)
+            hard_cards = app_module.build_memory_match_cards(cards, "hard", shuffle=False)
+            with patch("app.random.shuffle") as shuffle:
+                app_module.build_memory_match_cards(cards, "medium")
+
+        self.assertEqual(len(easy_cards), 12)
+        self.assertEqual(len({card["pairId"] for card in easy_cards}), 6)
+        self.assertEqual(len(hard_cards), 24)
+        self.assertEqual(len({card["pairId"] for card in hard_cards}), 12)
+        shuffle.assert_called_once()
+
+    def test_memory_match_statistics_calculation(self):
+        self.assertEqual(app_module.calculate_memory_accuracy(6, 8), 75.0)
+        self.assertEqual(app_module.calculate_memory_accuracy(0, 0), 0.0)
+        self.assertEqual(app_module.calculate_memory_xp("hard", 75.0), 20)
+        self.assertEqual(app_module.format_duration(75), "1:15")
+
+    @patch.object(app_module, "generate_content_with_fallback")
+    def test_memory_match_completion_awards_xp_updates_achievements_and_dashboard(self, generate_content):
+        self.register_user()
+        self.login_user()
+        with app_module.app.app_context():
+            lesson_id = self.create_saved_flashcards(count=10)
+
+        response = self.client.post(
+            f"/api/memory-match/{lesson_id}/complete",
+            json={
+                "difficulty": "medium",
+                "elapsed_seconds": 42,
+                "moves": 12,
+                "matched_pairs": 10,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["time"], "0:42")
+        self.assertEqual(payload["accuracy"], 83.3)
+        self.assertEqual(payload["moves"], 12)
+        self.assertEqual(payload["xp_earned"], 20)
+        self.assertIn("Memory Matcher", payload["newly_unlocked_badges"])
+        self.assertIn("Memory Master", payload["newly_unlocked_badges"])
+        generate_content.assert_not_called()
+        with app_module.app.app_context():
+            challenge = MemoryChallenge.query.one()
+            self.assertEqual(challenge.user_id, 1)
+            self.assertEqual(challenge.lesson_id, lesson_id)
+            self.assertEqual(challenge.difficulty, "medium")
+            self.assertEqual(challenge.best_time, 42)
+            self.assertEqual(challenge.moves, 12)
+            self.assertEqual(challenge.accuracy, 83.3)
+            self.assertEqual(challenge.xp_earned, 20)
+            summary = app_module.get_gamification_summary(1)
+            self.assertEqual(summary["counts"]["memory_match"], 1)
+            self.assertEqual(summary["total_xp"], 45)
+
+        dashboard_response = self.client.get("/dashboard")
+        dashboard_page = dashboard_response.get_data(as_text=True)
+        self.assertIn("Memory Match", dashboard_page)
+        self.assertIn("Best 0:42", dashboard_page)
+        self.assertIn("Avg 83.3%", dashboard_page)
+        self.assertIn("20 XP", dashboard_page)
+
+    def test_memory_match_completion_is_user_isolated(self):
+        self.register_user()
+        self.login_user()
+        with app_module.app.app_context():
+            lesson_id = self.create_saved_flashcards(count=6)
+        self.client.get("/logout")
+        self.register_user(username="other", email="other@example.com")
+        self.login_user(identifier="other")
+
+        page_response = self.client.get(f"/memory-match/{lesson_id}")
+        complete_response = self.client.post(
+            f"/api/memory-match/{lesson_id}/complete",
+            json={
+                "difficulty": "easy",
+                "elapsed_seconds": 30,
+                "moves": 6,
+                "matched_pairs": 6,
+            },
+        )
+
+        self.assertEqual(page_response.status_code, 404)
+        self.assertEqual(complete_response.status_code, 404)
+        with app_module.app.app_context():
+            self.assertEqual(MemoryChallenge.query.count(), 0)
 
     @patch.object(app_module.model, "generate_content")
     def test_logged_in_learn_autosaves_learning_session(self, generate_content):

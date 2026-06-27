@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ lesson.topic }} Memory Match - AI Study Buddy</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body class="learn-page memory-match-page {% if exhibition_mode %}exhibition-mode{% endif %}">
+<button id="theme-toggle" onclick="toggleTheme()">
+    &#127769; Dark Mode
+</button>
+
+<canvas class="confetti-canvas" id="confetti-canvas" aria-hidden="true"></canvas>
+
+<main class="learn-container memory-match-shell">
+    <header class="flashcards-header memory-match-header">
+        <div>
+            <span class="eyebrow">&#129504; Memory Challenge</span>
+            <h1>{{ lesson.topic }}</h1>
+            <p>Match saved flashcard fronts with their backs. No new AI content is generated.</p>
+        </div>
+        <div class="flashcards-header-actions">
+            <a class="button-link secondary-link" href="{{ url_for('flashcards', lesson_id=lesson.id) }}">Open Flashcards</a>
+            <a class="button-link secondary-link" href="{{ url_for('view_learning_history', lesson_id=lesson.id) }}">Back to Notes</a>
+            {% include 'components/auth_nav.html' %}
+        </div>
+    </header>
+
+    {% include 'components/flash_messages.html' %}
+
+    {% if pair_count %}
+    <section class="memory-command-panel" aria-label="Memory Match setup">
+        <div class="memory-mode-switch" aria-label="Difficulty">
+            {% for mode, limit in difficulties.items() %}
+            <a class="{% if difficulty == mode %}active{% endif %}" href="{{ url_for('memory_match', lesson_id=lesson.id, difficulty=mode) }}">
+                {{ mode|title }} <span>{{ [limit, available_flashcards]|min }} pairs</span>
+            </a>
+            {% endfor %}
+        </div>
+        <div class="memory-actions">
+            <button type="button" class="secondary-link" id="memory-restart">Restart</button>
+            <button type="button" class="secondary-link" id="memory-shuffle">Shuffle</button>
+        </div>
+    </section>
+
+    <section class="memory-stats-grid" aria-label="Memory Match statistics">
+        <article><span>Timer</span><strong id="memory-timer">0:00</strong></article>
+        <article><span>Moves</span><strong id="memory-moves">0</strong></article>
+        <article><span>Accuracy</span><strong id="memory-accuracy">100%</strong></article>
+        <article><span>Remaining</span><strong id="memory-remaining">{{ pair_count }}</strong></article>
+        <article><span>Combo</span><strong id="memory-combo">0</strong></article>
+        <article><span>Best Combo</span><strong id="memory-best-combo">0</strong></article>
+    </section>
+
+    <section class="memory-board" id="memory-board" aria-label="Memory Match cards"></section>
+    {% else %}
+    <section class="memory-empty-state">
+        <h2>Flashcards are needed first.</h2>
+        <p>Open this lesson's Flashcards page to create and save cards, then return for Memory Match.</p>
+        <a class="button-link" href="{{ url_for('flashcards', lesson_id=lesson.id) }}">Open Flashcards</a>
+    </section>
+    {% endif %}
+
+    {% include 'components/footer.html' %}
+</main>
+
+<div class="memory-completion-backdrop" id="memory-completion" hidden>
+    <section class="memory-completion-modal" role="dialog" aria-modal="true" aria-labelledby="memory-completion-title">
+        <span aria-hidden="true">&#127942;</span>
+        <h2 id="memory-completion-title">Challenge complete</h2>
+        <div class="memory-completion-grid">
+            <article><span>Time</span><strong id="completion-time">0:00</strong></article>
+            <article><span>Accuracy</span><strong id="completion-accuracy">0%</strong></article>
+            <article><span>Moves</span><strong id="completion-moves">0</strong></article>
+            <article><span>XP Earned</span><strong id="completion-xp">+{{ xp_value }}</strong></article>
+        </div>
+        <div class="memory-level-progress">
+            <div>
+                <strong id="completion-level">Level 1</strong>
+                <span id="completion-level-copy">Level progress</span>
+            </div>
+            <div class="xp-progress-track"><span id="completion-level-bar" style="width: 0%"></span></div>
+        </div>
+        <div class="memory-unlocks" id="completion-unlocks"></div>
+        <div class="locked-modal-actions">
+            <button type="button" id="completion-play-again">Play Again</button>
+            <a class="button-link secondary-link" href="{{ url_for('dashboard') }}">Dashboard</a>
+        </div>
+    </section>
+</div>
+
+{% if pair_count %}
+<script>
+const originalMemoryCards = {{ memory_cards|tojson }};
+const memoryDifficulty = "{{ difficulty }}";
+const memoryPairCount = {{ pair_count }};
+const completionUrl = "{{ url_for('complete_memory_match', lesson_id=lesson.id) }}";
+
+let memoryCards = [];
+let openCards = [];
+let lockBoard = false;
+let moves = 0;
+let matchedPairs = 0;
+let combo = 0;
+let bestCombo = 0;
+let startedAt = null;
+let timerId = null;
+
+const boardEl = document.getElementById("memory-board");
+const timerEl = document.getElementById("memory-timer");
+const movesEl = document.getElementById("memory-moves");
+const accuracyEl = document.getElementById("memory-accuracy");
+const remainingEl = document.getElementById("memory-remaining");
+const comboEl = document.getElementById("memory-combo");
+const bestComboEl = document.getElementById("memory-best-combo");
+const modalEl = document.getElementById("memory-completion");
+
+function formatTime(seconds) {
+    const safeSeconds = Math.max(0, Number(seconds) || 0);
+    const minutes = Math.floor(safeSeconds / 60);
+    return `${minutes}:${String(safeSeconds % 60).padStart(2, "0")}`;
+}
+
+function elapsedSeconds() {
+    if (!startedAt) {
+        return 0;
+    }
+    return Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+}
+
+function shuffleCards(cards) {
+    const shuffled = cards.slice();
+    for (let index = shuffled.length - 1; index > 0; index -= 1) {
+        const swapIndex = Math.floor(Math.random() * (index + 1));
+        [shuffled[index], shuffled[swapIndex]] = [shuffled[swapIndex], shuffled[index]];
+    }
+    return shuffled;
+}
+
+function startTimer() {
+    if (timerId) {
+        return;
+    }
+    startedAt = Date.now();
+    timerId = window.setInterval(() => {
+        timerEl.textContent = formatTime(elapsedSeconds());
+    }, 250);
+}
+
+function stopTimer() {
+    if (timerId) {
+        window.clearInterval(timerId);
+        timerId = null;
+    }
+    timerEl.textContent = formatTime(elapsedSeconds());
+}
+
+function currentAccuracy() {
+    if (!moves) {
+        return 100;
+    }
+    return Math.round((matchedPairs / moves) * 1000) / 10;
+}
+
+function renderStats() {
+    movesEl.textContent = moves;
+    accuracyEl.textContent = `${currentAccuracy()}%`;
+    remainingEl.textContent = memoryPairCount - matchedPairs;
+    comboEl.textContent = combo;
+    bestComboEl.textContent = bestCombo;
+}
+
+function renderBoard() {
+    boardEl.innerHTML = "";
+    boardEl.style.setProperty("--memory-card-count", memoryCards.length);
+    memoryCards.forEach(card => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "memory-card";
+        button.dataset.cardId = card.id;
+        button.setAttribute("aria-label", "Memory card");
+        button.innerHTML = `
+            <span class="memory-card-inner">
+                <span class="memory-card-face memory-card-back">&#129504;</span>
+                <span class="memory-card-face memory-card-front">
+                    <small>${card.label}</small>
+                    <strong></strong>
+                </span>
+            </span>
+        `;
+        button.querySelector("strong").textContent = card.text;
+        button.addEventListener("click", () => flipMemoryCard(card.id));
+        boardEl.appendChild(button);
+    });
+}
+
+function cardElement(cardId) {
+    return boardEl.querySelector(`[data-card-id="${cardId}"]`);
+}
+
+function flipMemoryCard(cardId) {
+    if (lockBoard) {
+        return;
+    }
+    const card = memoryCards.find(item => item.id === cardId);
+    const element = cardElement(cardId);
+    if (!card || !element || card.matched || card.flipped) {
+        return;
+    }
+    startTimer();
+    card.flipped = true;
+    element.classList.add("flipped");
+    openCards.push(card);
+    if (openCards.length === 2) {
+        resolveOpenCards();
+    }
+}
+
+function resolveOpenCards() {
+    lockBoard = true;
+    moves += 1;
+    const [first, second] = openCards;
+    if (first.pairId === second.pairId && first.id !== second.id) {
+        matchedPairs += 1;
+        combo += 1;
+        bestCombo = Math.max(bestCombo, combo);
+        first.matched = true;
+        second.matched = true;
+        cardElement(first.id).classList.add("matched");
+        cardElement(second.id).classList.add("matched");
+        openCards = [];
+        lockBoard = false;
+        renderStats();
+        if (matchedPairs === memoryPairCount) {
+            window.setTimeout(completeGame, 450);
+        }
+        return;
+    }
+
+    combo = 0;
+    renderStats();
+    window.setTimeout(() => {
+        first.flipped = false;
+        second.flipped = false;
+        cardElement(first.id).classList.remove("flipped");
+        cardElement(second.id).classList.remove("flipped");
+        openCards = [];
+        lockBoard = false;
+        renderStats();
+    }, 1000);
+}
+
+function resetGame(reshuffle) {
+    stopTimer();
+    startedAt = null;
+    openCards = [];
+    lockBoard = false;
+    moves = 0;
+    matchedPairs = 0;
+    combo = 0;
+    bestCombo = 0;
+    memoryCards = (reshuffle ? shuffleCards(originalMemoryCards) : originalMemoryCards.slice()).map(card => ({
+        ...card,
+        flipped: false,
+        matched: false
+    }));
+    renderBoard();
+    renderStats();
+}
+
+function runConfetti() {
+    const canvas = document.getElementById("confetti-canvas");
+    const context = canvas.getContext("2d");
+    const colors = ["#3157d5", "#047d87", "#c4553f", "#bd8a20", "#1f7a4d"];
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    const pieces = Array.from({length: 110}, () => ({
+        x: Math.random() * canvas.width,
+        y: -20 - Math.random() * canvas.height * 0.5,
+        size: 5 + Math.random() * 8,
+        speed: 2 + Math.random() * 5,
+        rotation: Math.random() * Math.PI,
+        color: colors[Math.floor(Math.random() * colors.length)]
+    }));
+    let frame = 0;
+    function draw() {
+        context.clearRect(0, 0, canvas.width, canvas.height);
+        pieces.forEach(piece => {
+            piece.y += piece.speed;
+            piece.x += Math.sin((frame + piece.y) / 28);
+            piece.rotation += 0.08;
+            context.save();
+            context.translate(piece.x, piece.y);
+            context.rotate(piece.rotation);
+            context.fillStyle = piece.color;
+            context.fillRect(-piece.size / 2, -piece.size / 2, piece.size, piece.size * 0.55);
+            context.restore();
+        });
+        frame += 1;
+        if (frame < 170) {
+            window.requestAnimationFrame(draw);
+        } else {
+            context.clearRect(0, 0, canvas.width, canvas.height);
+        }
+    }
+    draw();
+}
+
+function showCompletion(data) {
+    document.getElementById("completion-time").textContent = data.time;
+    document.getElementById("completion-accuracy").textContent = `${data.accuracy}%`;
+    document.getElementById("completion-moves").textContent = data.moves;
+    document.getElementById("completion-xp").textContent = `+${data.xp_earned}`;
+    document.getElementById("completion-level").textContent = `Level ${data.level.level}`;
+    document.getElementById("completion-level-copy").textContent = `${data.level.current_xp}/${data.level.level_xp} XP toward next level`;
+    document.getElementById("completion-level-bar").style.width = `${data.level.progress_percentage}%`;
+    const unlocksEl = document.getElementById("completion-unlocks");
+    if (data.newly_unlocked_badges.length) {
+        unlocksEl.innerHTML = `<strong>Newly unlocked</strong><span>${data.newly_unlocked_badges.join("</span><span>")}</span>`;
+    } else {
+        unlocksEl.innerHTML = "<strong>No new badges this round</strong>";
+    }
+    modalEl.hidden = false;
+    document.body.classList.add("modal-open");
+    runConfetti();
+}
+
+function completeGame() {
+    stopTimer();
+    lockBoard = true;
+    fetch(completionUrl, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+            difficulty: memoryDifficulty,
+            elapsed_seconds: Math.max(1, elapsedSeconds()),
+            moves,
+            matched_pairs: matchedPairs
+        })
+    })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error("Could not save Memory Match.");
+            }
+            return response.json();
+        })
+        .then(showCompletion)
+        .catch(() => {
+            lockBoard = false;
+        });
+}
+
+document.getElementById("memory-restart").addEventListener("click", () => resetGame(false));
+document.getElementById("memory-shuffle").addEventListener("click", () => resetGame(true));
+document.getElementById("completion-play-again").addEventListener("click", () => {
+    modalEl.hidden = true;
+    document.body.classList.remove("modal-open");
+    resetGame(true);
+});
+
+function toggleTheme() {
+    document.body.classList.toggle("dark-mode");
+
+    let btn = document.getElementById("theme-toggle");
+    if (document.body.classList.contains("dark-mode")) {
+        btn.innerHTML = "&#9728;&#65039; Light Mode";
+    } else {
+        btn.innerHTML = "&#127769; Dark Mode";
+    }
+}
+
+resetGame(false);
+</script>
+{% else %}
+<script>
+function toggleTheme() {
+    document.body.classList.toggle("dark-mode");
+
+    let btn = document.getElementById("theme-toggle");
+    if (document.body.classList.contains("dark-mode")) {
+        btn.innerHTML = "&#9728;&#65039; Light Mode";
+    } else {
+        btn.innerHTML = "&#127769; Dark Mode";
+    }
+}
+</script>
+{% endif %}
+</body>
+</html>
