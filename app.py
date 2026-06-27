@@ -3186,6 +3186,245 @@ def get_today_recommendation(stats, continue_lesson):
     }
 
 
+def recommendation_context_key(subject, topic):
+    return (
+        re.sub(r"\s+", " ", (subject or "").strip()).lower(),
+        re.sub(r"\s+", " ", (topic or "").strip()).lower(),
+    )
+
+
+def get_quiz_topic_scores(user_id, limit=30):
+    quiz_rows = (
+        QuizHistory.query.with_entities(
+            QuizHistory.subject,
+            QuizHistory.topic,
+            QuizHistory.score,
+            QuizHistory.created_at,
+        )
+        .filter(QuizHistory.user_id == user_id)
+        .order_by(QuizHistory.created_at.desc(), QuizHistory.id.desc())
+        .limit(limit)
+        .all()
+    )
+    topic_scores = defaultdict(list)
+    for quiz in quiz_rows:
+        percentage = score_to_percentage(quiz.score)
+        if percentage is None:
+            continue
+        topic_scores[recommendation_context_key(quiz.subject, quiz.topic)].append(
+            {
+                "subject": quiz.subject,
+                "topic": quiz.topic,
+                "percentage": percentage,
+                "created_at": quiz.created_at,
+            }
+        )
+    return topic_scores
+
+
+def get_due_flashcard_lessons(user_id, now=None):
+    now = now or datetime.now(timezone.utc)
+    return {
+        row.learning_history_id
+        for row in Flashcard.query.with_entities(Flashcard.learning_history_id)
+        .filter(
+            Flashcard.user_id == user_id,
+            or_(
+                Flashcard.needs_revision.is_(True),
+                Flashcard.next_review_at <= now,
+            ),
+        )
+        .group_by(Flashcard.learning_history_id)
+        .all()
+    }
+
+
+def has_activity_today(user_id):
+    today_start, tomorrow_start = utc_day_range()
+    lesson_count = LearningHistory.query.filter(
+        LearningHistory.user_id == user_id,
+        LearningHistory.created_at >= today_start,
+        LearningHistory.created_at < tomorrow_start,
+    ).count()
+    quiz_count = QuizHistory.query.filter(
+        QuizHistory.user_id == user_id,
+        QuizHistory.created_at >= today_start,
+        QuizHistory.created_at < tomorrow_start,
+    ).count()
+    tutor_count = TutorMessage.query.filter(
+        TutorMessage.user_id == user_id,
+        TutorMessage.created_at >= today_start,
+        TutorMessage.created_at < tomorrow_start,
+    ).count()
+    return bool(lesson_count or quiz_count or tutor_count)
+
+
+def get_smart_recommendations(user_id, stats=None, continue_lesson=None, limit=4):
+    lessons = (
+        LearningHistory.query.with_entities(
+            LearningHistory.id,
+            LearningHistory.subject,
+            LearningHistory.topic,
+            LearningHistory.created_at,
+        )
+        .filter(LearningHistory.user_id == user_id)
+        .order_by(LearningHistory.created_at.desc(), LearningHistory.id.desc())
+        .limit(15)
+        .all()
+    )
+    lesson_ids = [lesson.id for lesson in lessons]
+    revision_lesson_ids = {
+        row.learning_history_id
+        for row in RevisionSheet.query.with_entities(RevisionSheet.learning_history_id)
+        .filter(RevisionSheet.user_id == user_id, RevisionSheet.learning_history_id.in_(lesson_ids))
+        .all()
+    } if lesson_ids else set()
+    flashcard_sets_by_lesson = {
+        row.learning_history_id: row.id
+        for row in FlashcardSet.query.with_entities(FlashcardSet.id, FlashcardSet.learning_history_id)
+        .filter(FlashcardSet.user_id == user_id, FlashcardSet.learning_history_id.in_(lesson_ids))
+        .all()
+    } if lesson_ids else {}
+    topic_scores = get_quiz_topic_scores(user_id)
+    due_flashcard_lesson_ids = get_due_flashcard_lessons(user_id)
+    recommendations = []
+    seen_titles = set()
+    seen_contexts = set()
+
+    def add_recommendation(title, description, cta, url, reason, subject=None, topic=None, context_unique=True):
+        if len(recommendations) >= limit:
+            return
+        title_key = re.sub(r"\s+", " ", title.strip()).lower()
+        context_key = recommendation_context_key(subject, topic) if context_unique else None
+        if title_key in seen_titles:
+            return
+        if context_key and context_key in seen_contexts:
+            return
+        seen_titles.add(title_key)
+        if context_key:
+            seen_contexts.add(context_key)
+        recommendations.append(
+            {
+                "title": title,
+                "description": description,
+                "cta": cta,
+                "url": url,
+                "reason": reason,
+                "subject": subject or "",
+                "topic": topic or "",
+            }
+        )
+
+    lesson_by_id = {lesson.id: lesson for lesson in lessons}
+    for lesson_id in due_flashcard_lesson_ids:
+        lesson = lesson_by_id.get(lesson_id)
+        flashcard_set_id = flashcard_sets_by_lesson.get(lesson_id)
+        if lesson and flashcard_set_id:
+            add_recommendation(
+                "Complete today's revision",
+                f"Review the flashcards that still need attention from {lesson.topic}.",
+                "Open flashcards",
+                url_for("flashcards", lesson_id=lesson.id),
+                "Revision due",
+                lesson.subject,
+                lesson.topic,
+            )
+            break
+
+    weak_topic_scores = [
+        max(scores, key=lambda item: datetime_sort_value(item["created_at"]))
+        for scores in topic_scores.values()
+        if scores and max(item["percentage"] for item in scores) < 70
+    ]
+    weak_topic_scores.sort(key=lambda item: (item["percentage"], -datetime_sort_value(item["created_at"])))
+    for quiz in weak_topic_scores:
+        add_recommendation(
+            f"Revise {quiz['topic']}",
+            f"Your recent quiz score was {format_percentage(quiz['percentage'])}. A quick revision can strengthen this topic.",
+            "Revise now",
+            url_for("learning_history") + f"?search={quote(quiz['topic'])}",
+            "Quiz history",
+            quiz["subject"],
+            quiz["topic"],
+        )
+
+    latest_lesson = lessons[0] if lessons else None
+    if latest_lesson:
+        add_recommendation(
+            "Continue unfinished lesson",
+            f"Pick up {latest_lesson.topic} from your saved learning history.",
+            "Continue lesson",
+            url_for("view_learning_history", lesson_id=latest_lesson.id),
+            "Learning history",
+            latest_lesson.subject,
+            latest_lesson.topic,
+        )
+
+    for lesson in lessons:
+        topic_key = recommendation_context_key(lesson.subject, lesson.topic)
+        if topic_key not in topic_scores:
+            add_recommendation(
+                "Take another quiz",
+                f"Test what you remember from {lesson.topic}.",
+                "Take quiz",
+                url_for("home") + "#lesson-form",
+                "No quiz yet",
+                lesson.subject,
+                lesson.topic,
+            )
+
+    for lesson in lessons:
+        if lesson.id not in revision_lesson_ids:
+            add_recommendation(
+                f"Study {lesson.topic} again",
+                "Turn this saved lesson into a short revision session before it fades.",
+                "Open revision",
+                url_for("revision", lesson_id=lesson.id),
+                "Saved lesson",
+                lesson.subject,
+                lesson.topic,
+            )
+
+    stats = stats or get_dashboard_stats(user_id)
+    if stats.get("study_streak", 0) > 0 and not has_activity_today(user_id):
+        add_recommendation(
+            "Maintain your study streak",
+            "Complete one lesson, quiz, or tutor chat today to keep your rhythm alive.",
+            "Start studying",
+            url_for("home") + "#lesson-form",
+            "Streak",
+            context_unique=False,
+        )
+
+    fallback_recommendations = [
+        (
+            "Start with a focused lesson",
+            "Choose one topic and build a clean set of notes.",
+            "Start learning",
+            url_for("home") + "#lesson-form",
+            "Next step",
+        ),
+        (
+            "Take another quiz",
+            "A short quiz is the fastest way to find what needs revision.",
+            "Take quiz",
+            url_for("home") + "#lesson-form",
+            "Practice",
+        ),
+        (
+            "Complete today's revision",
+            "Review one saved topic or create flashcards for later practice.",
+            "Open history",
+            url_for("learning_history"),
+            "Revision",
+        ),
+    ]
+    for title, description, cta, url, reason in fallback_recommendations:
+        add_recommendation(title, description, cta, url, reason, context_unique=False)
+
+    return recommendations[:limit]
+
+
 def dashboard_achievements(stats):
     return [
         {
@@ -3216,11 +3455,9 @@ def dashboard_achievements(stats):
 
 
 def recommended_topics():
-    return [
-        {"subject": "Science", "topic": "Photosynthesis"},
-        {"subject": "Mathematics", "topic": "Linear Equations"},
-        {"subject": "English", "topic": "Grammar Revision"},
-    ]
+    if not session.get("user_id"):
+        return []
+    return get_smart_recommendations(session["user_id"])
 
 
 DIAGRAM_TEMPLATE_DEFINITIONS = [
@@ -5110,7 +5347,7 @@ def dashboard():
         today_recommendation=get_today_recommendation(stats, continue_lesson),
         recent_activity=get_recent_learning_activity(account["id"]),
         achievements=dashboard_achievements(stats),
-        recommendations=recommended_topics(),
+        recommendations=get_smart_recommendations(account["id"], stats, continue_lesson),
     )
 
 

@@ -123,6 +123,13 @@
             id="tutor-form"
             data-endpoint="{{ url_for('tutor_message', tutor_lesson_id=tutor_lesson.id) }}">
             <label for="tutor-input">Ask your AI Tutor</label>
+            <div class="tutor-voice-tools" aria-label="Voice tutor controls">
+                <button type="button" id="voice-start">&#127908; Start Listening</button>
+                <button type="button" id="voice-stop">&#9209; Stop</button>
+                <button type="button" id="voice-read">&#128266; Read Response</button>
+                <button type="button" id="voice-mute">&#128263; Mute</button>
+                <span id="voice-status" role="status" aria-live="polite">Voice ready.</span>
+            </div>
             <div class="tutor-input-row">
                 <textarea
                     id="tutor-input"

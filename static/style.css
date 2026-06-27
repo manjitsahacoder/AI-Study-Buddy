@@ -2670,6 +2670,36 @@ body.dashboard-page #theme-toggle {
     font-size: 0.94rem;
 }
 
+.smart-recommendation-card {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+}
+
+.smart-recommendation-card p {
+    flex: 1;
+    line-height: 1.45;
+}
+
+.smart-recommendation-card .button-link {
+    margin-top: auto;
+}
+
+.recommendation-reason {
+    display: inline-flex;
+    align-items: center;
+    min-height: 26px;
+    padding: 4px 8px;
+    border-radius: 8px;
+    background: rgba(47, 111, 237, 0.12);
+    color: var(--primary);
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0;
+    text-transform: uppercase;
+}
+
 .achievement-badge.locked {
     opacity: 0.52;
     filter: grayscale(0.9);
@@ -3957,6 +3987,47 @@ body.dashboard-page #theme-toggle {
     margin-bottom: 8px;
     color: var(--ink);
     font-weight: 900;
+}
+
+.tutor-voice-tools {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+}
+
+.tutor-voice-tools button {
+    width: auto;
+    min-height: 40px;
+    min-width: 0;
+    padding: 8px 11px;
+    border: 1px solid rgba(49, 87, 213, 0.18);
+    border-radius: 8px;
+    color: var(--primary);
+    background: rgba(49, 87, 213, 0.08);
+    box-shadow: none;
+    font-size: 0.84rem;
+    font-weight: 900;
+    line-height: 1.2;
+}
+
+.tutor-voice-tools button:hover:not(:disabled) {
+    color: #ffffff;
+    transform: translateY(-1px);
+}
+
+.tutor-voice-tools button:disabled {
+    cursor: not-allowed;
+    opacity: 0.48;
+    transform: none;
+}
+
+#voice-status {
+    min-width: min(220px, 100%);
+    color: var(--muted);
+    font-size: 0.86rem;
+    font-weight: 800;
 }
 
 .tutor-input-row {
@@ -6224,6 +6295,11 @@ textarea:focus {
     color: var(--ink);
 }
 
+.dark-mode .recommendation-reason {
+    background: rgba(96, 165, 250, 0.18);
+    color: #bfdbfe;
+}
+
 .dark-mode .feature-card:hover,
 .dark-mode .team-member:hover {
     background: rgba(134, 161, 255, 0.12);
@@ -6484,9 +6560,14 @@ textarea:focus {
 }
 
 .dark-mode .copy-response-button,
-.dark-mode .regenerate-response-button {
+.dark-mode .regenerate-response-button,
+.dark-mode .tutor-voice-tools button {
     background: rgba(134, 161, 255, 0.1);
     border-color: rgba(134, 161, 255, 0.18);
+}
+
+.dark-mode #voice-status {
+    color: var(--muted);
 }
 
 .dark-mode .assistant .tutor-message {
@@ -7163,6 +7244,19 @@ textarea:focus {
 
     .tutor-input-row {
         grid-template-columns: 1fr;
+    }
+
+    .tutor-voice-tools {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .tutor-voice-tools button {
+        width: 100%;
+    }
+
+    #voice-status {
+        grid-column: 1 / -1;
     }
 
     .tutor-input-row button {

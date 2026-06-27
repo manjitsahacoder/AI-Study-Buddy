@@ -298,16 +298,17 @@
         <section class="dashboard-panel">
             <div class="dashboard-section-heading">
                 <div>
-                    <span class="eyebrow">Recommended Topics</span>
-                    <h2>Recommended Topics</h2>
+                    <span class="eyebrow">Recommended For You</span>
+                    <h2>Smart AI Recommendations</h2>
                 </div>
-                <p>AI-generated recommendations will appear here later.</p>
             </div>
             <div class="recommended-topic-grid">
                 {% for recommendation in recommendations %}
-                <article class="recommended-topic-card">
-                    <h3>{{ recommendation.subject }}</h3>
-                    <p>&bull; {{ recommendation.topic }}</p>
+                <article class="recommended-topic-card smart-recommendation-card">
+                    <span class="recommendation-reason">{{ recommendation.reason }}</span>
+                    <h3>{{ recommendation.title }}</h3>
+                    <p>{{ recommendation.description }}</p>
+                    <a class="button-link secondary-link" href="{{ recommendation.url }}">{{ recommendation.cta }}</a>
                 </article>
                 {% endfor %}
             </div>

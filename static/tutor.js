@@ -4,10 +4,25 @@
     const sendButton = document.getElementById("tutor-send");
     const messages = document.getElementById("tutor-messages");
     const quizTemplate = document.getElementById("tutor-quiz-cta-template");
+    const voiceStartButton = document.getElementById("voice-start");
+    const voiceStopButton = document.getElementById("voice-stop");
+    const voiceReadButton = document.getElementById("voice-read");
+    const voiceMuteButton = document.getElementById("voice-mute");
+    const voiceStatus = document.getElementById("voice-status");
 
     if (!form || !input || !messages) {
         return;
     }
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const canRecognizeSpeech = Boolean(SpeechRecognition);
+    const canSpeakResponse = Boolean(window.speechSynthesis && window.SpeechSynthesisUtterance);
+    let recognition = null;
+    let isListening = false;
+    let speechMuted = false;
+    let transcriptBase = "";
+    let finalTranscript = "";
+    let hasVoiceTranscript = false;
 
     function escapeHtml(value) {
         return value
@@ -25,6 +40,177 @@
     function resizeInput() {
         input.style.height = "auto";
         input.style.height = Math.min(input.scrollHeight, 180) + "px";
+    }
+
+    function setVoiceStatus(text) {
+        if (voiceStatus) {
+            voiceStatus.textContent = text;
+        }
+    }
+
+    function latestAssistantResponse() {
+        const assistantRows = messages.querySelectorAll(".tutor-message-row.assistant");
+        for (let index = assistantRows.length - 1; index >= 0; index -= 1) {
+            const source = assistantRows[index].querySelector(".tutor-message-source");
+            if (source && source.value.trim()) {
+                return source.value.trim();
+            }
+
+            const content = assistantRows[index].querySelector(".tutor-message-content");
+            if (content && content.textContent.trim()) {
+                return content.textContent.trim();
+            }
+        }
+        return "";
+    }
+
+    function updateVoiceControls() {
+        const isSending = form.classList.contains("is-sending");
+
+        if (voiceStartButton) {
+            voiceStartButton.disabled = !canRecognizeSpeech || isListening || isSending;
+        }
+        if (voiceStopButton) {
+            voiceStopButton.disabled = !canRecognizeSpeech || !isListening;
+        }
+        if (voiceReadButton) {
+            voiceReadButton.disabled = !canSpeakResponse || speechMuted;
+        }
+        if (voiceMuteButton) {
+            voiceMuteButton.disabled = !canSpeakResponse;
+            voiceMuteButton.textContent = speechMuted ? "\uD83D\uDD08 Unmute" : "\uD83D\uDD07 Mute";
+            voiceMuteButton.setAttribute("aria-pressed", speechMuted ? "true" : "false");
+        }
+    }
+
+    function stopSpeech() {
+        if (canSpeakResponse) {
+            window.speechSynthesis.cancel();
+        }
+    }
+
+    function readLatestResponse() {
+        if (!canSpeakResponse) {
+            setVoiceStatus("Text-to-speech is unavailable. You can read the response on screen.");
+            return;
+        }
+        if (speechMuted) {
+            setVoiceStatus("Speech is muted.");
+            return;
+        }
+
+        const responseText = latestAssistantResponse();
+        if (!responseText) {
+            setVoiceStatus("No tutor response is ready to read yet.");
+            return;
+        }
+
+        stopSpeech();
+        const utterance = new SpeechSynthesisUtterance(responseText);
+        utterance.lang = document.documentElement.lang || navigator.language || "en-US";
+        utterance.onstart = function () {
+            setVoiceStatus("Reading response...");
+        };
+        utterance.onend = function () {
+            setVoiceStatus("Finished reading.");
+        };
+        utterance.onerror = function () {
+            setVoiceStatus("Could not read the response aloud.");
+        };
+        window.speechSynthesis.speak(utterance);
+    }
+
+    function ensureRecognition() {
+        if (!canRecognizeSpeech) {
+            setVoiceStatus("Speech-to-text is unavailable. Typing still works.");
+            return null;
+        }
+        if (recognition) {
+            return recognition;
+        }
+
+        recognition = new SpeechRecognition();
+        recognition.continuous = false;
+        recognition.interimResults = true;
+        recognition.lang = document.documentElement.lang || navigator.language || "en-US";
+
+        recognition.onstart = function () {
+            isListening = true;
+            finalTranscript = "";
+            hasVoiceTranscript = false;
+            transcriptBase = input.value.trim();
+            setVoiceStatus("Listening...");
+            updateVoiceControls();
+        };
+
+        recognition.onresult = function (event) {
+            let interimTranscript = "";
+            for (let index = event.resultIndex; index < event.results.length; index += 1) {
+                const transcript = event.results[index][0].transcript;
+                if (event.results[index].isFinal) {
+                    finalTranscript += transcript;
+                } else {
+                    interimTranscript += transcript;
+                }
+            }
+
+            const combinedTranscript = [transcriptBase, finalTranscript, interimTranscript]
+                .map(function (part) {
+                    return (part || "").trim();
+                })
+                .filter(Boolean)
+                .join(" ");
+            hasVoiceTranscript = combinedTranscript.trim() !== transcriptBase;
+            input.value = combinedTranscript;
+            resizeInput();
+        };
+
+        recognition.onerror = function (event) {
+            const messagesByError = {
+                "not-allowed": "Microphone permission was blocked. Typing still works.",
+                "no-speech": "No speech was heard. Try again or type your question.",
+                "audio-capture": "No microphone was found. Typing still works."
+            };
+            setVoiceStatus(messagesByError[event.error] || "Speech recognition stopped. Typing still works.");
+        };
+
+        recognition.onend = function () {
+            const finalPrompt = input.value.trim();
+            isListening = false;
+            updateVoiceControls();
+
+            if (hasVoiceTranscript && finalPrompt && !form.classList.contains("is-sending")) {
+                setVoiceStatus("Sending voice question...");
+                submitPrompt(finalPrompt);
+            } else if (finalPrompt) {
+                setVoiceStatus("Voice captured.");
+            } else if (canRecognizeSpeech) {
+                setVoiceStatus("Voice ready.");
+            }
+        };
+
+        return recognition;
+    }
+
+    function startListening() {
+        const recognizer = ensureRecognition();
+        if (!recognizer || isListening || form.classList.contains("is-sending")) {
+            return;
+        }
+
+        stopSpeech();
+        try {
+            recognizer.start();
+        } catch (error) {
+            setVoiceStatus("Speech recognition is already starting.");
+        }
+    }
+
+    function stopListening() {
+        if (recognition && isListening) {
+            recognition.stop();
+            setVoiceStatus("Stopping...");
+        }
     }
 
     function messageTime(date) {
@@ -200,6 +386,7 @@
         sendButton.disabled = isSending;
         form.classList.toggle("is-sending", isSending);
         form.setAttribute("aria-busy", isSending ? "true" : "false");
+        updateVoiceControls();
     }
 
     async function submitPrompt(text) {
@@ -230,6 +417,7 @@
                 return;
             }
             addMessage("assistant", data.reply, data.reply_html);
+            setVoiceStatus("Response ready.");
         } catch (error) {
             typing.remove();
             addMessage("assistant", "The tutor could not connect right now. Please try again.");
@@ -284,6 +472,36 @@
         submitPrompt(text);
     });
 
+    if (voiceStartButton) {
+        voiceStartButton.addEventListener("click", startListening);
+    }
+    if (voiceStopButton) {
+        voiceStopButton.addEventListener("click", stopListening);
+    }
+    if (voiceReadButton) {
+        voiceReadButton.addEventListener("click", readLatestResponse);
+    }
+    if (voiceMuteButton) {
+        voiceMuteButton.addEventListener("click", function () {
+            speechMuted = !speechMuted;
+            if (speechMuted) {
+                stopSpeech();
+                setVoiceStatus("Speech muted.");
+            } else {
+                setVoiceStatus("Speech ready.");
+            }
+            updateVoiceControls();
+        });
+    }
+
     resizeInput();
     scrollToLatest();
+    if (!canRecognizeSpeech && !canSpeakResponse) {
+        setVoiceStatus("Voice tools are unavailable. Typing still works.");
+    } else if (!canRecognizeSpeech) {
+        setVoiceStatus("Speech-to-text is unavailable. Typing still works.");
+    } else if (!canSpeakResponse) {
+        setVoiceStatus("Text-to-speech is unavailable.");
+    }
+    updateVoiceControls();
 })();

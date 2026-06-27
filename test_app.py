@@ -780,6 +780,150 @@ Grade: A
         self.assertIn("role-student", dashboard_page)
         self.assertNotIn("role-developer", dashboard_page)
 
+    def test_dashboard_recommendations_use_history_without_database_writes(self):
+        self.register_user()
+        self.login_user()
+
+        with app_module.app.app_context():
+            user = User.query.filter_by(username="asha").first()
+            now = app_module.datetime.now(app_module.timezone.utc)
+            photosynthesis_id = app_module.save_learning_history(
+                user.id,
+                "Science",
+                "Biology",
+                "Photosynthesis",
+                "Plants make food using sunlight.",
+                {},
+                ["What is photosynthesis?"],
+            )
+            cell_division_id = app_module.save_learning_history(
+                user.id,
+                "Science",
+                "Biology",
+                "Cell Division",
+                "Cells divide to grow and repair.",
+                {},
+                ["What is mitosis?"],
+            )
+            db.session.get(LearningHistory, photosynthesis_id).created_at = now - app_module.timedelta(days=8)
+            db.session.get(LearningHistory, cell_division_id).created_at = now - app_module.timedelta(hours=2)
+            app_module.save_quiz_history(
+                "Asha Student",
+                "8",
+                "Science",
+                "Cell Division",
+                "4/10",
+                "C",
+                ["Q1"],
+                ["A1"],
+                "{}",
+                user_id=user.id,
+            )
+            app_module.save_quiz_history(
+                "Asha Student",
+                "8",
+                "Science",
+                "Photosynthesis",
+                "9/10",
+                "A+",
+                ["Q1"],
+                ["A1"],
+                "{}",
+                user_id=user.id,
+            )
+            db.session.commit()
+            before_counts = {
+                model.__tablename__: model.query.count()
+                for model in (
+                    LearningHistory,
+                    LearningSession,
+                    QuizHistory,
+                    DownloadedFile,
+                    RevisionSheet,
+                    MindMap,
+                    ImportantQuestionSet,
+                    FlashcardSet,
+                    Flashcard,
+                    TutorLesson,
+                    TutorMessage,
+                )
+            }
+
+        with patch("app.gemini_request") as gemini_request:
+            response = self.client.get("/dashboard")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(gemini_request.called)
+        page = response.get_data(as_text=True)
+        self.assertIn("Recommended For You", page)
+        self.assertIn("Smart AI Recommendations", page)
+        self.assertIn("Revise Cell Division", page)
+        self.assertIn("Study Photosynthesis again", page)
+        self.assertIn("Quiz history", page)
+        self.assertIn("Saved lesson", page)
+
+        with app_module.app.app_context():
+            after_counts = {
+                model.__tablename__: model.query.count()
+                for model in (
+                    LearningHistory,
+                    LearningSession,
+                    QuizHistory,
+                    DownloadedFile,
+                    RevisionSheet,
+                    MindMap,
+                    ImportantQuestionSet,
+                    FlashcardSet,
+                    Flashcard,
+                    TutorLesson,
+                    TutorMessage,
+                )
+            }
+        self.assertEqual(before_counts, after_counts)
+
+    def test_dashboard_recommends_due_flashcard_revision(self):
+        self.register_user()
+        self.login_user()
+
+        with app_module.app.app_context():
+            user = User.query.filter_by(username="asha").first()
+            lesson_id = app_module.save_learning_history(
+                user.id,
+                "Science",
+                "Biology",
+                "Respiration",
+                "Respiration releases energy from food.",
+                {},
+                ["What is respiration?"],
+            )
+            flashcard_set = FlashcardSet(
+                user_id=user.id,
+                learning_history_id=lesson_id,
+                source_model="test",
+            )
+            db.session.add(flashcard_set)
+            db.session.flush()
+            db.session.add(
+                Flashcard(
+                    flashcard_set_id=flashcard_set.id,
+                    user_id=user.id,
+                    learning_history_id=lesson_id,
+                    position=1,
+                    front="What is respiration?",
+                    back="The process of releasing energy from food.",
+                    needs_revision=True,
+                )
+            )
+            db.session.commit()
+
+        response = self.client.get("/dashboard")
+
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        self.assertIn("Complete today&#39;s revision", page)
+        self.assertIn("Open flashcards", page)
+        self.assertIn("/flashcards/", page)
+
     def test_rbac_panels_require_login(self):
         for path in ["/developer", "/developer/users", "/developer/user/1", "/support", "/qa"]:
             with self.subTest(path=path):
@@ -1225,8 +1369,10 @@ Grade: A
         self.assertIn("Study Planner", page)
         self.assertIn("Student", page)
         self.assertIn("role-student", page)
-        self.assertIn("Recommended Topics", page)
-        self.assertIn("Photosynthesis", page)
+        self.assertIn("Recommended For You", page)
+        self.assertIn("Smart AI Recommendations", page)
+        self.assertIn("Start with a focused lesson", page)
+        self.assertIn("Complete today&#39;s revision", page)
         self.assertIn("Back to Home", page)
         self.assertIn("sidebar-nav", page)
         self.assertIn('class="profile-menu-button"', page)
@@ -1980,10 +2126,15 @@ Q5. What is question five?
         self.assertIn("AI Tutor", page)
         self.assertIn("Photosynthesis", page)
         self.assertIn("Ask anything about this lesson", page)
+        self.assertIn("&#127908; Start Listening", page)
+        self.assertIn("&#9209; Stop", page)
+        self.assertIn("&#128266; Read Response", page)
+        self.assertIn("&#128263; Mute", page)
         self.assertIn("Continue to Quiz", page)
         with app_module.app.app_context():
             tutor_lesson = TutorLesson.query.first()
 
+        self.assertIn(f'data-endpoint="/api/tutor/{tutor_lesson.id}/message"', page)
         self.assertEqual(
             (
                 tutor_lesson.user_id,
@@ -2048,6 +2199,18 @@ Q5. What is question five?
             messages = TutorMessage.query.order_by(TutorMessage.id.asc()).all()
 
         self.assertEqual([message.sender for message in messages], ["student", "assistant", "student", "assistant"])
+
+    def test_tutor_voice_script_uses_browser_speech_apis_and_existing_endpoint(self):
+        script_path = os.path.join(app_module.app.root_path, "static", "tutor.js")
+        with open(script_path, encoding="utf-8") as script_file:
+            script = script_file.read()
+
+        self.assertIn("window.SpeechRecognition || window.webkitSpeechRecognition", script)
+        self.assertIn("window.speechSynthesis", script)
+        self.assertIn("new SpeechSynthesisUtterance", script)
+        self.assertIn("fetch(form.dataset.endpoint", script)
+        self.assertIn("submitPrompt(finalPrompt)", script)
+        self.assertNotIn("/api/gemini", script)
 
     def test_guest_learning_history_shows_locked_message(self):
         response = self.client.get("/learning-history")
