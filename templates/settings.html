@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Settings - AI Study Buddy</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body class="dashboard-page settings-page {% if account.theme_preference == 'dark' %}dark-mode{% endif %}">
+{% set active_page = 'settings' %}
+<div class="dashboard-shell settings-shell">
+    {% include 'components/dashboard_sidebar.html' %}
+
+    <main class="dashboard-main settings-main">
+        <header class="dashboard-topbar settings-topbar">
+            <div>
+                <span class="eyebrow">Account Settings</span>
+                <h1>Settings</h1>
+                <p>Manage your profile, security, AI defaults, notifications, and account data.</p>
+            </div>
+            <div class="dashboard-topbar-actions">
+                <a class="button-link secondary-link" href="{{ url_for('dashboard') }}">Back to Dashboard</a>
+                {% include 'components/auth_nav.html' %}
+            </div>
+        </header>
+
+        {% include 'components/flash_messages.html' %}
+
+        <div class="settings-layout">
+            <nav class="settings-section-nav" aria-label="Settings sections">
+                <a href="#profile">Profile</a>
+                <a href="#security">Security</a>
+                <a href="#appearance">Appearance</a>
+                <a href="#ai-preferences">AI Preferences</a>
+                <a href="#notifications">Notifications</a>
+                <a href="#account">Account</a>
+            </nav>
+
+            <div class="settings-sections">
+                <section class="dashboard-panel settings-section" id="profile">
+                    <div class="dashboard-section-heading">
+                        <div>
+                            <span class="eyebrow">Profile</span>
+                            <h2>Student Details</h2>
+                        </div>
+                    </div>
+                    <form class="settings-form" action="{{ url_for('update_settings') }}" method="POST">
+                        <input type="hidden" name="action" value="profile">
+                        <div class="form-grid">
+                            <div class="form-field">
+                                <label for="full_name">Full Name</label>
+                                <input id="full_name" name="full_name" type="text" value="{{ account.full_name }}" required autocomplete="name">
+                            </div>
+                            <div class="form-field">
+                                <label for="email">Email</label>
+                                <input id="email" name="email" type="email" value="{{ account.email }}" required autocomplete="email">
+                            </div>
+                            <div class="form-field">
+                                <label for="username">Username</label>
+                                <input id="username" name="username" type="text" value="{{ account.username }}" required autocomplete="username">
+                            </div>
+                            <div class="form-field">
+                                <label for="student_class">Student Class</label>
+                                <select id="student_class" name="student_class" required>
+                                    {% for class_number in class_options %}
+                                    <option value="{{ class_number }}" {% if account.student_class == class_number %}selected{% endif %}>Class {{ class_number }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+                        <button type="submit">Save Profile</button>
+                    </form>
+                </section>
+
+                <section class="dashboard-panel settings-section" id="security">
+                    <div class="dashboard-section-heading">
+                        <div>
+                            <span class="eyebrow">Security</span>
+                            <h2>Change Password</h2>
+                        </div>
+                    </div>
+                    <form class="settings-form" action="{{ url_for('update_settings') }}" method="POST">
+                        <input type="hidden" name="action" value="password">
+                        <div class="form-grid">
+                            <div class="form-field">
+                                <label for="current_password">Current Password</label>
+                                <input id="current_password" name="current_password" type="password" required autocomplete="current-password">
+                            </div>
+                            <div class="form-field">
+                                <label for="new_password">New Password</label>
+                                <input id="new_password" name="new_password" type="password" minlength="8" required autocomplete="new-password">
+                            </div>
+                            <div class="form-field">
+                                <label for="confirm_password">Confirm Password</label>
+                                <input id="confirm_password" name="confirm_password" type="password" minlength="8" required autocomplete="new-password">
+                            </div>
+                        </div>
+                        <button type="submit">Update Password</button>
+                    </form>
+                </section>
+
+                <section class="dashboard-panel settings-section" id="appearance">
+                    <div class="dashboard-section-heading">
+                        <div>
+                            <span class="eyebrow">Appearance</span>
+                            <h2>Theme</h2>
+                        </div>
+                    </div>
+                    <form class="settings-form" action="{{ url_for('update_settings') }}" method="POST">
+                        <input type="hidden" name="action" value="appearance">
+                        <div class="segmented-options" role="radiogroup" aria-label="Theme preference">
+                            {% for value, label in [('light', 'Light'), ('dark', 'Dark'), ('system', 'System')] %}
+                            <label>
+                                <input type="radio" name="theme_preference" value="{{ value }}" {% if account.theme_preference == value %}checked{% endif %}>
+                                <span>{{ label }}</span>
+                            </label>
+                            {% endfor %}
+                        </div>
+                        <button type="submit">Save Appearance</button>
+                    </form>
+                </section>
+
+                <section class="dashboard-panel settings-section" id="ai-preferences">
+                    <div class="dashboard-section-heading">
+                        <div>
+                            <span class="eyebrow">AI Preferences</span>
+                            <h2>Learning Defaults</h2>
+                        </div>
+                    </div>
+                    <form class="settings-form" action="{{ url_for('update_settings') }}" method="POST">
+                        <input type="hidden" name="action" value="ai_preferences">
+                        <fieldset class="settings-fieldset">
+                            <legend>Explanation Style</legend>
+                            <div class="segmented-options" role="radiogroup" aria-label="Explanation style">
+                                {% for value, label in explanation_styles.items() %}
+                                <label>
+                                    <input type="radio" name="ai_explanation_style" value="{{ value }}" {% if account.ai_explanation_style == value %}checked{% endif %}>
+                                    <span>{{ label }}</span>
+                                </label>
+                                {% endfor %}
+                            </div>
+                        </fieldset>
+                        <div class="form-grid">
+                            <div class="form-field">
+                                <label for="default_subject">Default Subject</label>
+                                <select id="default_subject" name="default_subject">
+                                    <option value="">No default</option>
+                                    {% for subject in ['Maths', 'Science', 'English', 'Social Science', 'Artificial Intelligence / Computer Science'] %}
+                                    <option value="{{ subject }}" {% if account.default_subject == subject %}selected{% endif %}>{{ subject }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="form-field">
+                                <label for="default_class">Default Class</label>
+                                <select id="default_class" name="default_class">
+                                    <option value="">Use profile class</option>
+                                    {% for class_number in class_options %}
+                                    <option value="{{ class_number }}" {% if account.default_class == class_number %}selected{% endif %}>Class {{ class_number }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+                        <button type="submit">Save AI Preferences</button>
+                    </form>
+                </section>
+
+                <section class="dashboard-panel settings-section" id="notifications">
+                    <div class="dashboard-section-heading">
+                        <div>
+                            <span class="eyebrow">Notifications</span>
+                            <h2>Reminder Controls</h2>
+                        </div>
+                    </div>
+                    <form class="settings-form" action="{{ url_for('update_settings') }}" method="POST">
+                        <input type="hidden" name="action" value="notifications">
+                        <div class="settings-switch-list">
+                            {% set notification_items = [
+                                ('notifications_enabled', 'Enable Notifications', account.notifications_enabled),
+                                ('notify_study_reminders', 'Study reminders', account.notify_study_reminders),
+                                ('notify_achievement_notifications', 'Achievement notifications', account.notify_achievement_notifications),
+                                ('notify_daily_challenge_reminders', 'Daily challenge reminders', account.notify_daily_challenge_reminders)
+                            ] %}
+                            {% for name, label, checked in notification_items %}
+                            <label class="settings-switch">
+                                <span>{{ label }}</span>
+                                <input type="checkbox" name="{{ name }}" value="1" {% if checked %}checked{% endif %}>
+                            </label>
+                            {% endfor %}
+                        </div>
+                        <button type="submit">Save Notifications</button>
+                    </form>
+                </section>
+
+                <section class="dashboard-panel settings-section account-danger-section" id="account">
+                    <div class="dashboard-section-heading">
+                        <div>
+                            <span class="eyebrow">Account</span>
+                            <h2>Data and Deletion</h2>
+                        </div>
+                    </div>
+                    <div class="account-actions-grid">
+                        <div>
+                            <h3>Download my data</h3>
+                            <p>Export your profile, preferences, quiz history, saved lessons, tutor activity, and generated study materials as JSON.</p>
+                            <a class="button-link" href="{{ url_for('download_account_data') }}">Download Data</a>
+                        </div>
+                        <form class="settings-form delete-account-form" action="{{ url_for('delete_account') }}" method="POST" onsubmit="return confirm('Delete this account and all saved data?');">
+                            <h3>Delete account</h3>
+                            <p>This permanently removes your account and saved learning data.</p>
+                            <div class="form-field">
+                                <label for="delete_confirmation">Type your username</label>
+                                <input id="delete_confirmation" name="confirmation" type="text" placeholder="{{ account.username }}" required>
+                            </div>
+                            <div class="form-field">
+                                <label for="delete_password">Current Password</label>
+                                <input id="delete_password" name="password" type="password" required autocomplete="current-password">
+                            </div>
+                            <button class="danger-link" type="submit">Delete Account</button>
+                        </form>
+                    </div>
+                </section>
+            </div>
+        </div>
+
+        {% include 'components/footer.html' %}
+    </main>
+</div>
+</body>
+</html>

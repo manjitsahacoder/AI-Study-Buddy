@@ -2445,6 +2445,190 @@ Q5. What is question five?
         self.assertIn("Future AI Usage Statistics", page)
         self.assertIn("Edit Profile", page)
 
+    def test_settings_profile_update_changes_account_fields(self):
+        self.register_user()
+        self.login_user()
+
+        response = self.client.post(
+            "/settings",
+            data={
+                "action": "profile",
+                "full_name": "Asha Updated",
+                "username": "asha_updated",
+                "email": "asha.updated@example.com",
+                "student_class": "9",
+            },
+            follow_redirects=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Settings updated successfully.", response.get_data(as_text=True))
+        with app_module.app.app_context():
+            row = User.query.filter_by(username="asha_updated").first()
+            self.assertIsNotNone(row)
+            self.assertEqual(row.full_name, "Asha Updated")
+            self.assertEqual(row.email, "asha.updated@example.com")
+            self.assertEqual(row.student_class, "9")
+
+    def test_settings_password_change_requires_current_password_and_updates_hash(self):
+        self.register_user()
+        self.login_user()
+
+        bad_response = self.client.post(
+            "/settings",
+            data={
+                "action": "password",
+                "current_password": "wrong-password",
+                "new_password": "newpassword123",
+                "confirm_password": "newpassword123",
+            },
+        )
+        self.assertEqual(bad_response.status_code, 400)
+        self.assertIn("Current password is incorrect.", bad_response.get_data(as_text=True))
+
+        good_response = self.client.post(
+            "/settings",
+            data={
+                "action": "password",
+                "current_password": "password123",
+                "new_password": "newpassword123",
+                "confirm_password": "newpassword123",
+            },
+            follow_redirects=True,
+        )
+
+        self.assertEqual(good_response.status_code, 200)
+        self.client.get("/logout")
+        old_login = self.login_user(password="password123")
+        self.assertEqual(old_login.status_code, 401)
+        new_login = self.login_user(password="newpassword123")
+        self.assertEqual(new_login.status_code, 302)
+
+    @patch.object(app_module.model, "generate_content")
+    def test_settings_preferences_are_saved_and_used_for_future_ai_requests(self, generate_content):
+        generate_content.return_value = MockResponse(
+            """# Plant Notes
+Plants make food.
+
+## Quick Revision
+- Plants need sunlight.
+
+## Diagram JSON
+{"diagram_type": "none", "title": "", "labels": [], "arrows": [], "notes": []}
+
+## Questions
+Q1. What do plants need?
+
+Q2. What do plants make?
+
+Q3. Why is sunlight useful?
+
+Q4. Name one plant part.
+
+Q5. What is photosynthesis?
+"""
+        )
+        self.register_user()
+        self.login_user()
+
+        response = self.client.post(
+            "/settings",
+            data={
+                "action": "ai_preferences",
+                "ai_explanation_style": "detailed",
+                "default_subject": "Science",
+                "default_class": "9",
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+
+        learn_response = self.client.post(
+            "/learn",
+            data={
+                "name": "Asha Student",
+                "book_name": "",
+                "topic": "Photosynthesis",
+            },
+        )
+
+        self.assertEqual(learn_response.status_code, 200)
+        prompt = generate_content.call_args.args[0]
+        self.assertIn("Class: 9", prompt)
+        self.assertIn("Subject: Science", prompt)
+        self.assertIn("Explanation style: Detailed", prompt)
+        with app_module.app.app_context():
+            row = User.query.filter_by(username="asha").first()
+            self.assertEqual(row.ai_explanation_style, "detailed")
+            self.assertEqual(row.default_subject, "Science")
+            self.assertEqual(row.default_class, "9")
+
+    def test_settings_permissions_require_login(self):
+        settings_response = self.client.get("/settings")
+        download_response = self.client.get("/settings/download-data")
+        delete_response = self.client.post("/settings/delete-account")
+
+        self.assertEqual(settings_response.status_code, 302)
+        self.assertIn("/login?next=/settings", settings_response.headers["Location"])
+        self.assertEqual(download_response.status_code, 302)
+        self.assertIn("/login?next=/settings/download-data", download_response.headers["Location"])
+        self.assertEqual(delete_response.status_code, 302)
+        self.assertIn("/login?next=/settings/delete-account", delete_response.headers["Location"])
+
+    def test_delete_account_requires_confirmation_and_removes_user_data(self):
+        self.register_user()
+        self.login_user()
+        with app_module.app.app_context():
+            user = User.query.filter_by(username="asha").first()
+            user_id = user.id
+            app_module.save_learning_history(
+                user_id,
+                "Science",
+                "",
+                "Plants",
+                "Notes",
+                {"available": False},
+                ["Q1"],
+            )
+            app_module.save_learning_session(user_id, "Asha", "8", "Science", "", "Plants", "Notes")
+            app_module.save_quiz_history(
+                "Asha",
+                "8",
+                "Science",
+                "Plants",
+                "5/5",
+                "A",
+                ["Q1"],
+                ["A1"],
+                "Report",
+                user_id=user_id,
+            )
+            app_module.save_downloaded_file(user_id, "performance_report", "Science", "Plants")
+
+        blocked_response = self.client.post(
+            "/settings/delete-account",
+            data={"confirmation": "wrong", "password": "password123"},
+            follow_redirects=True,
+        )
+        self.assertEqual(blocked_response.status_code, 200)
+        with app_module.app.app_context():
+            self.assertIsNotNone(db.session.get(User, user_id))
+
+        response = self.client.post(
+            "/settings/delete-account",
+            data={"confirmation": "asha", "password": "password123"},
+            follow_redirects=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Your account and saved data have been deleted.", response.get_data(as_text=True))
+        with app_module.app.app_context():
+            self.assertIsNone(db.session.get(User, user_id))
+            self.assertEqual(LearningHistory.query.filter_by(user_id=user_id).count(), 0)
+            self.assertEqual(LearningSession.query.filter_by(user_id=user_id).count(), 0)
+            self.assertEqual(QuizHistory.query.filter_by(user_id=user_id).count(), 0)
+            self.assertEqual(DownloadedFile.query.filter_by(user_id=user_id).count(), 0)
+
     def test_download_pdf_returns_full_report_attachment(self):
         evaluation = {
             "questions": [

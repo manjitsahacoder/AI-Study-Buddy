@@ -108,6 +108,7 @@ def initialize_database():
     with app.app_context():
         create_database_tables()
         ensure_sqlite_schema_compatibility()
+        ensure_user_preference_schema_compatibility()
         ensure_user_roles()
         app.logger.info("Database tables are ready.")
 
@@ -310,6 +311,68 @@ def ensure_sqlite_schema_compatibility():
         db.session.commit()
 
 
+USER_PREFERENCE_COLUMNS = {
+    "theme_preference": {
+        "sqlite": "TEXT NOT NULL DEFAULT 'system'",
+        "postgresql": "TEXT NOT NULL DEFAULT 'system'",
+    },
+    "ai_explanation_style": {
+        "sqlite": "TEXT NOT NULL DEFAULT 'standard'",
+        "postgresql": "TEXT NOT NULL DEFAULT 'standard'",
+    },
+    "default_subject": {
+        "sqlite": "TEXT",
+        "postgresql": "TEXT",
+    },
+    "default_class": {
+        "sqlite": "TEXT",
+        "postgresql": "TEXT",
+    },
+    "notifications_enabled": {
+        "sqlite": "BOOLEAN NOT NULL DEFAULT 1",
+        "postgresql": "BOOLEAN NOT NULL DEFAULT TRUE",
+    },
+    "notify_study_reminders": {
+        "sqlite": "BOOLEAN NOT NULL DEFAULT 1",
+        "postgresql": "BOOLEAN NOT NULL DEFAULT TRUE",
+    },
+    "notify_achievement_notifications": {
+        "sqlite": "BOOLEAN NOT NULL DEFAULT 1",
+        "postgresql": "BOOLEAN NOT NULL DEFAULT TRUE",
+    },
+    "notify_daily_challenge_reminders": {
+        "sqlite": "BOOLEAN NOT NULL DEFAULT 1",
+        "postgresql": "BOOLEAN NOT NULL DEFAULT TRUE",
+    },
+}
+
+
+def ensure_user_preference_schema_compatibility():
+    dialect_name = db.engine.dialect.name
+    if dialect_name == "sqlite":
+        user_columns = {
+            row[1]
+            for row in db.session.execute(text("PRAGMA table_info(users)")).fetchall()
+        }
+        for column_name, definitions in USER_PREFERENCE_COLUMNS.items():
+            if column_name not in user_columns:
+                db.session.execute(
+                    text(f"ALTER TABLE users ADD COLUMN {column_name} {definitions['sqlite']}")
+                )
+        db.session.commit()
+        return
+
+    if dialect_name == "postgresql":
+        for column_name, definitions in USER_PREFERENCE_COLUMNS.items():
+            db.session.execute(
+                text(
+                    f"ALTER TABLE users ADD COLUMN IF NOT EXISTS {column_name} "
+                    f"{definitions['postgresql']}"
+                )
+            )
+        db.session.commit()
+
+
 def normalize_account_name(name):
     return re.sub(r"\s+", " ", (name or "").strip().lower())
 
@@ -386,6 +449,299 @@ def find_registration_conflicts(username, email):
             func.lower(User.email).in_(identifiers),
         )
     ).all()
+
+
+ALLOWED_THEME_PREFERENCES = {"light", "dark", "system"}
+ALLOWED_EXPLANATION_STYLES = {"simple", "standard", "detailed"}
+EXPLANATION_STYLE_LABELS = {
+    "simple": "Simple",
+    "standard": "Standard",
+    "detailed": "Detailed",
+}
+
+
+def class_options():
+    return [str(class_number) for class_number in range(6, 13)]
+
+
+def find_account_update_conflicts(user_id, username, email):
+    return [
+        account
+        for account in find_registration_conflicts(username, email)
+        if account.id != user_id
+    ]
+
+
+def validate_profile_settings_form(form, user_id):
+    full_name = form.get("full_name", "").strip()
+    username = form.get("username", "").strip()
+    email = form.get("email", "").strip().lower()
+    student_class = form.get("student_class", "").strip()
+    errors = []
+
+    if not full_name:
+        errors.append("Full name is required.")
+    if not username:
+        errors.append("Username is required.")
+    elif not re.fullmatch(r"[A-Za-z0-9_]{3,30}", username):
+        errors.append("Username must be 3 to 30 characters and use only letters, numbers, or underscores.")
+    if not email:
+        errors.append("Email is required.")
+    elif not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+        errors.append("Please enter a valid email address.")
+    if not student_class:
+        errors.append("Class is required.")
+    elif student_class not in class_options():
+        errors.append("Please select a valid class.")
+
+    conflicts = find_account_update_conflicts(user_id, username, email) if not errors else []
+    normalized_username = username.lower()
+    normalized_email = email.lower()
+    if any(normalized_username in {account.username.lower(), account.email.lower()} for account in conflicts):
+        errors.append("That username is already taken.")
+    if any(normalized_email in {account.username.lower(), account.email.lower()} for account in conflicts):
+        errors.append("That email is already registered.")
+
+    return (
+        {
+            "full_name": full_name,
+            "username": username,
+            "email": email,
+            "student_class": student_class,
+        },
+        errors,
+    )
+
+
+def update_profile_settings(user, form):
+    form_data, errors = validate_profile_settings_form(form, user.id)
+    if errors:
+        return errors
+
+    user.full_name = form_data["full_name"]
+    user.username = form_data["username"]
+    user.email = form_data["email"]
+    user.student_class = form_data["student_class"]
+    user.role = resolve_account_role(user.full_name, user.username)
+    db.session.commit()
+    start_authenticated_session(user)
+    g._current_user = user
+    return []
+
+
+def validate_password_change(user, form):
+    current_password = form.get("current_password", "")
+    new_password = form.get("new_password", "")
+    confirm_password = form.get("confirm_password", "")
+    errors = []
+
+    if not current_password:
+        errors.append("Current password is required.")
+    elif not check_password_hash(user.password_hash, current_password):
+        errors.append("Current password is incorrect.")
+
+    errors.extend(validate_new_password(new_password, confirm_password))
+    if current_password and new_password and current_password == new_password:
+        errors.append("New password must be different from your current password.")
+
+    return errors
+
+
+def update_password_settings(user, form):
+    errors = validate_password_change(user, form)
+    if errors:
+        return errors
+
+    user.password_hash = generate_password_hash(form.get("new_password", ""))
+    db.session.commit()
+    return []
+
+
+def update_appearance_settings(user, form):
+    theme = form.get("theme_preference", "system").strip().lower()
+    if theme not in ALLOWED_THEME_PREFERENCES:
+        return ["Please select a valid theme preference."]
+
+    user.theme_preference = theme
+    db.session.commit()
+    return []
+
+
+def update_ai_preference_settings(user, form):
+    explanation_style = form.get("ai_explanation_style", "standard").strip().lower()
+    default_subject = form.get("default_subject", "").strip()
+    default_class = form.get("default_class", "").strip()
+    errors = []
+
+    if explanation_style not in ALLOWED_EXPLANATION_STYLES:
+        errors.append("Please select a valid explanation style.")
+    if default_class and default_class not in class_options():
+        errors.append("Please select a valid default class.")
+
+    if errors:
+        return errors
+
+    user.ai_explanation_style = explanation_style
+    user.default_subject = default_subject or None
+    user.default_class = default_class or None
+    db.session.commit()
+    return []
+
+
+def checkbox_enabled(form, name):
+    return form.get(name) == "1"
+
+
+def update_notification_settings(user, form):
+    user.notifications_enabled = checkbox_enabled(form, "notifications_enabled")
+    user.notify_study_reminders = checkbox_enabled(form, "notify_study_reminders")
+    user.notify_achievement_notifications = checkbox_enabled(form, "notify_achievement_notifications")
+    user.notify_daily_challenge_reminders = checkbox_enabled(form, "notify_daily_challenge_reminders")
+    db.session.commit()
+    return []
+
+
+def preferred_class_for_user(user):
+    if not user:
+        return ""
+    return (user.default_class or user.student_class or "").strip()
+
+
+def preferred_subject_for_user(user):
+    if not user:
+        return ""
+    return (user.default_subject or "").strip()
+
+
+def explanation_style_for_user(user):
+    if not user:
+        return "standard"
+    style = (user.ai_explanation_style or "standard").strip().lower()
+    return style if style in ALLOWED_EXPLANATION_STYLES else "standard"
+
+
+def ai_preference_prompt_context(user):
+    style = explanation_style_for_user(user)
+    style_rules = {
+        "simple": "Use simpler words, shorter sentences, and extra everyday examples.",
+        "standard": "Use balanced school-level explanations with clear examples.",
+        "detailed": "Include deeper step-by-step detail, connections, and careful reasoning.",
+    }
+    return f"""
+Student AI preferences:
+- Explanation style: {EXPLANATION_STYLE_LABELS[style]}
+- Style instruction: {style_rules[style]}
+"""
+
+
+def flash_form_errors(errors):
+    for error in errors:
+        flash(error, "error")
+
+
+def serialize_value(value):
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return value
+
+
+def serialize_model_record(record, exclude=None):
+    exclude = set(exclude or [])
+    return {
+        column.name: serialize_value(getattr(record, column.name))
+        for column in record.__table__.columns
+        if column.name not in exclude
+    }
+
+
+def account_data_export(user):
+    user_id = user.id
+    return {
+        "profile": serialize_model_record(user, exclude={"password_hash"}),
+        "quiz_history": [
+            serialize_model_record(row)
+            for row in QuizHistory.query.filter_by(user_id=user_id)
+            .order_by(QuizHistory.created_at.asc(), QuizHistory.id.asc())
+            .all()
+        ],
+        "learning_history": [
+            serialize_model_record(row)
+            for row in LearningHistory.query.filter_by(user_id=user_id)
+            .order_by(LearningHistory.created_at.asc(), LearningHistory.id.asc())
+            .all()
+        ],
+        "learning_sessions": [
+            serialize_model_record(row)
+            for row in LearningSession.query.filter_by(user_id=user_id)
+            .order_by(LearningSession.created_at.asc(), LearningSession.id.asc())
+            .all()
+        ],
+        "downloaded_files": [
+            serialize_model_record(row)
+            for row in DownloadedFile.query.filter_by(user_id=user_id)
+            .order_by(DownloadedFile.created_at.asc(), DownloadedFile.id.asc())
+            .all()
+        ],
+        "tutor_lessons": [
+            serialize_model_record(row)
+            for row in TutorLesson.query.filter_by(user_id=user_id)
+            .order_by(TutorLesson.created_at.asc(), TutorLesson.id.asc())
+            .all()
+        ],
+        "tutor_messages": [
+            serialize_model_record(row)
+            for row in TutorMessage.query.filter_by(user_id=user_id)
+            .order_by(TutorMessage.created_at.asc(), TutorMessage.id.asc())
+            .all()
+        ],
+        "flashcard_sets": [
+            serialize_model_record(row)
+            for row in FlashcardSet.query.filter_by(user_id=user_id)
+            .order_by(FlashcardSet.created_at.asc(), FlashcardSet.id.asc())
+            .all()
+        ],
+        "flashcards": [
+            serialize_model_record(row)
+            for row in Flashcard.query.filter_by(user_id=user_id)
+            .order_by(Flashcard.created_at.asc(), Flashcard.id.asc())
+            .all()
+        ],
+        "revision_sheets": [
+            serialize_model_record(row)
+            for row in RevisionSheet.query.filter_by(user_id=user_id)
+            .order_by(RevisionSheet.created_at.asc(), RevisionSheet.id.asc())
+            .all()
+        ],
+        "mind_maps": [
+            serialize_model_record(row)
+            for row in MindMap.query.filter_by(user_id=user_id)
+            .order_by(MindMap.created_at.asc(), MindMap.id.asc())
+            .all()
+        ],
+        "important_question_sets": [
+            serialize_model_record(row)
+            for row in ImportantQuestionSet.query.filter_by(user_id=user_id)
+            .order_by(ImportantQuestionSet.created_at.asc(), ImportantQuestionSet.id.asc())
+            .all()
+        ],
+    }
+
+
+def delete_account_data(user):
+    user_id = user.id
+    TutorMessage.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+    TutorLesson.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+    Flashcard.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+    FlashcardSet.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+    RevisionSheet.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+    MindMap.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+    ImportantQuestionSet.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+    LearningHistory.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+    LearningSession.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+    DownloadedFile.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+    QuizHistory.query.filter_by(user_id=user_id).delete(synchronize_session=False)
+    db.session.delete(user)
+    db.session.commit()
 
 
 try:
@@ -1249,6 +1605,8 @@ Use this exact structure:
 
 def create_mind_map(lesson, user_id, student_class):
     prompt = build_mind_map_prompt(lesson, student_class)
+    if session.get("user_id"):
+        prompt += ai_preference_prompt_context(current_user())
     print("Gemini call: Mind Map")
     response = gemini_request(
         "Mind Map",
@@ -1419,6 +1777,8 @@ Write a concise summary that fits on one page.
 
 def create_revision_sheet(lesson, user_id, student_class):
     prompt = build_revision_prompt(lesson, student_class)
+    if session.get("user_id"):
+        prompt += ai_preference_prompt_context(current_user())
     print("Gemini call: Quick Revision")
     response = gemini_request(
         "Quick Revision",
@@ -1543,6 +1903,8 @@ Give practical revision tips for exam preparation.
 def create_important_question_set(lesson, user_id, student_class):
     revision_sheet = existing_revision_sheet(lesson.id, user_id)
     prompt = build_important_questions_prompt(lesson, revision_sheet, student_class)
+    if session.get("user_id"):
+        prompt += ai_preference_prompt_context(current_user())
     print("Gemini call: Important Questions")
     response = gemini_request(
         "Important Questions",
@@ -1578,6 +1940,8 @@ def get_or_create_important_question_set(lesson, user_id, student_class):
 
 def create_flashcard_set(lesson, user_id, student_class):
     prompt = build_flashcard_prompt(lesson, student_class)
+    if session.get("user_id"):
+        prompt += ai_preference_prompt_context(current_user())
     try:
         print("Gemini call: Flashcards")
         response = gemini_request(
@@ -4716,7 +5080,7 @@ def revision(lesson_id):
         revision_sheet, created = get_or_create_revision_sheet(
             lesson,
             session["user_id"],
-            current_user()["student_class"],
+            preferred_class_for_user(current_user()),
         )
     except GeminiRequestError as error:
         return render_gemini_error(error.error_info)
@@ -4774,7 +5138,7 @@ def important_questions(lesson_id):
         question_set, created = get_or_create_important_question_set(
             lesson,
             session["user_id"],
-            current_user()["student_class"],
+            preferred_class_for_user(current_user()),
         )
     except GeminiRequestError as error:
         return render_gemini_error(error.error_info)
@@ -4832,7 +5196,7 @@ def mindmap(lesson_id):
         mind_map, created = get_or_create_mind_map(
             lesson,
             session["user_id"],
-            current_user()["student_class"],
+            preferred_class_for_user(current_user()),
         )
     except GeminiRequestError as error:
         return render_gemini_error(error.error_info)
@@ -4867,7 +5231,7 @@ def flashcards(lesson_id):
         flashcard_set, created = get_or_create_flashcard_set(
             lesson,
             session["user_id"],
-            current_user()["student_class"],
+            preferred_class_for_user(current_user()),
         )
     except GeminiRequestError as error:
         return render_gemini_error(error.error_info)
@@ -4994,7 +5358,7 @@ def start_ai_tutor():
 
     account = current_user()
     name = request.form.get("name", "").strip() or account["full_name"]
-    student_class = request.form.get("student_class", "").strip() or account["student_class"]
+    student_class = request.form.get("student_class", "").strip() or preferred_class_for_user(account)
     tutor_lesson = get_or_create_tutor_lesson(
         session["user_id"],
         lesson,
@@ -5060,6 +5424,7 @@ def tutor_message(tutor_lesson_id):
         previous_messages,
         student_message,
     )
+    prompt += ai_preference_prompt_context(current_user())
 
     try:
         print("Gemini call: AI Tutor")
@@ -5114,11 +5479,80 @@ def favourite_notes():
 @login_required
 def settings():
     return render_template(
-        "placeholder.html",
-        page_title="Settings",
-        heading="Settings coming soon",
-        message="Future account and learning preferences will appear here.",
+        "settings.html",
+        account=current_user(),
+        class_options=class_options(),
+        explanation_styles=EXPLANATION_STYLE_LABELS,
     )
+
+
+@app.route("/settings", methods=["POST"])
+@login_required
+def update_settings():
+    account = current_user()
+    action = request.form.get("action", "").strip()
+    handlers = {
+        "profile": update_profile_settings,
+        "password": update_password_settings,
+        "appearance": update_appearance_settings,
+        "ai_preferences": update_ai_preference_settings,
+        "notifications": update_notification_settings,
+    }
+    handler = handlers.get(action)
+    if not handler:
+        abort(400, description="Invalid settings request.")
+
+    try:
+        errors = handler(account, request.form)
+    except IntegrityError:
+        db.session.rollback()
+        errors = ["Username or email is already registered."]
+
+    if errors:
+        flash_form_errors(errors)
+        return render_template(
+            "settings.html",
+            account=current_user(),
+            class_options=class_options(),
+            explanation_styles=EXPLANATION_STYLE_LABELS,
+        ), 400
+
+    flash("Settings updated successfully.", "success")
+    return redirect(url_for("settings"))
+
+
+@app.route("/settings/download-data")
+@login_required
+def download_account_data():
+    account = current_user()
+    payload = json.dumps(account_data_export(account), indent=2, sort_keys=True)
+    return app.response_class(
+        payload,
+        mimetype="application/json",
+        headers={
+            "Content-Disposition": f"attachment; filename=ai-study-buddy-data-{account.id}.json"
+        },
+    )
+
+
+@app.route("/settings/delete-account", methods=["POST"])
+@login_required
+def delete_account():
+    account = current_user()
+    confirmation = request.form.get("confirmation", "").strip()
+    password = request.form.get("password", "")
+
+    if confirmation != account.username:
+        flash("Type your username to confirm account deletion.", "error")
+        return redirect(url_for("settings") + "#account")
+    if not password or not check_password_hash(account.password_hash, password):
+        flash("Enter your current password to delete your account.", "error")
+        return redirect(url_for("settings") + "#account")
+
+    delete_account_data(account)
+    session.clear()
+    flash("Your account and saved data have been deleted.", "success")
+    return redirect(url_for("home"))
 
 
 @app.route("/history")
@@ -5131,11 +5565,14 @@ def history():
 @app.route("/learn", methods=["POST"])
 def learn():
     request_started_at = time.perf_counter()
+    account = current_user() if session.get("user_id") else None
     name = request.form.get("name", "").strip()
-    student_class = request.form.get("student_class", "").strip()
-    subject = request.form.get("subject", "").strip()
+    student_class = request.form.get("student_class", "").strip() or preferred_class_for_user(account)
+    subject = request.form.get("subject", "").strip() or preferred_subject_for_user(account)
     book_name = request.form.get("book_name", "").strip()
     topic = request.form.get("topic", "").strip()
+    if account and not name:
+        name = account["full_name"]
 
     if not name or not student_class or not subject or not topic:
         abort(400, description="Name, class, subject, and topic are required.")
@@ -5157,6 +5594,7 @@ Subject: {subject}
 Book Name: {book_name}
 Topic: {topic}
 
+{ai_preference_prompt_context(account)}
 {subject_prompt_section}
 {textbook_context_section}
 

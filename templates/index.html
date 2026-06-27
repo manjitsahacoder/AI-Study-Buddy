@@ -226,6 +226,7 @@
                     id="name"
                     type="text"
                     name="name"
+                    value="{{ current_user.full_name if current_user else '' }}"
                     placeholder="Enter your name"
                     required
                 >
@@ -235,13 +236,14 @@
                 <label for="student_class">&#127891; Class</label>
                 <select id="student_class" name="student_class" required>
                     <option value="">Select class</option>
-                    <option value="6">Class 6</option>
-                    <option value="7">Class 7</option>
-                    <option value="8">Class 8</option>
-                    <option value="9">Class 9</option>
-                    <option value="10">Class 10</option>
-                    <option value="11">Class 11</option>
-                    <option value="12">Class 12</option>
+                    {% set selected_class = (current_user.default_class or current_user.student_class) if current_user else '' %}
+                    <option value="6" {% if selected_class == '6' %}selected{% endif %}>Class 6</option>
+                    <option value="7" {% if selected_class == '7' %}selected{% endif %}>Class 7</option>
+                    <option value="8" {% if selected_class == '8' %}selected{% endif %}>Class 8</option>
+                    <option value="9" {% if selected_class == '9' %}selected{% endif %}>Class 9</option>
+                    <option value="10" {% if selected_class == '10' %}selected{% endif %}>Class 10</option>
+                    <option value="11" {% if selected_class == '11' %}selected{% endif %}>Class 11</option>
+                    <option value="12" {% if selected_class == '12' %}selected{% endif %}>Class 12</option>
                 </select>
             </div>
 
@@ -256,11 +258,11 @@
                 </div>
                 <select id="subject" name="subject" required>
                     <option value="">Select subject</option>
-                    <option value="Maths">Maths</option>
-                    <option value="Science">Science</option>
-                    <option value="English">English</option>
-                    <option value="Social Science">Social Science</option>
-                    <option value="Artificial Intelligence / Computer Science">Artificial Intelligence / Computer Science</option>
+                    <option value="Maths" {% if current_user and current_user.default_subject == 'Maths' %}selected{% endif %}>Maths</option>
+                    <option value="Science" {% if current_user and current_user.default_subject == 'Science' %}selected{% endif %}>Science</option>
+                    <option value="English" {% if current_user and current_user.default_subject == 'English' %}selected{% endif %}>English</option>
+                    <option value="Social Science" {% if current_user and current_user.default_subject == 'Social Science' %}selected{% endif %}>Social Science</option>
+                    <option value="Artificial Intelligence / Computer Science" {% if current_user and current_user.default_subject == 'Artificial Intelligence / Computer Science' %}selected{% endif %}>Artificial Intelligence / Computer Science</option>
                 </select>
             </div>
             <div class="form-field">
