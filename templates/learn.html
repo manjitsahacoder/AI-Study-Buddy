@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ topic }} - AI Study Buddy</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/visualization.css') }}">
 </head>
 
 <body class="learn-page {% if exhibition_mode %}exhibition-mode{% endif %}">
@@ -102,22 +103,8 @@
         </div>
     </section>
 
-    <div class="diagram-card" data-diagram-card>
-        <h2>&#128202; Diagram</h2>
-        {% if diagram_available %}
-        <img class="diagram-image" src="{{ diagram_image }}" alt="{{ topic }} diagram">
-        <div class="diagram-actions">
-            <form action="{{ url_for('download_diagram') }}" method="POST">
-                <input type="hidden" name="topic" value="{{ topic }}">
-                <textarea name="diagram_json" hidden>{{ diagram_json }}</textarea>
-                <button type="submit" class="button-link secondary-link">&#128229; Download Diagram</button>
-            </form>
-            <button type="button" class="button-link secondary-link" data-fullscreen-diagram>Full Screen</button>
-        </div>
-        {% else %}
-        <p class="diagram-unavailable">No diagram available for this topic.</p>
-        {% endif %}
-    </div>
+    {% set download_url = url_for('download_diagram') %}
+    {% include 'visualization.html' %}
 
     <hr>
 
@@ -209,16 +196,7 @@ function toggleTheme() {
     }
 }
 
-document.querySelectorAll("[data-fullscreen-diagram]").forEach(function(button) {
-    button.addEventListener("click", function() {
-        const card = button.closest("[data-diagram-card]");
-        if (!card) {
-            return;
-        }
-        card.classList.toggle("diagram-fullscreen");
-        button.textContent = card.classList.contains("diagram-fullscreen") ? "Exit Full Screen" : "Full Screen";
-    });
-});
 </script>
+<script src="{{ url_for('static', filename='js/visualization.js') }}"></script>
 </body>
 </html>

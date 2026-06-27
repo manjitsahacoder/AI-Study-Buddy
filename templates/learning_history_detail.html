@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ lesson.topic }} - Learning History</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/visualization.css') }}">
 </head>
 
 <body class="learn-page">
@@ -92,25 +93,9 @@
         </div>
     </section>
 
-    <div class="diagram-card" data-diagram-card>
-        <h2>&#128202; Diagram</h2>
-        {% if diagram_available %}
-        {% if diagram_steps %}
-        <div class="diagram-data-list" aria-label="Saved diagram data">
-            {% for step in diagram_steps %}
-            <span>{{ step }}</span>
-            {% endfor %}
-        </div>
-        {% endif %}
-        <img class="diagram-image" src="{{ diagram_image }}" alt="{{ lesson.topic }} diagram">
-        <div class="diagram-actions">
-            <a class="button-link secondary-link" href="{{ url_for('download_learning_history_diagram', lesson_id=lesson.id) }}">&#128229; Download Diagram</a>
-            <button type="button" class="button-link secondary-link" data-fullscreen-diagram>Full Screen</button>
-        </div>
-        {% else %}
-        <p class="diagram-unavailable">No diagram available for this topic.</p>
-        {% endif %}
-    </div>
+    {% set topic = lesson.topic %}
+    {% set download_url = url_for('download_diagram') %}
+    {% include 'visualization.html' %}
 
     <section class="saved-quiz-card">
         <h2>&#128221; Quiz</h2>
@@ -156,16 +141,7 @@ function toggleTheme() {
     }
 }
 
-document.querySelectorAll("[data-fullscreen-diagram]").forEach(function(button) {
-    button.addEventListener("click", function() {
-        const card = button.closest("[data-diagram-card]");
-        if (!card) {
-            return;
-        }
-        card.classList.toggle("diagram-fullscreen");
-        button.textContent = card.classList.contains("diagram-fullscreen") ? "Exit Full Screen" : "Full Screen";
-    });
-});
 </script>
+<script src="{{ url_for('static', filename='js/visualization.js') }}"></script>
 </body>
 </html>

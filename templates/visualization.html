@@ -1,0 +1,56 @@
+<section class="visualization-card" data-visualization-card data-topic="{{ topic }}">
+    <div class="visualization-header">
+        <div>
+            <span class="eyebrow">AI Visualization Engine</span>
+            <h2>Visualization</h2>
+        </div>
+        {% if diagram_available %}
+        <div class="visualization-type-pill">
+            {{ diagram_payload.visualization_label or diagram_payload.type|replace('_', ' ')|title }}
+        </div>
+        {% endif %}
+    </div>
+
+    {% if diagram_available %}
+    <div class="visualization-insights" aria-label="Visualization selection details">
+        <div>
+            <span>Selected Type</span>
+            <strong>{{ diagram_payload.visualization_label or diagram_payload.type|replace('_', ' ')|title }}</strong>
+        </div>
+        <div>
+            <span>Confidence</span>
+            <strong>{{ diagram_payload.confidence_percent or 0 }}%</strong>
+        </div>
+        <div class="visualization-reason">
+            <span>Reason</span>
+            <strong>{{ diagram_payload.reason }}</strong>
+        </div>
+        {% if diagram_payload.explanation %}
+        <p>{{ diagram_payload.explanation }}</p>
+        {% endif %}
+    </div>
+
+    <div class="visualization-toolbar" aria-label="Visualization controls">
+        <button type="button" class="button-link secondary-link" data-viz-zoom-in title="Zoom in">Zoom In</button>
+        <button type="button" class="button-link secondary-link" data-viz-zoom-out title="Zoom out">Zoom Out</button>
+        <button type="button" class="button-link secondary-link" data-viz-reset title="Reset view">Reset</button>
+        <button type="button" class="button-link secondary-link" data-viz-fullscreen>Full Screen</button>
+        <form action="{{ download_url }}" method="POST">
+            <input type="hidden" name="topic" value="{{ topic }}">
+            <textarea name="diagram_json" hidden>{{ diagram_json }}</textarea>
+            <button type="submit" class="button-link secondary-link" data-viz-download-svg>Download Diagram</button>
+        </form>
+        <button type="button" class="button-link secondary-link" data-viz-download-png>Download PNG</button>
+        <button type="button" class="button-link secondary-link" data-viz-download-pdf>Download PDF</button>
+    </div>
+
+    <div class="visualization-stage" data-viz-stage>
+        <div class="visualization-pan-layer" data-viz-pan-layer>
+            {{ diagram_svg|safe }}
+        </div>
+    </div>
+    <img class="diagram-image" data-visualization-fallback-image src="{{ diagram_image }}" alt="{{ topic }} diagram" hidden>
+    {% else %}
+    <p class="visualization-unavailable">No diagram available for this topic.{% if diagram_payload.explanation %} {{ diagram_payload.explanation }}{% endif %}</p>
+    {% endif %}
+</section>

@@ -71,6 +71,15 @@ from tutor_repository import (
     get_user_lesson,
     save_tutor_exchange,
 )
+from visualization import (
+    build_diagram_payload as visualization_build_diagram_payload,
+    create_diagram_image as visualization_create_diagram_image,
+    create_diagram_svg_data_uri as visualization_create_diagram_svg_data_uri,
+    diagram_labels as visualization_diagram_labels,
+    normalize_diagram_labels as visualization_normalize_diagram_labels,
+    normalize_diagram_payload as visualization_normalize_diagram_payload,
+    render_educational_diagram_svg as visualization_render_educational_diagram_svg,
+)
 
 
 app = Flask(__name__)
@@ -4516,6 +4525,18 @@ def create_diagram_image(topic, diagram_payload):
     return create_diagram_svg_data_uri(payload)
 
 
+# AI Visualization Engine compatibility layer.
+# The legacy helpers above are kept for historical context, but the live app
+# delegates to the modular visualization package from this point onward.
+normalize_diagram_labels = visualization_normalize_diagram_labels
+normalize_diagram_payload = visualization_normalize_diagram_payload
+build_diagram_payload = visualization_build_diagram_payload
+diagram_labels = visualization_diagram_labels
+render_educational_diagram_svg = visualization_render_educational_diagram_svg
+create_diagram_svg_data_uri = visualization_create_diagram_svg_data_uri
+create_diagram_image = visualization_create_diagram_image
+
+
 def required_form_values(prefix, count=5):
     values = [
         request.form.get(f"{prefix}{index}", "").strip()
@@ -5393,7 +5414,7 @@ Rewrite the answer using this exact structure:
 - point 5
 
 ## Diagram JSON
-{"diagram_type":"process","title":"Topic Diagram","labels":["label 1","label 2","label 3"],"arrows":[],"notes":[]}
+{"type":"process","title":"Topic Visualization","nodes":[{"id":"1","label":"First idea"},{"id":"2","label":"Second idea"}],"connections":[["1","2"]],"reason":"This topic is best shown as a sequence.","confidence":0.9,"explanation":"Optional one-line explanation."}
 
 ## Questions
 Q1. question
@@ -5795,7 +5816,9 @@ def view_learning_history(lesson_id):
         diagram_payload=diagram_payload,
         diagram_steps=diagram_payload.get("labels", []),
         diagram_image=create_diagram_image(lesson["topic"], diagram_payload),
+        diagram_svg=render_educational_diagram_svg(diagram_payload),
         diagram_available=diagram_payload.get("available", False),
+        diagram_json=json.dumps(diagram_payload),
         questions=questions,
         has_flashcards=has_flashcards,
         has_revision=bool(existing_revision_sheet(lesson.id, session["user_id"])),
@@ -6358,15 +6381,24 @@ Give 5 important revision points.
 Return only a valid JSON object describing the diagram.
 Do NOT create an image.
 Do NOT create a text diagram.
+Do NOT create HTML.
+Do NOT create SVG.
+The JSON must be structured data only. The app will render the SVG.
 Use this structure:
 {{
-  "diagram_type": "process, cycle, cell, organ, map, timeline, chart, flowchart, geometry, coordinate, number_line, fraction, or none",
-  "title": "short diagram title",
-  "labels": ["3 to 8 short textbook labels"],
-  "arrows": ["short arrow descriptions if useful"],
-  "notes": ["1 to 3 short notes"]
+  "type": "flowchart, process, cycle, timeline, tree, hierarchy, concept_map, mind_map, comparison, network_graph, organization_chart, ecosystem, anatomy, scientific_process, layer, pyramid, matrix, cause_and_effect, orbit, chain, circuit, er_diagram, or none",
+  "title": "short visualization title",
+  "nodes": [
+    {{"id": "1", "label": "short label"}},
+    {{"id": "2", "label": "short label"}}
+  ],
+  "connections": [["1", "2"]],
+  "reason": "one short sentence explaining why this type was selected",
+  "confidence": 0.0 to 1.0,
+  "explanation": "optional one short helpful explanation"
 }}
-If the topic does not support a useful educational diagram, use "diagram_type": "none" and empty labels.
+Choose the best visualization type for the topic. Do not default to flowchart unless it is genuinely best.
+If the topic does not support a useful educational visualization, use "type": "none" and empty nodes.
 
 ## Questions
 
@@ -6487,6 +6519,7 @@ Rules:
         notes=notes,
         diagram_payload=diagram_payload,
         diagram_image=diagram_image,
+        diagram_svg=render_educational_diagram_svg(diagram_payload),
         diagram_available=diagram_payload.get("available", False),
         diagram_json=json.dumps(diagram_payload),
         questions=questions,
