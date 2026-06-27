@@ -5233,6 +5233,13 @@ footer {
     backdrop-filter: blur(18px);
 }
 
+.dashboard-quote-card {
+    color: #ffffff;
+    background:
+        linear-gradient(135deg, rgba(49, 87, 213, 0.96), rgba(4, 125, 135, 0.92) 58%, rgba(31, 122, 77, 0.9)),
+        var(--primary);
+}
+
 .dashboard-topbar,
 .tutor-header,
 .hero {
