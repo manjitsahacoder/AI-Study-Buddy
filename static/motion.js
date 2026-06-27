@@ -2,7 +2,7 @@
     const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
     function parseNumberText(text) {
-        const match = String(text || "").trim().match(/^(\d+(?:\.\d+)?)(.*)$/);
+        const match = String(text || "").trim().replace(/,/g, "").match(/^(\d+(?:\.\d+)?)(.*)$/);
         if (!match) {
             return null;
         }
@@ -25,7 +25,7 @@
 
         const target = parsed.value;
         const start = performance.now();
-        const duration = Math.min(1100, 620 + target * 18);
+        const duration = Math.min(1100, Math.max(520, 620 + target * 10));
         element.dataset.motionCounted = "true";
         element.classList.add("is-counting");
 
@@ -49,7 +49,7 @@
 
     function setupCounters() {
         const counterTargets = document.querySelectorAll(
-            ".dashboard-stat-card strong, .weekly-summary-grid strong, .weekly-summary-panel > .dashboard-section-heading > strong, .score-card h2"
+            ".dashboard-stat-card strong, .weekly-summary-grid strong, .weekly-summary-panel > .dashboard-section-heading > strong, .score-card h2, .performance-summary-grid strong, .subject-analysis-grid strong"
         );
 
         if (!("IntersectionObserver" in window)) {
@@ -77,21 +77,52 @@
 
     function setupReveal() {
         const revealTargets = document.querySelectorAll(
-            ".feature-card, .dashboard-main > *, .learn-container > *, .container > section, .container > article, .tutor-shell > *, .learning-history-card, .performance-chart-card, .evaluation-card, .teacher-report-card, .flashcard-study-panel"
+            [
+                ".feature-card",
+                ".dashboard-main > *",
+                ".learn-container > *",
+                ".container > section",
+                ".container > article",
+                ".tutor-shell > *",
+                ".learning-history-card",
+                ".learning-action-card",
+                ".performance-chart-card",
+                ".performance-summary-grid div",
+                ".subject-analysis-grid article",
+                ".insight-card",
+                ".evaluation-card",
+                ".teacher-report-card",
+                ".flashcard-study-panel",
+                ".quiz-question",
+                ".score-card",
+                ".card",
+                ".recommendation-card",
+                ".achievement-card",
+                ".achievement-badge",
+                ".recommended-topic-card",
+                ".quick-actions-grid a",
+            ].join(", ")
         );
 
         if (reduceMotion) {
             revealTargets.forEach(function (target) {
-                target.classList.add("is-visible");
+                target.classList.add("is-visible", "motion-ready");
             });
             return;
         }
 
         document.body.classList.add("motion-enabled");
 
+        function markVisible(target) {
+            target.classList.add("is-visible");
+            window.setTimeout(function () {
+                target.classList.add("motion-ready");
+            }, 560);
+        }
+
         if (!("IntersectionObserver" in window)) {
             revealTargets.forEach(function (target) {
-                target.classList.add("is-visible");
+                target.classList.add("is-visible", "motion-ready");
             });
             return;
         }
@@ -102,7 +133,7 @@
                     if (!entry.isIntersecting) {
                         return;
                     }
-                    entry.target.classList.add("is-visible");
+                    markVisible(entry.target);
                     observer.unobserve(entry.target);
                 });
             },
@@ -118,8 +149,8 @@
 
     function setupLoadingStates() {
         document.querySelectorAll("form").forEach(function (form) {
-            form.addEventListener("submit", function () {
-                const submitter = form.querySelector("button[type='submit'], input[type='submit']");
+            form.addEventListener("submit", function (event) {
+                const submitter = event.submitter || form.querySelector("button[type='submit'], input[type='submit']");
                 if (!submitter || submitter.disabled) {
                     return;
                 }
@@ -127,17 +158,29 @@
                 submitter.classList.add("is-loading");
                 submitter.setAttribute("aria-busy", "true");
 
-                const loadingRegion = form.closest(".quiz-box, .study-form, .tutor-composer, .report-download-form");
+                const loadingRegion = form.closest(".quiz-box, .study-form, .tutor-composer, .report-download-form, .learning-action-card, .quiz-start-form, .notes-download-form");
                 if (loadingRegion) {
                     loadingRegion.classList.add("is-loading");
+                    loadingRegion.setAttribute("aria-busy", "true");
                 }
             });
         });
     }
 
     function setupSuccessMotion() {
-        document.querySelectorAll(".flash-success, .result-page .badge, .evaluation-card.correct").forEach(function (item) {
+        document.querySelectorAll(".flash-success, .result-page .badge, .evaluation-card.correct, .status-pill.correct").forEach(function (item, index) {
             item.classList.add("success-motion");
+            item.style.setProperty("--success-delay", `${Math.min(index, 6) * 45}ms`);
+        });
+
+        document.querySelectorAll(".score-dashboard").forEach(function (item) {
+            item.classList.add("score-motion");
+        });
+    }
+
+    function setupSidebarMotion() {
+        document.querySelectorAll(".student-sidebar").forEach(function (sidebar) {
+            sidebar.classList.add("is-ready");
         });
     }
 
@@ -304,6 +347,7 @@
         setupCounters();
         setupLoadingStates();
         setupSuccessMotion();
+        setupSidebarMotion();
         setupDemoButtons();
         setupExhibitionTour();
     });

@@ -4410,6 +4410,7 @@ footer p {
     --ease-premium: cubic-bezier(0.2, 0.8, 0.2, 1);
     --lift-shadow: 0 22px 54px rgba(30, 40, 58, 0.14);
     --focus-ring: 0 0 0 4px rgba(49, 87, 213, 0.16);
+    --success-delay: 0ms;
 }
 
 ::selection {
@@ -4459,6 +4460,7 @@ textarea,
 .motion-enabled .motion-reveal {
     opacity: 0;
     transform: translate3d(0, 14px, 0);
+    will-change: opacity, transform;
     transition:
         opacity 0.48s var(--ease-premium) var(--motion-delay, 0ms),
         transform 0.48s var(--ease-premium) var(--motion-delay, 0ms);
@@ -4467,6 +4469,24 @@ textarea,
 .motion-enabled .motion-reveal.is-visible {
     opacity: 1;
     transform: translate3d(0, 0, 0);
+    will-change: auto;
+}
+
+.motion-enabled .motion-reveal.motion-ready {
+    transition:
+        color 0.22s var(--ease-premium),
+        background 0.22s var(--ease-premium),
+        border-color 0.22s var(--ease-premium),
+        box-shadow 0.22s var(--ease-premium),
+        transform 0.22s var(--ease-premium),
+        opacity 0.22s var(--ease-premium);
+}
+
+.motion-enabled .dashboard-main > *,
+.motion-enabled .learn-container > *,
+.motion-enabled .container > *,
+.motion-enabled .tutor-shell > * {
+    animation: none;
 }
 
 .exhibition-header,
@@ -4612,11 +4632,25 @@ footer {
 .quiz-box:hover,
 .tutor-chat-panel:hover,
 .history-table-wrap:hover {
+    transform: translate3d(0, -2px, 0);
     border-color: rgba(49, 87, 213, 0.18);
     box-shadow: var(--lift-shadow);
 }
 
 @media (hover: hover) {
+    .feature-card:hover,
+    .dashboard-stat-card:hover,
+    .activity-card:hover,
+    .achievement-badge:hover,
+    .recommended-topic-card:hover,
+    .locked-dashboard-card:hover,
+    .quick-actions-grid a:hover,
+    .learning-action-card:hover,
+    .learning-history-card:hover,
+    .evaluation-card:hover {
+        transform: translate3d(0, -4px, 0);
+    }
+
     .score-card:hover,
     .card:hover,
     .recommendation-card:hover,
@@ -4723,12 +4757,20 @@ input[type="submit"].is-loading::before {
 .quiz-box.is-loading,
 .study-form.is-loading,
 .tutor-composer.is-loading,
-.report-download-form.is-loading {
+.report-download-form.is-loading,
+.learning-action-card.is-loading,
+.quiz-start-form.is-loading,
+.notes-download-form.is-loading {
     position: relative;
+    overflow: hidden;
 }
 
 .quiz-box.is-loading::after,
-.study-form.is-loading::after {
+.study-form.is-loading::after,
+.report-download-form.is-loading::after,
+.learning-action-card.is-loading::after,
+.quiz-start-form.is-loading::after,
+.notes-download-form.is-loading::after {
     content: "";
     position: absolute;
     left: 18px;
@@ -4741,6 +4783,16 @@ input[type="submit"].is-loading::before {
         rgba(49, 87, 213, 0.12);
     background-size: 220% 100%;
     animation: skeletonShimmer 1.25s var(--ease-premium) infinite;
+}
+
+.learning-action-card.is-loading::after,
+.quiz-start-form.is-loading::after,
+.notes-download-form.is-loading::after,
+.report-download-form.is-loading::after {
+    left: 12px;
+    right: 12px;
+    bottom: 10px;
+    height: 6px;
 }
 
 button:disabled,
@@ -4830,6 +4882,27 @@ textarea:focus {
     box-shadow: 0 18px 42px rgba(30, 40, 58, 0.12);
 }
 
+.student-sidebar.is-ready .sidebar-brand-icon,
+.dashboard-stat-card > span,
+.chart-icon,
+.learning-card-icon,
+.feature-icon {
+    transition: transform 0.22s var(--ease-premium), box-shadow 0.22s var(--ease-premium);
+}
+
+.student-sidebar.is-ready:hover .sidebar-brand-icon,
+.dashboard-stat-card:hover > span,
+.learning-action-card:hover .learning-card-icon,
+.feature-card:hover .feature-icon {
+    transform: translate3d(0, -2px, 0) scale(1.03);
+}
+
+@media (min-width: 901px) {
+    .student-sidebar.is-ready {
+        animation: sidebarSettle 0.38s var(--ease-premium) both;
+    }
+}
+
 .dashboard-stat-card,
 .performance-summary-grid div,
 .subject-analysis-grid article,
@@ -4856,6 +4929,21 @@ textarea:focus {
 .performance-summary-grid strong,
 .rbac-table-grid strong {
     letter-spacing: 0;
+}
+
+.score-motion .score-card:first-child {
+    animation: scoreSettle 0.52s var(--ease-premium) 0.12s both;
+}
+
+.score-card h2.count-complete {
+    text-shadow: 0 0 18px rgba(49, 87, 213, 0.22);
+}
+
+.status-pill.success-motion,
+.result-page .badge.success-motion,
+.flash-success.success-motion,
+.evaluation-card.correct.success-motion {
+    animation-delay: var(--success-delay, 0ms);
 }
 
 .quick-actions-grid a {
@@ -5454,6 +5542,29 @@ textarea:focus {
     to {
         opacity: 1;
         transform: translateY(0) scale(1);
+    }
+}
+
+@keyframes sidebarSettle {
+    from {
+        opacity: 0;
+        transform: translate3d(-10px, 0, 0);
+    }
+    to {
+        opacity: 1;
+        transform: translate3d(0, 0, 0);
+    }
+}
+
+@keyframes scoreSettle {
+    0% {
+        transform: translate3d(0, 8px, 0) scale(0.985);
+    }
+    68% {
+        transform: translate3d(0, -1px, 0) scale(1.005);
+    }
+    100% {
+        transform: translate3d(0, 0, 0) scale(1);
     }
 }
 
