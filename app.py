@@ -55,6 +55,7 @@ from models import (
     FlashcardSet,
     LearningHistory,
     LearningSession,
+    MindMap,
     QuizHistory,
     RevisionSheet,
     TutorLesson,
@@ -668,9 +669,11 @@ def get_learning_history_entries(user_id, search="", subject_filter="all", sort_
     lessons = query.all()
     lesson_ids_with_flashcards = flashcard_lesson_ids(user_id, [lesson.id for lesson in lessons])
     lesson_ids_with_revisions = revision_lesson_ids(user_id, [lesson.id for lesson in lessons])
+    lesson_ids_with_mind_maps = mind_map_lesson_ids(user_id, [lesson.id for lesson in lessons])
     for lesson in lessons:
         lesson.has_flashcards = lesson.id in lesson_ids_with_flashcards
         lesson.has_revision = lesson.id in lesson_ids_with_revisions
+        lesson.has_mind_map = lesson.id in lesson_ids_with_mind_maps
     return lessons
 
 
@@ -688,6 +691,7 @@ def get_flashcard_lesson(entry_id, user_id):
                 LearningHistory.book_name,
                 LearningHistory.topic,
                 LearningHistory.notes,
+                LearningHistory.quiz_questions,
                 LearningHistory.created_at,
             )
         )
@@ -697,6 +701,25 @@ def get_flashcard_lesson(entry_id, user_id):
 
 
 def get_revision_lesson(entry_id, user_id):
+    return (
+        LearningHistory.query.options(
+            load_only(
+                LearningHistory.id,
+                LearningHistory.user_id,
+                LearningHistory.subject,
+                LearningHistory.book_name,
+                LearningHistory.topic,
+                LearningHistory.notes,
+                LearningHistory.quiz_questions,
+                LearningHistory.created_at,
+            )
+        )
+        .filter_by(id=entry_id, user_id=user_id)
+        .first()
+    )
+
+
+def get_mind_map_lesson(entry_id, user_id):
     return (
         LearningHistory.query.options(
             load_only(
@@ -748,6 +771,30 @@ def revision_lesson_ids(user_id, lesson_ids):
         .filter(
             RevisionSheet.user_id == user_id,
             RevisionSheet.learning_history_id.in_(lesson_ids),
+        )
+        .all()
+    }
+
+
+def existing_mind_map(lesson_id, user_id):
+    return (
+        MindMap.query.filter_by(
+            user_id=user_id,
+            learning_history_id=lesson_id,
+        )
+        .first()
+    )
+
+
+def mind_map_lesson_ids(user_id, lesson_ids):
+    if not lesson_ids:
+        return set()
+    return {
+        row.learning_history_id
+        for row in MindMap.query.with_entities(MindMap.learning_history_id)
+        .filter(
+            MindMap.user_id == user_id,
+            MindMap.learning_history_id.in_(lesson_ids),
         )
         .all()
     }
@@ -1048,6 +1095,147 @@ def build_structured_evaluation(response_text, questions, answers):
         questions,
         answers,
     )
+
+
+def normalize_mind_map_payload(payload, lesson_title):
+    if isinstance(payload, dict):
+        raw_nodes = payload.get("nodes") or payload.get("mind_map") or payload.get("mindMap") or []
+    else:
+        raw_nodes = payload if isinstance(payload, list) else []
+
+    normalized_nodes = []
+    seen_ids = set()
+    for index, raw_node in enumerate(raw_nodes[:30], start=1):
+        if not isinstance(raw_node, dict):
+            continue
+
+        node_id = str(raw_node.get("id") or f"node-{index}").strip()
+        title = str(raw_node.get("title") or raw_node.get("label") or "").strip()
+        parent = raw_node.get("parent")
+
+        if not title:
+            continue
+        if not node_id or node_id in seen_ids:
+            node_id = f"node-{index}"
+
+        parent_id = "" if parent is None else str(parent).strip()
+        normalized_nodes.append(
+            {
+                "id": node_id[:60],
+                "title": title[:80],
+                "parent": parent_id[:60],
+            }
+        )
+        seen_ids.add(node_id)
+
+    if not normalized_nodes:
+        raise ValueError("The AI did not return valid mind map nodes.")
+
+    valid_ids = {node["id"] for node in normalized_nodes}
+    root_indexes = [
+        index
+        for index, node in enumerate(normalized_nodes)
+        if not node["parent"] or node["parent"] not in valid_ids or node["parent"] == node["id"]
+    ]
+
+    if not root_indexes:
+        normalized_nodes[0]["parent"] = ""
+    else:
+        primary_root_id = normalized_nodes[root_indexes[0]]["id"]
+        for root_index in root_indexes[1:]:
+            normalized_nodes[root_index]["parent"] = primary_root_id
+
+    root_node = next((node for node in normalized_nodes if not node["parent"]), normalized_nodes[0])
+    if not root_node["title"]:
+        root_node["title"] = lesson_title or "Lesson"
+
+    return {"nodes": normalized_nodes[:30]}
+
+
+def build_mind_map_prompt(lesson, student_class):
+    notes_excerpt = (lesson.notes or "").strip()
+    if len(notes_excerpt) > 14000:
+        notes_excerpt = f"{notes_excerpt[:14000]}\n\n[Notes truncated for mind map generation.]"
+
+    return f"""
+You are an expert school teacher creating a structured concept map.
+
+Class: {student_class or "student's class"}
+Subject: {lesson.subject}
+Book Name: {lesson.book_name or "N/A"}
+Chapter / Topic: {lesson.topic}
+
+Lesson Notes:
+{notes_excerpt}
+
+Create a mind map for this existing lesson.
+Represent the lesson as a tree.
+Use only concepts supported by the notes.
+Keep titles short.
+Use language suitable for the student's class level.
+Use one center/root node for the chapter.
+Maximum 30 nodes.
+
+Return structured JSON only. Do not include markdown, code fences, or extra text.
+
+Each node must contain:
+- id
+- title
+- parent
+
+Use this exact structure:
+{{
+  "nodes": [
+    {{
+      "id": "root",
+      "title": "Chapter title",
+      "parent": null
+    }},
+    {{
+      "id": "concept-1",
+      "title": "Short concept",
+      "parent": "root"
+    }}
+  ]
+}}
+"""
+
+
+def create_mind_map(lesson, user_id, student_class):
+    prompt = build_mind_map_prompt(lesson, student_class)
+    print("Gemini call: Mind Map")
+    response = gemini_request(
+        "Mind Map",
+        prompt,
+        user_id=user_id,
+        lesson_id=lesson.id,
+    )
+    payload = normalize_mind_map_payload(extract_json_payload(response.text), lesson.topic)
+
+    mind_map = MindMap(
+        user_id=user_id,
+        learning_history_id=lesson.id,
+        map_json=json.dumps(payload),
+        source_model="gemini-2.5-flash",
+    )
+    db.session.add(mind_map)
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        mind_map = existing_mind_map(lesson.id, user_id)
+    return mind_map
+
+
+def get_or_create_mind_map(lesson, user_id, student_class):
+    mind_map = existing_mind_map(lesson.id, user_id)
+    if mind_map:
+        return mind_map, False
+    return create_mind_map(lesson, user_id, student_class), True
+
+
+def mind_map_payload(mind_map):
+    return normalize_mind_map_payload(extract_json_payload(mind_map.map_json), "Lesson")
 
 
 def normalize_flashcard_payload(payload):
@@ -1431,6 +1619,12 @@ def get_dashboard_stats(user_id):
         .scalar()
         or 0
     )
+    mind_maps_generated = (
+        MindMap.query.with_entities(func.count(MindMap.id))
+        .filter(MindMap.user_id == user_id)
+        .scalar()
+        or 0
+    )
 
     scores = [
         numeric_score
@@ -1457,6 +1651,7 @@ def get_dashboard_stats(user_id):
         "study_streak": study_streak,
         "flashcards_studied": flashcards_studied,
         "revision_sheets_generated": revision_sheets_generated,
+        "mind_maps_generated": mind_maps_generated,
     }
 
 
@@ -4263,6 +4458,7 @@ def view_learning_history(lesson_id):
         questions=questions,
         has_flashcards=has_flashcards,
         has_revision=bool(existing_revision_sheet(lesson.id, session["user_id"])),
+        has_mind_map=bool(existing_mind_map(lesson.id, session["user_id"])),
     )
 
 
@@ -4296,6 +4492,7 @@ def revision(lesson_id):
         revision_html=markdown.markdown(revision_sheet.content_markdown),
         questions=decode_json_list(lesson.quiz_questions),
         has_flashcards=bool(existing_flashcard_set(lesson.id, session["user_id"])),
+        has_mind_map=bool(existing_mind_map(lesson.id, session["user_id"])),
     )
 
 
@@ -4319,6 +4516,40 @@ def download_revision_pdf(lesson_id):
         mimetype="application/pdf",
         as_attachment=True,
         download_name=safe_notes_filename(f"{lesson.topic}_revision", extension="pdf"),
+    )
+
+
+@app.route("/mindmap/<int:lesson_id>")
+@login_required
+def mindmap(lesson_id):
+    lesson = get_mind_map_lesson(lesson_id, session["user_id"])
+    if not lesson:
+        abort(404)
+
+    try:
+        mind_map, created = get_or_create_mind_map(
+            lesson,
+            session["user_id"],
+            current_user()["student_class"],
+        )
+    except GeminiRequestError as error:
+        return render_gemini_error(error.error_info)
+    except ValueError as error:
+        abort(502, description=str(error))
+    except Exception:
+        abort(503, description="The mind map service is unavailable. Please try again later.")
+
+    if created:
+        flash("Mind Map generated. Your lesson is ready to explore visually.", "success")
+
+    payload = mind_map_payload(mind_map)
+    return render_template(
+        "mindmap.html",
+        lesson=lesson,
+        mind_map=mind_map,
+        nodes=payload["nodes"],
+        has_flashcards=bool(existing_flashcard_set(lesson.id, session["user_id"])),
+        questions=decode_json_list(lesson.quiz_questions),
     )
 
 

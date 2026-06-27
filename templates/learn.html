@@ -72,6 +72,20 @@
                 <a class="learning-card-button" href="{{ url_for('login', next=url_for('home')) }}">Generate Flashcards <span aria-hidden="true">&rarr;</span></a>
                 {% endif %}
             </article>
+
+            <article class="learning-action-card learning-card-mindmap">
+                <span class="learning-card-icon" aria-hidden="true">&#129504;</span>
+                <div class="learning-card-copy">
+                    <h3>AI Mind Map</h3>
+                    <p>Visualize this lesson as a structured concept map.</p>
+                </div>
+                {% if lesson_id %}
+                <a class="learning-card-button" href="{{ url_for('mindmap', lesson_id=lesson_id) }}">Generate Mind Map <span aria-hidden="true">&rarr;</span></a>
+                {% else %}
+                <a class="learning-card-button" href="{{ url_for('login', next=url_for('home')) }}">Generate Mind Map <span aria-hidden="true">&rarr;</span></a>
+                {% endif %}
+            </article>
+
         </div>
     </section>
 
@@ -156,14 +170,6 @@
                 </button>
             </form>
 
-            <article class="learning-action-card is-coming-soon learning-card-mindmap">
-                <span class="learning-card-icon" aria-hidden="true">&#128506;</span>
-                <div class="learning-card-copy">
-                    <h3>Mind Map</h3>
-                    <p>See the topic as connected ideas so the chapter feels easier to remember.</p>
-                </div>
-                <span class="coming-soon-pill">Coming Soon</span>
-            </article>
         </div>
     </section>
 

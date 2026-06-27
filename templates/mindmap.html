@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ lesson.topic }} Mind Map - AI Study Buddy</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body class="learn-page mindmap-page">
+<button id="theme-toggle" onclick="toggleTheme()">
+    &#127769; Dark Mode
+</button>
+
+<main class="learn-container mindmap-shell">
+    <div class="auth-header-row mindmap-header">
+        <div>
+            <span class="eyebrow">&#129504; AI Mind Map</span>
+            <h1>{{ lesson.topic }}</h1>
+            <p>Explore this lesson as connected concepts.</p>
+        </div>
+        <div class="auth-page-actions">
+            <a class="button-link secondary-link" href="{{ url_for('view_learning_history', lesson_id=lesson.id) }}">Back to Lesson</a>
+            {% include 'components/auth_nav.html' %}
+        </div>
+    </div>
+
+    {% include 'components/flash_messages.html' %}
+
+    <div class="lesson-info-strip">
+        <span><strong>Subject</strong> {{ lesson.subject }}</span>
+        <span><strong>Book</strong> {{ lesson.book_name or 'N/A' }}</span>
+        <span><strong>Chapter</strong> {{ lesson.topic }}</span>
+        <span><strong>Generated</strong> {{ mind_map.created_at }}</span>
+    </div>
+
+    <section class="mindmap-toolbar" aria-label="Mind map controls">
+        <button type="button" data-zoom-in>+</button>
+        <button type="button" data-zoom-out>-</button>
+        <button type="button" data-zoom-reset>Reset</button>
+        <button type="button" onclick="window.print()">Print</button>
+        <a class="button-link secondary-link" href="{{ url_for('flashcards', lesson_id=lesson.id) }}">
+            {% if has_flashcards %}Open Flashcards{% else %}Generate Flashcards{% endif %}
+        </a>
+        <form action="{{ url_for('start_ai_tutor') }}" method="POST">
+            <input type="hidden" name="lesson_id" value="{{ lesson.id }}">
+            <button type="submit">Start AI Tutor</button>
+        </form>
+        {% if questions %}
+        <form action="{{ url_for('quiz') }}" method="POST">
+            <input type="hidden" name="name" value="{{ current_user.full_name if current_user else 'Student' }}">
+            <input type="hidden" name="student_class" value="{{ current_user.student_class if current_user else '' }}">
+            <input type="hidden" name="subject" value="{{ lesson.subject }}">
+            <input type="hidden" name="topic" value="{{ lesson.topic }}">
+            {% for question in questions %}
+            <input type="hidden" name="question{{ loop.index }}" value="{{ question }}">
+            {% endfor %}
+            <button type="submit">Take Quiz</button>
+        </form>
+        {% endif %}
+    </section>
+
+    <section class="mindmap-stage" aria-label="Interactive mind map">
+        <div class="mindmap-scroll">
+            <div class="mindmap-canvas" data-mindmap-canvas></div>
+        </div>
+    </section>
+
+    <script id="mind-map-data" type="application/json">{{ nodes|tojson }}</script>
+
+    {% include 'components/footer.html' %}
+</main>
+
+<script>
+function toggleTheme() {
+    document.body.classList.toggle("dark-mode");
+
+    let btn = document.getElementById("theme-toggle");
+    if (document.body.classList.contains("dark-mode")) {
+        btn.innerHTML = "&#9728;&#65039; Light Mode";
+    } else {
+        btn.innerHTML = "&#127769; Dark Mode";
+    }
+}
+
+(function() {
+    const dataElement = document.getElementById("mind-map-data");
+    const canvas = document.querySelector("[data-mindmap-canvas]");
+    const nodes = JSON.parse(dataElement.textContent || "[]");
+    const byParent = new Map();
+    let zoom = 1;
+
+    nodes.forEach(function(node) {
+        const parent = node.parent || "";
+        if (!byParent.has(parent)) {
+            byParent.set(parent, []);
+        }
+        byParent.get(parent).push(node);
+    });
+
+    const root = (byParent.get("") || [nodes[0]])[0];
+
+    function branchDepth(node) {
+        const children = byParent.get(node.id) || [];
+        if (!children.length) {
+            return 0;
+        }
+        return 1 + Math.max.apply(null, children.map(branchDepth));
+    }
+
+    function createNode(node, depth) {
+        const item = document.createElement("li");
+        item.className = depth === 0 ? "mindmap-root-item" : "mindmap-branch-item";
+
+        const nodeButton = document.createElement("button");
+        nodeButton.type = "button";
+        nodeButton.className = depth === 0 ? "mindmap-node mindmap-node-root" : "mindmap-node";
+        nodeButton.textContent = node.title;
+
+        const children = byParent.get(node.id) || [];
+        if (children.length) {
+            nodeButton.setAttribute("aria-expanded", "true");
+            nodeButton.title = "Collapse or expand branch";
+            nodeButton.addEventListener("click", function() {
+                const collapsed = item.classList.toggle("is-collapsed");
+                nodeButton.setAttribute("aria-expanded", String(!collapsed));
+            });
+        } else {
+            nodeButton.setAttribute("aria-label", node.title);
+        }
+
+        item.appendChild(nodeButton);
+
+        if (children.length) {
+            const childList = document.createElement("ul");
+            childList.className = "mindmap-branches";
+            childList.dataset.depth = String(branchDepth(node));
+            children.forEach(function(child) {
+                childList.appendChild(createNode(child, depth + 1));
+            });
+            item.appendChild(childList);
+        }
+
+        return item;
+    }
+
+    function setZoom(nextZoom) {
+        zoom = Math.min(1.7, Math.max(0.55, nextZoom));
+        canvas.style.transform = "scale(" + zoom + ")";
+    }
+
+    if (root) {
+        const tree = document.createElement("ul");
+        tree.className = "mindmap-tree";
+        tree.appendChild(createNode(root, 0));
+        canvas.appendChild(tree);
+    }
+
+    document.querySelector("[data-zoom-in]").addEventListener("click", function() {
+        setZoom(zoom + 0.12);
+    });
+    document.querySelector("[data-zoom-out]").addEventListener("click", function() {
+        setZoom(zoom - 0.12);
+    });
+    document.querySelector("[data-zoom-reset]").addEventListener("click", function() {
+        setZoom(1);
+    });
+})();
+</script>
+</body>
+</html>

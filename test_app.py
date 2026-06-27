@@ -17,6 +17,7 @@ from models import (
     FlashcardSet,
     LearningHistory,
     LearningSession,
+    MindMap,
     QuizHistory,
     RevisionSheet,
     TutorLesson,
@@ -1308,6 +1309,20 @@ Photosynthesis helps plants prepare food and release oxygen.
 """
         )
 
+    def mind_map_response(self):
+        return MockResponse(
+            json.dumps(
+                {
+                    "nodes": [
+                        {"id": "root", "title": "Photosynthesis", "parent": None},
+                        {"id": "light", "title": "Sunlight", "parent": "root"},
+                        {"id": "chlorophyll", "title": "Chlorophyll", "parent": "root"},
+                        {"id": "products", "title": "Food and oxygen", "parent": "root"},
+                    ]
+                }
+            )
+        )
+
     @patch.object(app_module, "generate_content_with_fallback")
     def test_revision_generates_once_and_reopens(self, generate_content):
         self.register_user()
@@ -1397,6 +1412,130 @@ Photosynthesis helps plants prepare food and release oxygen.
         self.assertEqual(pdf_response.status_code, 200)
         self.assertEqual(pdf_response.mimetype, "application/pdf")
         self.assertTrue(pdf_response.data.startswith(b"%PDF"))
+
+    @patch.object(app_module, "generate_content_with_fallback")
+    def test_mind_map_generates_once_and_reopens(self, generate_content):
+        self.register_user()
+        self.login_user()
+        generate_content.return_value = self.mind_map_response()
+        with app_module.app.app_context():
+            lesson_id = app_module.save_learning_history(
+                1,
+                "Science",
+                "NCERT",
+                "Photosynthesis",
+                "Plants make food using sunlight and chlorophyll.",
+                {},
+                self.questions,
+            )
+
+        first_response = self.client.get(f"/mindmap/{lesson_id}")
+        second_response = self.client.get(f"/mindmap/{lesson_id}")
+
+        self.assertEqual(first_response.status_code, 200)
+        self.assertEqual(second_response.status_code, 200)
+        generate_content.assert_called_once()
+        page = first_response.get_data(as_text=True)
+        self.assertIn('<meta name="viewport"', page)
+        self.assertIn("AI Mind Map", page)
+        self.assertIn("Photosynthesis", page)
+        self.assertIn("Sunlight", page)
+        self.assertIn("data-zoom-in", page)
+        self.assertIn("data-zoom-out", page)
+        self.assertIn("data-zoom-reset", page)
+        self.assertIn("window.print()", page)
+        self.assertIn("mindmap-stage", page)
+        self.assertIn("mindmap-branches", page)
+        with app_module.app.app_context():
+            self.assertEqual(MindMap.query.count(), 1)
+            mind_map = MindMap.query.first()
+            self.assertEqual(mind_map.learning_history_id, lesson_id)
+            self.assertEqual(mind_map.user_id, 1)
+            self.assertEqual(mind_map.learning_history.topic, "Photosynthesis")
+            self.assertNotIn("Plants make food", mind_map.map_json)
+
+    @patch.object(app_module, "generate_content_with_fallback")
+    def test_mind_map_permissions_require_lesson_owner(self, generate_content):
+        self.register_user()
+        with app_module.app.app_context():
+            lesson_id = app_module.save_learning_history(
+                1,
+                "Science",
+                "NCERT",
+                "Photosynthesis",
+                "Plants make food using sunlight.",
+                {},
+                self.questions,
+            )
+        self.register_user(username="other", email="other@example.com")
+        self.login_user(identifier="other")
+
+        response = self.client.get(f"/mindmap/{lesson_id}")
+
+        self.assertEqual(response.status_code, 404)
+        generate_content.assert_not_called()
+
+    @patch.object(app_module, "generate_content_with_fallback")
+    def test_mind_map_dashboard_history_and_json_integration(self, generate_content):
+        self.register_user()
+        self.login_user()
+        generate_content.return_value = MockResponse(
+            """```json
+{
+  "nodes": [
+    {"id": "root", "title": "Photosynthesis", "parent": null},
+    {"id": "raw-materials", "title": "Raw materials", "parent": "root"},
+    {"id": "water", "title": "Water", "parent": "raw-materials"}
+  ]
+}
+```"""
+        )
+        with app_module.app.app_context():
+            lesson_id = app_module.save_learning_history(
+                1,
+                "Science",
+                "NCERT",
+                "Photosynthesis",
+                "Plants make food using sunlight.",
+                {},
+                self.questions,
+            )
+
+        mind_map_response = self.client.get(f"/mindmap/{lesson_id}")
+        history_response = self.client.get("/learning-history")
+        dashboard_response = self.client.get("/dashboard")
+        detail_response = self.client.get(f"/learning-history/{lesson_id}")
+
+        self.assertEqual(mind_map_response.status_code, 200)
+        self.assertIn("Raw materials", mind_map_response.get_data(as_text=True))
+        self.assertIn("Open Mind Map", history_response.get_data(as_text=True))
+        self.assertIn("Open Mind Map", detail_response.get_data(as_text=True))
+        dashboard_page = dashboard_response.get_data(as_text=True)
+        self.assertIn("Mind Maps Generated", dashboard_page)
+        self.assertIn("<strong>1</strong>", dashboard_page)
+
+    def test_mind_map_json_parsing_limits_and_repairs_tree(self):
+        payload = {
+            "nodes": [
+                {"id": "root", "title": "Main Topic", "parent": None},
+                {"id": "duplicate", "title": "First", "parent": "root"},
+                {"id": "duplicate", "title": "Second", "parent": "root"},
+                {"id": "orphan", "title": "Orphan", "parent": "missing"},
+            ]
+            + [
+                {"id": f"extra-{index}", "title": f"Extra {index}", "parent": "root"}
+                for index in range(1, 40)
+            ]
+        }
+
+        normalized = app_module.normalize_mind_map_payload(payload, "Main Topic")
+
+        self.assertEqual(len(normalized["nodes"]), 30)
+        ids = [node["id"] for node in normalized["nodes"]]
+        self.assertEqual(len(ids), len(set(ids)))
+        self.assertEqual(normalized["nodes"][0]["parent"], "")
+        orphan = next(node for node in normalized["nodes"] if node["id"] == "orphan")
+        self.assertEqual(orphan["parent"], "root")
 
     @patch.object(app_module, "generate_content_with_fallback")
     def test_flashcards_generate_and_render_responsive_controls(self, generate_content):
