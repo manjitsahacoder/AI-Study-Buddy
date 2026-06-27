@@ -1,0 +1,8 @@
+<main class="placeholder-card ai-error-card">
+    <span class="eyebrow">AI Study Buddy</span>
+    <h1>{{ title }}</h1>
+    {% for paragraph in message.split('\n\n') %}
+    <p>{{ paragraph }}</p>
+    {% endfor %}
+    <a class="button-link" href="{{ url_for('home') }}">Back to Study Buddy</a>
+</main>

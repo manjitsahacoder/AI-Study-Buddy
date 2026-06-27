@@ -10,6 +10,7 @@ os.environ["QUIZ_HISTORY_DB"] = TEST_DB_PATH
 
 import app as app_module
 from database import db
+from gemini_service import classify_gemini_exception
 from models import (
     DownloadedFile,
     Flashcard,
@@ -333,9 +334,77 @@ Q5. What is question five?
 
         self.assertEqual(response.status_code, 503)
         self.assertIn(
-            "AI Study Buddy is temporarily busy. Please try again in a moment.",
+            "The AI is taking longer than expected.",
             response.get_data(as_text=True),
         )
+
+    def test_gemini_exception_classifier_covers_common_failures(self):
+        rate_limit = classify_gemini_exception(Exception("HTTP 429 rate limit exceeded"))
+        timeout = classify_gemini_exception(TimeoutError("deadline timed out"))
+        invalid_key = classify_gemini_exception(Exception("API key not valid. 401"))
+        quota = classify_gemini_exception(Exception("RESOURCE_EXHAUSTED quota exceeded"))
+        network = classify_gemini_exception(ConnectionError("connection reset by peer"))
+        unknown = classify_gemini_exception(RuntimeError("unexpected parser failure"))
+
+        self.assertEqual(rate_limit.title, "Rate Limit Reached")
+        self.assertIn("limited number of requests per minute", rate_limit.message)
+        self.assertIn("taking longer than expected", timeout.message)
+        self.assertIn("configuration issue", invalid_key.message)
+        self.assertIn("free AI quota", quota.message)
+        self.assertIn("Unable to contact the AI service", network.message)
+        self.assertEqual(unknown.code, "unknown")
+
+    @patch.object(app_module, "generate_content_with_fallback")
+    def test_learn_rate_limit_uses_central_error_page_and_logs(self, generate_content):
+        generate_content.side_effect = Exception("HTTP 429 rate limit exceeded")
+
+        with self.assertLogs(app_module.app.logger.name, level="INFO") as logs:
+            response = self.client.post(
+                "/learn",
+                data={
+                    "name": "Asha",
+                    "student_class": "8",
+                    "subject": "Biology",
+                    "topic": "Plants",
+                },
+            )
+
+        page = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 429)
+        self.assertIn("Rate Limit Reached", page)
+        self.assertIn("Please wait about one minute before trying again.", page)
+        self.assertIn("Your work has already been saved.", page)
+        self.assertNotIn("Flashcard service unavailable", page)
+        log_output = "\n".join(logs.output)
+        self.assertIn("feature=Notes", log_output)
+        self.assertIn("prompt_length=", log_output)
+        self.assertIn("estimated_tokens=", log_output)
+        self.assertIn("response_length=0", log_output)
+        self.assertIn("exception_type=Exception", log_output)
+        self.assertIn("user_id=anonymous", log_output)
+
+    @patch.object(app_module, "generate_content_with_fallback")
+    def test_learn_unknown_exception_logs_traceback_and_friendly_page(self, generate_content):
+        generate_content.side_effect = RuntimeError("unexpected gemini failure")
+
+        with self.assertLogs(app_module.app.logger.name, level="INFO") as logs:
+            response = self.client.post(
+                "/learn",
+                data={
+                    "name": "Asha",
+                    "student_class": "8",
+                    "subject": "Biology",
+                    "topic": "Plants",
+                },
+            )
+
+        page = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("AI Service Unavailable", page)
+        log_output = "\n".join(logs.output)
+        self.assertIn("Unknown Gemini exception", log_output)
+        self.assertIn("Traceback", log_output)
+        self.assertIn("exception_type=RuntimeError", log_output)
 
     @patch.object(app_module.model, "generate_content")
     def test_learn_does_not_load_ai_tutor_data(self, generate_content):
@@ -1274,6 +1343,30 @@ Grade: A
         with app_module.app.app_context():
             self.assertEqual(FlashcardSet.query.count(), 1)
             self.assertEqual(Flashcard.query.count(), 10)
+
+    @patch.object(app_module, "generate_content_with_fallback")
+    def test_flashcard_rate_limit_shows_shared_error_page(self, generate_content):
+        self.register_user()
+        self.login_user()
+        generate_content.side_effect = Exception("HTTP 429 rate limit exceeded")
+        with app_module.app.app_context():
+            lesson_id = app_module.save_learning_history(
+                1,
+                "Science",
+                "NCERT",
+                "Plants",
+                "Plant notes.",
+                {},
+                ["Q1"],
+            )
+
+        response = self.client.get(f"/flashcards/{lesson_id}")
+
+        page = response.get_data(as_text=True)
+        self.assertEqual(response.status_code, 429)
+        self.assertIn("Rate Limit Reached", page)
+        self.assertIn("The free Gemini API allows only a limited number of requests per minute.", page)
+        self.assertNotIn("flashcard service is unavailable", page.lower())
 
     @patch.object(app_module, "generate_content_with_fallback")
     def test_flashcard_permissions_require_lesson_owner(self, generate_content):

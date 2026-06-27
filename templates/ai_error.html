@@ -3,12 +3,12 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>AI Study Buddy is busy</title>
+    <title>{{ error.title }} - AI Study Buddy</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body class="placeholder-page">
-    {% set title = message %}
-    {% set message = 'Your lesson is safe to request again in a moment.' %}
+    {% set title = error.title %}
+    {% set message = error.message %}
     {% include 'components/ai_error_card.html' %}
 </body>
 </html>

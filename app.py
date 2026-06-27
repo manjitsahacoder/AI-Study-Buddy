@@ -44,6 +44,11 @@ load_dotenv()
 from config import GEMINI_API_KEY, GEMINI_API_KEY_2
 from ai_tutor import build_tutor_prompt, render_tutor_markdown
 from database import configure_database, create_database_tables, db, rollback_database_session
+from gemini_service import (
+    GeminiRequestError,
+    handle_gemini_exception,
+    log_gemini_request,
+)
 from models import (
     DownloadedFile,
     Flashcard,
@@ -180,6 +185,20 @@ def learn_busy_response(started_at, error=None):
     return render_template("ai_busy.html", message=LEARN_BUSY_MESSAGE), 503
 
 
+def render_gemini_error(error_info):
+    return render_template("ai_error.html", error=error_info), error_info.status_code
+
+
+def gemini_json_error(error_info):
+    return jsonify(
+        {
+            "error": error_info.message,
+            "title": error_info.title,
+            "code": error_info.code,
+        }
+    ), error_info.status_code
+
+
 def is_quota_error(error):
     error_text = str(error).lower()
     return (
@@ -225,6 +244,44 @@ def generate_content_with_fallback(prompt, generation_config=None, request_optio
                     raise
 
         raise last_error
+
+
+def gemini_request(
+    feature_name,
+    prompt,
+    user_id=None,
+    lesson_id=None,
+    generation_config=None,
+    request_options=None,
+):
+    started_at = time.perf_counter()
+    try:
+        response = generate_content_with_fallback(
+            prompt,
+            generation_config=generation_config,
+            request_options=request_options,
+        )
+        log_gemini_request(
+            app.logger,
+            feature_name,
+            prompt,
+            response_text=(getattr(response, "text", "") or ""),
+            started_at=started_at,
+            user_id=user_id,
+            lesson_id=lesson_id,
+        )
+        return response
+    except Exception as error:
+        error_info = handle_gemini_exception(
+            error,
+            app.logger,
+            feature_name,
+            prompt,
+            started_at=started_at,
+            user_id=user_id,
+            lesson_id=lesson_id,
+        )
+        raise GeminiRequestError(error_info, error) from error
 
 
 def init_quiz_history_db():
@@ -1036,7 +1093,14 @@ def create_flashcard_set(lesson, user_id, student_class):
     prompt = build_flashcard_prompt(lesson, student_class)
     try:
         print("Gemini call: Flashcards")
-        response = generate_content_with_fallback(prompt)
+        response = gemini_request(
+            "Flashcards",
+            prompt,
+            user_id=user_id,
+            lesson_id=lesson.id,
+        )
+    except GeminiRequestError:
+        raise
     except Exception as error:
         print("FLASHCARD ERROR:", error)
         raise
@@ -3983,6 +4047,8 @@ def flashcards(lesson_id):
             session["user_id"],
             current_user()["student_class"],
         )
+    except GeminiRequestError as error:
+        return render_gemini_error(error.error_info)
     except ValueError as error:
         abort(502, description=str(error))
     except Exception:
@@ -4175,7 +4241,14 @@ def tutor_message(tutor_lesson_id):
 
     try:
         print("Gemini call: AI Tutor")
-        response = generate_content_with_fallback(prompt)
+        response = gemini_request(
+            "Tutor",
+            prompt,
+            user_id=session.get("user_id"),
+            lesson_id=tutor_lesson.learning_history_id,
+        )
+    except GeminiRequestError as error:
+        return gemini_json_error(error.error_info)
     except Exception as error:
         print("AI TUTOR ERROR:", error)
         return jsonify({"error": "The AI Tutor is unavailable right now. Please try again."}), 503
@@ -4325,7 +4398,12 @@ Rules:
 
     try:
         print("Gemini call: Learn")
-        response = generate_content_with_fallback(prompt, **learn_generation_options())
+        response = gemini_request(
+            "Notes",
+            prompt,
+            user_id=session.get("user_id"),
+            **learn_generation_options(),
+        )
         response_text = response_text_or_busy(response)
         log_learn_metric(
             "gemini_response",
@@ -4333,6 +4411,8 @@ Rules:
             estimated_characters=len(response_text),
             estimated_tokens=estimate_tokens(response_text),
         )
+    except GeminiRequestError as error:
+        return render_gemini_error(error.error_info)
     except Exception as error:
         print("LEARN ERROR:", error)
         return learn_busy_response(request_started_at, error)
@@ -4350,7 +4430,12 @@ Rules:
         )
         try:
             print("Gemini call: Learn retry")
-            response = generate_content_with_fallback(retry_prompt, **learn_generation_options())
+            response = gemini_request(
+                "Notes",
+                retry_prompt,
+                user_id=session.get("user_id"),
+                **learn_generation_options(),
+            )
             response_text = response_text_or_busy(response)
             log_learn_metric(
                 "retry_gemini_response",
@@ -4359,6 +4444,8 @@ Rules:
                 estimated_tokens=estimate_tokens(response_text),
             )
             notes, raw_diagram, questions = split_learning_content(response_text)
+        except GeminiRequestError as retry_error:
+            return render_gemini_error(retry_error.error_info)
         except Exception as retry_error:
             print("LEARN RETRY ERROR:", retry_error)
             return learn_busy_response(request_started_at, retry_error)
@@ -4623,11 +4710,15 @@ Use exactly this schema:
 
     try:
         print("Gemini call: Evaluation")
-        response = generate_content_with_fallback(evaluation_prompt)
+        response = gemini_request(
+            "Evaluation",
+            evaluation_prompt,
+            user_id=session.get("user_id"),
+        )
+    except GeminiRequestError as error:
+        return render_gemini_error(error.error_info)
     except Exception as error:
         print("EVALUATION ERROR:", error)
-        if "429" in str(error):
-            abort(503, description="Gemini quota reached. Please try again later.")
         abort(503, description="The evaluation service is unavailable. Please try again later.")
 
     evaluation = build_structured_evaluation(response.text, questions, answers)
