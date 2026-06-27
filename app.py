@@ -45,6 +45,8 @@ from ai_tutor import build_tutor_prompt, render_tutor_markdown
 from database import configure_database, create_database_tables, db, rollback_database_session
 from models import (
     DownloadedFile,
+    Flashcard,
+    FlashcardSet,
     LearningHistory,
     LearningSession,
     QuizHistory,
@@ -555,11 +557,57 @@ def get_learning_history_entries(user_id, search="", subject_filter="all", sort_
         )
     else:
         query = query.order_by(LearningHistory.created_at.desc(), LearningHistory.id.desc())
-    return query.all()
+    lessons = query.all()
+    lesson_ids_with_flashcards = flashcard_lesson_ids(user_id, [lesson.id for lesson in lessons])
+    for lesson in lessons:
+        lesson.has_flashcards = lesson.id in lesson_ids_with_flashcards
+    return lessons
 
 
 def get_learning_history_entry(entry_id, user_id):
     return LearningHistory.query.filter_by(id=entry_id, user_id=user_id).first()
+
+
+def get_flashcard_lesson(entry_id, user_id):
+    return (
+        LearningHistory.query.options(
+            load_only(
+                LearningHistory.id,
+                LearningHistory.user_id,
+                LearningHistory.subject,
+                LearningHistory.book_name,
+                LearningHistory.topic,
+                LearningHistory.notes,
+                LearningHistory.created_at,
+            )
+        )
+        .filter_by(id=entry_id, user_id=user_id)
+        .first()
+    )
+
+
+def existing_flashcard_set(lesson_id, user_id):
+    return (
+        FlashcardSet.query.filter_by(
+            user_id=user_id,
+            learning_history_id=lesson_id,
+        )
+        .first()
+    )
+
+
+def flashcard_lesson_ids(user_id, lesson_ids):
+    if not lesson_ids:
+        return set()
+    return {
+        row.learning_history_id
+        for row in FlashcardSet.query.with_entities(FlashcardSet.learning_history_id)
+        .filter(
+            FlashcardSet.user_id == user_id,
+            FlashcardSet.learning_history_id.in_(lesson_ids),
+        )
+        .all()
+    }
 
 
 def delete_learning_history_entry(entry_id, user_id):
@@ -859,6 +907,147 @@ def build_structured_evaluation(response_text, questions, answers):
     )
 
 
+def normalize_flashcard_payload(payload):
+    if isinstance(payload, dict):
+        cards = payload.get("flashcards") or payload.get("cards") or []
+    else:
+        cards = payload if isinstance(payload, list) else []
+
+    normalized_cards = []
+    for raw_card in cards:
+        if not isinstance(raw_card, dict):
+            continue
+        front = str(
+            raw_card.get("front")
+            or raw_card.get("question")
+            or raw_card.get("keyword")
+            or raw_card.get("term")
+            or ""
+        ).strip()
+        back = str(
+            raw_card.get("back")
+            or raw_card.get("answer")
+            or raw_card.get("explanation")
+            or raw_card.get("definition")
+            or ""
+        ).strip()
+        if front and back:
+            normalized_cards.append({"front": front, "back": back})
+
+    normalized_cards = normalized_cards[:15]
+    if len(normalized_cards) < 10:
+        raise ValueError("The AI did not return at least 10 valid flashcards.")
+    return normalized_cards
+
+
+def build_flashcard_prompt(lesson, student_class):
+    notes_excerpt = (lesson.notes or "").strip()
+    if len(notes_excerpt) > 12000:
+        notes_excerpt = f"{notes_excerpt[:12000]}\n\n[Notes truncated for flashcard generation.]"
+
+    return f"""
+You are an expert school teacher creating revision flashcards.
+
+Class: {student_class or "student's class"}
+Subject: {lesson.subject}
+Book Name: {lesson.book_name or "N/A"}
+Chapter / Topic: {lesson.topic}
+
+Lesson Notes:
+{notes_excerpt}
+
+Generate between 10 and 15 flashcards from this lesson.
+
+Each flashcard must include:
+- front: Question, keyword, formula, or definition prompt.
+- back: Clear, concise explanation.
+
+Rules:
+- Use simple language.
+- Match the selected class level.
+- Focus on important concepts.
+- Keep answers concise.
+- Do not add facts that are not supported by the lesson notes.
+- Return valid JSON only. Do not include markdown, code fences, or extra text.
+
+Use exactly this structure:
+{{
+  "flashcards": [
+    {{
+      "front": "Question / keyword / formula / definition",
+      "back": "Clear explanation"
+    }}
+  ]
+}}
+"""
+
+
+def create_flashcard_set(lesson, user_id, student_class):
+    prompt = build_flashcard_prompt(lesson, student_class)
+    try:
+        print("Gemini call: Flashcards")
+        response = generate_content_with_fallback(prompt)
+    except Exception as error:
+        print("FLASHCARD ERROR:", error)
+        raise
+
+    cards = normalize_flashcard_payload(extract_json_payload(response.text))
+    flashcard_set = FlashcardSet(
+        user_id=user_id,
+        learning_history_id=lesson.id,
+        source_model="gemini-2.5-flash",
+    )
+    db.session.add(flashcard_set)
+    db.session.flush()
+    db.session.add_all(
+        Flashcard(
+            flashcard_set_id=flashcard_set.id,
+            user_id=user_id,
+            learning_history_id=lesson.id,
+            position=index,
+            front=card["front"],
+            back=card["back"],
+        )
+        for index, card in enumerate(cards, start=1)
+    )
+    db.session.commit()
+    return flashcard_set
+
+
+def get_or_create_flashcard_set(lesson, user_id, student_class):
+    flashcard_set = existing_flashcard_set(lesson.id, user_id)
+    if flashcard_set:
+        return flashcard_set, False
+    return create_flashcard_set(lesson, user_id, student_class), True
+
+
+def get_flashcard_set_for_lesson(lesson_id, user_id):
+    return (
+        FlashcardSet.query.options(load_only(FlashcardSet.id, FlashcardSet.learning_history_id))
+        .filter_by(user_id=user_id, learning_history_id=lesson_id)
+        .first()
+    )
+
+
+def get_flashcards_for_set(flashcard_set_id, user_id):
+    return (
+        Flashcard.query.options(
+            load_only(
+                Flashcard.id,
+                Flashcard.position,
+                Flashcard.front,
+                Flashcard.back,
+                Flashcard.mastered,
+                Flashcard.needs_revision,
+                Flashcard.review_count,
+            )
+        )
+        .filter_by(flashcard_set_id=flashcard_set_id, user_id=user_id)
+        .order_by(Flashcard.position.asc(), Flashcard.id.asc())
+        .all()
+    )
+
+
 def structured_evaluation_to_markdown(evaluation):
     summary = evaluation["summary"]
     report = evaluation["teacher_report"]
@@ -972,6 +1161,12 @@ def get_dashboard_stats(user_id):
     topics_studied = len(lesson_dates)
     quizzes_attempted = len(quiz_rows)
     downloaded_count = DownloadedFile.query.filter_by(user_id=user_id).count()
+    flashcards_studied = (
+        Flashcard.query.with_entities(func.count(Flashcard.id))
+        .filter(Flashcard.user_id == user_id)
+        .scalar()
+        or 0
+    )
 
     scores = [
         numeric_score
@@ -996,6 +1191,7 @@ def get_dashboard_stats(user_id):
         "average_score": average_score,
         "achievements": achievements_count,
         "study_streak": study_streak,
+        "flashcards_studied": flashcards_studied,
     }
 
 
@@ -1772,9 +1968,10 @@ def get_weekly_study_summary(user_id):
 def dashboard_learning_progress(stats, weekly_summary):
     topic_points = min(stats["topics_studied"], 8) * 6
     quiz_points = min(stats["quizzes_attempted"], 6) * 6
+    flashcard_points = min(stats.get("flashcards_studied", 0), 15) * 2
     streak_points = min(stats["study_streak"], 7) * 2
     weekly_points = min(weekly_summary["total_actions"], weekly_summary["goal"]) * 4
-    percentage = min(100, topic_points + quiz_points + streak_points + weekly_points)
+    percentage = min(100, topic_points + quiz_points + flashcard_points + streak_points + weekly_points)
 
     if percentage >= 80:
         label = "Advanced momentum"
@@ -3611,6 +3808,7 @@ def view_learning_history(lesson_id):
 
     diagram_payload = decode_diagram_payload(lesson["diagram_data"], lesson["subject"], lesson["topic"])
     questions = decode_json_list(lesson["quiz_questions"])
+    has_flashcards = bool(existing_flashcard_set(lesson.id, session["user_id"]))
     return render_template(
         "learning_history_detail.html",
         lesson=lesson,
@@ -3620,6 +3818,78 @@ def view_learning_history(lesson_id):
         diagram_image=create_diagram_image(lesson["topic"], diagram_payload),
         diagram_available=diagram_payload.get("available", False),
         questions=questions,
+        has_flashcards=has_flashcards,
+    )
+
+
+@app.route("/flashcards/<int:lesson_id>")
+@login_required
+def flashcards(lesson_id):
+    lesson = get_flashcard_lesson(lesson_id, session["user_id"])
+    if not lesson:
+        abort(404)
+
+    try:
+        flashcard_set, created = get_or_create_flashcard_set(
+            lesson,
+            session["user_id"],
+            current_user()["student_class"],
+        )
+    except ValueError as error:
+        abort(502, description=str(error))
+    except Exception:
+        abort(503, description="The flashcard service is unavailable. Please try again later.")
+
+    flashcards_for_lesson = get_flashcards_for_set(flashcard_set.id, session["user_id"])
+    if created:
+        flash("Flashcards generated. Start revising with the first card.", "success")
+
+    return render_template(
+        "flashcards.html",
+        lesson=lesson,
+        flashcard_set=flashcard_set,
+        flashcards=flashcards_for_lesson,
+        flashcard_payload=[
+            {
+                "id": card.id,
+                "front": card.front,
+                "back": card.back,
+                "mastered": card.mastered,
+                "needs_revision": card.needs_revision,
+            }
+            for card in flashcards_for_lesson
+        ],
+    )
+
+
+@app.route("/api/flashcards/<int:flashcard_id>/status", methods=["POST"])
+@login_required
+def update_flashcard_status(flashcard_id):
+    flashcard = Flashcard.query.filter_by(id=flashcard_id, user_id=session["user_id"]).first()
+    if not flashcard:
+        abort(404)
+
+    payload = request.get_json(silent=True) or {}
+    status = (payload.get("status") or request.form.get("status") or "").strip().lower()
+    if status == "mastered":
+        flashcard.mastered = True
+        flashcard.needs_revision = False
+    elif status == "needs_revision":
+        flashcard.mastered = False
+        flashcard.needs_revision = True
+    else:
+        abort(400, description="A valid flashcard status is required.")
+
+    flashcard.review_count = (flashcard.review_count or 0) + 1
+    flashcard.last_reviewed_at = datetime.now(timezone.utc)
+    db.session.commit()
+    return jsonify(
+        {
+            "id": flashcard.id,
+            "mastered": flashcard.mastered,
+            "needs_revision": flashcard.needs_revision,
+            "review_count": flashcard.review_count,
+        }
     )
 
 

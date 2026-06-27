@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ lesson.topic }} Flashcards - AI Study Buddy</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body class="learn-page flashcards-page {% if exhibition_mode %}exhibition-mode{% endif %}">
+<button id="theme-toggle" onclick="toggleTheme()">
+    &#127769; Dark Mode
+</button>
+
+<main class="learn-container flashcards-shell">
+    {% set exhibition_step = 'notes' %}
+    {% include 'components/exhibition_flow.html' %}
+
+    <header class="flashcards-header">
+        <div>
+            <span class="eyebrow">&#127183; AI Flashcards</span>
+            <h1>{{ lesson.topic }}</h1>
+            <p>Revise the key ideas from this lesson one card at a time.</p>
+        </div>
+        <div class="flashcards-header-actions">
+            <a class="button-link secondary-link" href="{{ url_for('view_learning_history', lesson_id=lesson.id) }}">Back to Notes</a>
+            {% include 'components/auth_nav.html' %}
+        </div>
+    </header>
+
+    {% include 'components/flash_messages.html' %}
+
+    <section class="flashcard-study-panel" aria-label="Interactive flashcards">
+        <div class="flashcard-progress-row">
+            <strong id="flashcard-progress">Card 1 / {{ flashcards|length }}</strong>
+            <span id="flashcard-status">Keep going</span>
+        </div>
+
+        <button class="flashcard-stage" type="button" id="flashcard-stage" aria-label="Flip current flashcard">
+            <span class="flashcard-side-label" id="flashcard-side-label">Front</span>
+            <span class="flashcard-text" id="flashcard-text">{{ flashcards[0].front if flashcards else 'No flashcards available.' }}</span>
+        </button>
+
+        <div class="flashcard-primary-actions">
+            <button type="button" class="secondary-link" id="flashcard-prev">Previous</button>
+            <button type="button" id="flashcard-flip">Flip Card</button>
+            <button type="button" class="secondary-link" id="flashcard-next">Next</button>
+        </div>
+
+        <div class="flashcard-secondary-actions">
+            <button type="button" class="secondary-link" id="flashcard-shuffle">Shuffle</button>
+            <button type="button" class="secondary-link" id="flashcard-restart">Restart</button>
+            <button type="button" id="flashcard-mastered">Mark as Mastered</button>
+            <button type="button" class="secondary-link" id="flashcard-revision">Need Revision</button>
+        </div>
+
+        <p class="flashcard-keyboard-hint">Use left and right arrows to move. Press Space to flip.</p>
+    </section>
+
+    {% include 'components/footer.html' %}
+</main>
+
+<script>
+const flashcards = {{ flashcard_payload|tojson }};
+let flashcardIndex = 0;
+let isFlipped = false;
+
+const progressEl = document.getElementById("flashcard-progress");
+const statusEl = document.getElementById("flashcard-status");
+const stageEl = document.getElementById("flashcard-stage");
+const sideLabelEl = document.getElementById("flashcard-side-label");
+const textEl = document.getElementById("flashcard-text");
+const prevButton = document.getElementById("flashcard-prev");
+const nextButton = document.getElementById("flashcard-next");
+const flipButton = document.getElementById("flashcard-flip");
+const shuffleButton = document.getElementById("flashcard-shuffle");
+const restartButton = document.getElementById("flashcard-restart");
+const masteredButton = document.getElementById("flashcard-mastered");
+const revisionButton = document.getElementById("flashcard-revision");
+
+function currentCard() {
+    return flashcards[flashcardIndex];
+}
+
+function statusText(card) {
+    if (!card) {
+        return "No cards";
+    }
+    if (card.mastered) {
+        return "Mastered";
+    }
+    if (card.needs_revision) {
+        return "Needs revision";
+    }
+    return "Keep going";
+}
+
+function renderCard() {
+    const card = currentCard();
+    if (!card) {
+        return;
+    }
+    progressEl.textContent = `Card ${flashcardIndex + 1} / ${flashcards.length}`;
+    statusEl.textContent = statusText(card);
+    sideLabelEl.textContent = isFlipped ? "Back" : "Front";
+    textEl.textContent = isFlipped ? card.back : card.front;
+    stageEl.classList.toggle("is-flipped", isFlipped);
+    stageEl.classList.toggle("is-mastered", Boolean(card.mastered));
+    stageEl.classList.toggle("needs-revision", Boolean(card.needs_revision));
+}
+
+function goToCard(nextIndex) {
+    flashcardIndex = (nextIndex + flashcards.length) % flashcards.length;
+    isFlipped = false;
+    renderCard();
+}
+
+function flipCard() {
+    isFlipped = !isFlipped;
+    renderCard();
+}
+
+function shuffleCards() {
+    for (let index = flashcards.length - 1; index > 0; index -= 1) {
+        const swapIndex = Math.floor(Math.random() * (index + 1));
+        [flashcards[index], flashcards[swapIndex]] = [flashcards[swapIndex], flashcards[index]];
+    }
+    goToCard(0);
+}
+
+function saveStatus(status) {
+    const card = currentCard();
+    if (!card) {
+        return;
+    }
+
+    fetch(`/api/flashcards/${card.id}/status`, {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({status})
+    })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error("Could not save flashcard status.");
+            }
+            return response.json();
+        })
+        .then(data => {
+            card.mastered = data.mastered;
+            card.needs_revision = data.needs_revision;
+            renderCard();
+        })
+        .catch(() => {
+            statusEl.textContent = "Could not save";
+        });
+}
+
+prevButton.addEventListener("click", () => goToCard(flashcardIndex - 1));
+nextButton.addEventListener("click", () => goToCard(flashcardIndex + 1));
+flipButton.addEventListener("click", flipCard);
+stageEl.addEventListener("click", flipCard);
+shuffleButton.addEventListener("click", shuffleCards);
+restartButton.addEventListener("click", () => goToCard(0));
+masteredButton.addEventListener("click", () => saveStatus("mastered"));
+revisionButton.addEventListener("click", () => saveStatus("needs_revision"));
+
+document.addEventListener("keydown", function(event) {
+    if (event.key === "ArrowLeft") {
+        event.preventDefault();
+        goToCard(flashcardIndex - 1);
+    } else if (event.key === "ArrowRight") {
+        event.preventDefault();
+        goToCard(flashcardIndex + 1);
+    } else if (event.code === "Space") {
+        event.preventDefault();
+        flipCard();
+    }
+});
+
+function toggleTheme() {
+    document.body.classList.toggle("dark-mode");
+
+    let btn = document.getElementById("theme-toggle");
+    if (document.body.classList.contains("dark-mode")) {
+        btn.innerHTML = "&#9728;&#65039; Light Mode";
+    } else {
+        btn.innerHTML = "&#127769; Dark Mode";
+    }
+}
+
+renderCard();
+</script>
+</body>
+</html>

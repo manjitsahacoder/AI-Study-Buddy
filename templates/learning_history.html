@@ -81,6 +81,9 @@
             </div>
             <div class="lesson-card-actions">
                 <a class="button-link" href="{{ url_for('view_learning_history', lesson_id=lesson.id) }}">&#128065; View</a>
+                <a class="button-link secondary-link" href="{{ url_for('flashcards', lesson_id=lesson.id) }}">
+                    {% if lesson.has_flashcards %}&#127183; Open Flashcards{% else %}&#127183; Generate Flashcards{% endif %}
+                </a>
                 <a class="button-link secondary-link" href="{{ url_for('download_learning_history_pdf', lesson_id=lesson.id) }}">&#128196; Download PDF</a>
                 <button class="button-link secondary-link favourite-placeholder" type="button" disabled title="Favourite notes will be added later">&#11088; Favourite</button>
                 <form action="{{ url_for('delete_learning_history', lesson_id=lesson.id) }}" method="POST" onsubmit="return confirm('Delete this saved lesson?');">

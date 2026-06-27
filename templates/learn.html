@@ -39,6 +39,29 @@
         {{ explanation|safe }}
     </div>
 
+    <section class="revision-tools-section" aria-labelledby="revision-tools-title">
+        <div class="continue-learning-heading">
+            <span class="eyebrow">&#127183; Revision Tools</span>
+            <h2 id="revision-tools-title">Revision Tools</h2>
+            <p>Turn this lesson into active recall before moving to tutor practice and quizzes.</p>
+        </div>
+
+        <div class="revision-tool-grid">
+            <article class="learning-action-card learning-card-flashcards">
+                <span class="learning-card-icon" aria-hidden="true">&#127183;</span>
+                <div class="learning-card-copy">
+                    <h3>AI Flashcards</h3>
+                    <p>Revise this lesson with interactive flashcards generated from your notes.</p>
+                </div>
+                {% if lesson_id %}
+                <a class="learning-card-button" href="{{ url_for('flashcards', lesson_id=lesson_id) }}">Generate Flashcards <span aria-hidden="true">&rarr;</span></a>
+                {% else %}
+                <a class="learning-card-button" href="{{ url_for('login', next=url_for('home')) }}">Generate Flashcards <span aria-hidden="true">&rarr;</span></a>
+                {% endif %}
+            </article>
+        </div>
+    </section>
+
     <div class="diagram-card" data-diagram-card>
         <h2>&#128202; Diagram</h2>
         {% if diagram_available %}
@@ -119,15 +142,6 @@
                     <span class="learning-card-arrow" aria-hidden="true">&rarr;</span>
                 </button>
             </form>
-
-            <article class="learning-action-card is-coming-soon learning-card-flashcards">
-                <span class="learning-card-icon" aria-hidden="true">&#129504;</span>
-                <div class="learning-card-copy">
-                    <h3>Generate Flashcards</h3>
-                    <p>Practice key terms and definitions with quick recall cards.</p>
-                </div>
-                <span class="coming-soon-pill">Coming Soon</span>
-            </article>
 
             <article class="learning-action-card is-coming-soon learning-card-mindmap">
                 <span class="learning-card-icon" aria-hidden="true">&#128506;</span>

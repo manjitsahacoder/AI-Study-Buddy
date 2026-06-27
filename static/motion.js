@@ -77,7 +77,7 @@
 
     function setupReveal() {
         const revealTargets = document.querySelectorAll(
-            ".feature-card, .dashboard-main > *, .learn-container > *, .container > section, .container > article, .tutor-shell > *, .learning-history-card, .performance-chart-card, .evaluation-card, .teacher-report-card"
+            ".feature-card, .dashboard-main > *, .learn-container > *, .container > section, .container > article, .tutor-shell > *, .learning-history-card, .performance-chart-card, .evaluation-card, .teacher-report-card, .flashcard-study-panel"
         );
 
         if (reduceMotion) {

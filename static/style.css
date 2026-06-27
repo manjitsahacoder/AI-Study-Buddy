@@ -1647,7 +1647,7 @@ body.dashboard-page #theme-toggle {
 
 .dashboard-stat-grid {
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
     gap: 14px;
     margin-bottom: 18px;
 }
@@ -1698,6 +1698,10 @@ body.dashboard-page #theme-toggle {
 
 .dashboard-stat-card:nth-child(5) > span {
     background: var(--coral);
+}
+
+.dashboard-stat-card:nth-child(6) > span {
+    background: var(--gold);
 }
 
 .dashboard-stat-card p {
@@ -2668,6 +2672,40 @@ body.dashboard-page #theme-toggle {
     animation: fadeInUp 0.55s ease both;
 }
 
+.revision-tools-section {
+    position: relative;
+    overflow: hidden;
+    margin: 30px 0 18px;
+    padding: clamp(20px, 3vw, 30px);
+    border: 1px solid rgba(31, 122, 77, 0.18);
+    border-radius: var(--card-radius);
+    background:
+        linear-gradient(135deg, rgba(31, 122, 77, 0.1), rgba(49, 87, 213, 0.08), rgba(189, 138, 32, 0.08)),
+        rgba(255, 253, 248, 0.96);
+    box-shadow: var(--soft-shadow);
+    animation: fadeInUp 0.55s ease both;
+}
+
+.revision-tools-section::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+        linear-gradient(90deg, rgba(255, 255, 255, 0.34), transparent 36%),
+        radial-gradient(circle at 88% 12%, rgba(31, 122, 77, 0.14), transparent 30%);
+}
+
+.revision-tools-section > * {
+    position: relative;
+}
+
+.revision-tool-grid {
+    display: grid;
+    grid-template-columns: minmax(260px, 420px);
+    gap: 14px;
+}
+
 .continue-learning-section::before {
     content: "";
     position: absolute;
@@ -2734,6 +2772,7 @@ body.dashboard-page #theme-toggle {
 }
 
 .learning-card-tutor,
+.learning-card-flashcards,
 .learning-action-card.is-coming-soon {
     display: flex;
     flex-direction: column;
@@ -2881,6 +2920,154 @@ body.dashboard-page #theme-toggle {
     font-weight: 900;
     text-transform: uppercase;
     letter-spacing: 0.05em;
+}
+
+.flashcards-shell {
+    width: min(1120px, calc(100% - 32px));
+}
+
+.flashcards-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 18px;
+    margin-bottom: 16px;
+    padding: clamp(22px, 3vw, 34px);
+    border: 1px solid rgba(231, 223, 210, 0.92);
+    border-radius: var(--card-radius);
+    background:
+        linear-gradient(145deg, rgba(255, 255, 255, 0.7), rgba(255, 253, 248, 0.94)),
+        rgba(255, 253, 248, 0.94);
+    box-shadow: var(--soft-shadow);
+}
+
+.flashcards-header h1 {
+    margin-bottom: 10px;
+    font-size: clamp(2rem, 3.6vw, 3.6rem);
+}
+
+.flashcards-header p {
+    max-width: 720px;
+    margin-bottom: 0;
+    font-weight: 800;
+}
+
+.flashcards-header-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.flashcard-study-panel {
+    display: grid;
+    gap: 18px;
+    max-width: 780px;
+    margin: 18px auto;
+    padding: clamp(20px, 4vw, 34px);
+    border: 1px solid rgba(49, 87, 213, 0.16);
+    border-radius: var(--card-radius);
+    background:
+        linear-gradient(145deg, rgba(255, 255, 255, 0.76), rgba(255, 253, 248, 0.96)),
+        rgba(255, 253, 248, 0.96);
+    box-shadow: var(--shadow);
+}
+
+.flashcard-progress-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.flashcard-progress-row strong,
+.flashcard-progress-row span {
+    display: inline-flex;
+    align-items: center;
+    min-height: 34px;
+    padding: 7px 11px;
+    border-radius: 999px;
+    font-weight: 900;
+}
+
+.flashcard-progress-row strong {
+    color: var(--primary);
+    background: rgba(49, 87, 213, 0.1);
+}
+
+.flashcard-progress-row span {
+    color: var(--green);
+    background: rgba(31, 122, 77, 0.1);
+}
+
+.flashcard-stage {
+    display: grid;
+    place-items: center;
+    gap: 16px;
+    width: 100%;
+    min-height: clamp(300px, 42vh, 430px);
+    padding: clamp(24px, 5vw, 46px);
+    border: 1px solid rgba(49, 87, 213, 0.2);
+    border-radius: 18px;
+    color: var(--ink);
+    background:
+        radial-gradient(circle at 12% 10%, rgba(49, 87, 213, 0.13), transparent 32%),
+        linear-gradient(145deg, rgba(255, 255, 255, 0.92), rgba(255, 253, 248, 0.98));
+    box-shadow: 0 24px 58px rgba(30, 40, 58, 0.14);
+    text-align: center;
+}
+
+.flashcard-stage:hover {
+    transform: translateY(-3px);
+}
+
+.flashcard-stage.is-flipped {
+    border-color: rgba(4, 125, 135, 0.28);
+    background:
+        radial-gradient(circle at 88% 12%, rgba(4, 125, 135, 0.14), transparent 32%),
+        linear-gradient(145deg, rgba(255, 255, 255, 0.94), rgba(247, 252, 252, 0.98));
+}
+
+.flashcard-stage.is-mastered {
+    box-shadow:
+        0 0 0 4px rgba(31, 122, 77, 0.09),
+        0 24px 58px rgba(30, 40, 58, 0.14);
+}
+
+.flashcard-stage.needs-revision {
+    box-shadow:
+        0 0 0 4px rgba(189, 138, 32, 0.11),
+        0 24px 58px rgba(30, 40, 58, 0.14);
+}
+
+.flashcard-side-label {
+    color: var(--muted);
+    font-size: 0.78rem;
+    font-weight: 900;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.flashcard-text {
+    max-width: 620px;
+    color: var(--ink);
+    font-size: clamp(1.45rem, 3vw, 2.4rem);
+    font-weight: 900;
+    line-height: 1.28;
+}
+
+.flashcard-primary-actions,
+.flashcard-secondary-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 10px;
+}
+
+.flashcard-keyboard-hint {
+    margin-bottom: 0;
+    text-align: center;
+    font-weight: 800;
 }
 
 .tutor-shell {
@@ -5460,10 +5647,25 @@ textarea:focus {
         rgba(21, 27, 41, 0.94);
 }
 
+.dark-mode .revision-tools-section,
+.dark-mode .flashcards-header,
+.dark-mode .flashcard-study-panel {
+    background:
+        linear-gradient(145deg, rgba(32, 40, 58, 0.78), rgba(21, 27, 41, 0.96)),
+        rgba(21, 27, 41, 0.94);
+    border-color: rgba(134, 161, 255, 0.18);
+}
+
 .dark-mode .continue-learning-section::before {
     background:
         linear-gradient(90deg, rgba(134, 161, 255, 0.08), transparent 35%),
         radial-gradient(circle at 86% 12%, rgba(92, 203, 211, 0.12), transparent 28%);
+}
+
+.dark-mode .revision-tools-section::before {
+    background:
+        linear-gradient(90deg, rgba(134, 161, 255, 0.08), transparent 35%),
+        radial-gradient(circle at 86% 12%, rgba(31, 122, 77, 0.16), transparent 28%);
 }
 
 .dark-mode .learning-action-card {
@@ -5481,6 +5683,29 @@ textarea:focus {
 
 .dark-mode .learning-card-copy h3,
 .dark-mode .learning-card-copy strong {
+    color: var(--ink);
+}
+
+.dark-mode .flashcards-header p,
+.dark-mode .flashcard-keyboard-hint {
+    color: var(--muted);
+}
+
+.dark-mode .flashcard-stage {
+    color: var(--ink);
+    background:
+        radial-gradient(circle at 12% 10%, rgba(134, 161, 255, 0.13), transparent 32%),
+        linear-gradient(145deg, rgba(32, 40, 58, 0.94), rgba(21, 27, 41, 0.98));
+    border-color: rgba(134, 161, 255, 0.22);
+}
+
+.dark-mode .flashcard-stage.is-flipped {
+    background:
+        radial-gradient(circle at 88% 12%, rgba(92, 203, 211, 0.13), transparent 32%),
+        linear-gradient(145deg, rgba(32, 40, 58, 0.94), rgba(21, 27, 41, 0.98));
+}
+
+.dark-mode .flashcard-text {
     color: var(--ink);
 }
 
@@ -5691,6 +5916,10 @@ textarea:focus {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
+    .revision-tool-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
     .tutor-header-actions {
         justify-content: flex-start;
     }
@@ -5758,11 +5987,13 @@ textarea:focus {
 
     .dashboard-topbar,
     .dashboard-section-heading,
-    .activity-card {
+    .activity-card,
+    .flashcards-header {
         display: grid;
     }
 
     .dashboard-topbar-actions,
+    .flashcards-header-actions,
     .activity-card div:last-child {
         text-align: left;
         justify-content: start;
@@ -5786,6 +6017,7 @@ textarea:focus {
     .achievement-badge-grid,
     .recommended-topic-grid,
     .continue-learning-grid,
+    .revision-tool-grid,
     .rbac-tool-grid,
     .rbac-table-grid,
     .history-tools,
@@ -6042,6 +6274,7 @@ textarea:focus {
     .diagram-actions .button-link,
     .diagram-actions button,
     .continue-learning-grid,
+    .revision-tool-grid,
     .learning-action-card,
     .learning-card-form,
     .learning-card-form button,
@@ -6051,6 +6284,14 @@ textarea:focus {
     .tutor-quiz-cta,
     .tutor-quiz-cta form,
     .tutor-quiz-cta button {
+        width: 100%;
+    }
+
+    .flashcards-header-actions,
+    .flashcards-header-actions .button-link,
+    .flashcards-header-actions .auth-nav,
+    .flashcard-primary-actions button,
+    .flashcard-secondary-actions button {
         width: 100%;
     }
 

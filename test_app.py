@@ -12,6 +12,8 @@ import app as app_module
 from database import db
 from models import (
     DownloadedFile,
+    Flashcard,
+    FlashcardSet,
     LearningHistory,
     LearningSession,
     QuizHistory,
@@ -1089,6 +1091,170 @@ Grade: A
         self.assertNotIn("Developer Panel", dashboard_page)
         self.assertNotIn(">Developer</span>", dashboard_page)
         self.assertNotIn("Manage Users", dashboard_page)
+
+    def flashcard_response(self, count=10):
+        return MockResponse(
+            json.dumps(
+                {
+                    "flashcards": [
+                        {
+                            "front": f"Concept {index}",
+                            "back": f"Clear explanation for concept {index}.",
+                        }
+                        for index in range(1, count + 1)
+                    ]
+                }
+            )
+        )
+
+    @patch.object(app_module, "generate_content_with_fallback")
+    def test_flashcards_generate_and_render_responsive_controls(self, generate_content):
+        self.register_user()
+        self.login_user()
+        generate_content.return_value = self.flashcard_response(12)
+        with app_module.app.app_context():
+            lesson_id = app_module.save_learning_history(
+                1,
+                "Science",
+                "NCERT",
+                "Photosynthesis",
+                "Plants make food using sunlight.",
+                {},
+                ["What do plants need?"],
+            )
+
+        response = self.client.get(f"/flashcards/{lesson_id}")
+
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        self.assertIn('<meta name="viewport"', page)
+        self.assertIn("AI Flashcards", page)
+        self.assertIn("Card 1 / 12", page)
+        self.assertIn("Flip Card", page)
+        self.assertIn("Shuffle", page)
+        self.assertIn("Mark as Mastered", page)
+        self.assertIn("Need Revision", page)
+        generate_content.assert_called_once()
+        with app_module.app.app_context():
+            flashcard_set = FlashcardSet.query.first()
+            self.assertIsNotNone(flashcard_set)
+            self.assertEqual(flashcard_set.learning_history_id, lesson_id)
+            self.assertEqual(flashcard_set.user_id, 1)
+            self.assertEqual(flashcard_set.learning_history.topic, "Photosynthesis")
+            self.assertEqual(len(flashcard_set.flashcards), 12)
+
+    @patch.object(app_module, "generate_content_with_fallback")
+    def test_flashcards_reopen_without_regenerating(self, generate_content):
+        self.register_user()
+        self.login_user()
+        generate_content.return_value = self.flashcard_response(10)
+        with app_module.app.app_context():
+            lesson_id = app_module.save_learning_history(
+                1,
+                "Science",
+                "NCERT",
+                "Plants",
+                "Plant notes.",
+                {},
+                ["Q1"],
+            )
+
+        first_response = self.client.get(f"/flashcards/{lesson_id}")
+        second_response = self.client.get(f"/flashcards/{lesson_id}")
+
+        self.assertEqual(first_response.status_code, 200)
+        self.assertEqual(second_response.status_code, 200)
+        generate_content.assert_called_once()
+        with app_module.app.app_context():
+            self.assertEqual(FlashcardSet.query.count(), 1)
+            self.assertEqual(Flashcard.query.count(), 10)
+
+    @patch.object(app_module, "generate_content_with_fallback")
+    def test_flashcard_permissions_require_lesson_owner(self, generate_content):
+        self.register_user()
+        with app_module.app.app_context():
+            lesson_id = app_module.save_learning_history(
+                1,
+                "Science",
+                "NCERT",
+                "Plants",
+                "Plant notes.",
+                {},
+                ["Q1"],
+            )
+        self.register_user(username="other", email="other@example.com")
+        self.login_user(identifier="other")
+
+        response = self.client.get(f"/flashcards/{lesson_id}")
+
+        self.assertEqual(response.status_code, 404)
+        generate_content.assert_not_called()
+
+    @patch.object(app_module, "generate_content_with_fallback")
+    def test_flashcard_status_updates_are_owner_scoped(self, generate_content):
+        self.register_user()
+        self.login_user()
+        generate_content.return_value = self.flashcard_response(10)
+        with app_module.app.app_context():
+            lesson_id = app_module.save_learning_history(
+                1,
+                "Science",
+                "NCERT",
+                "Plants",
+                "Plant notes.",
+                {},
+                ["Q1"],
+            )
+        self.client.get(f"/flashcards/{lesson_id}")
+        with app_module.app.app_context():
+            card_id = Flashcard.query.first().id
+
+        response = self.client.post(
+            f"/api/flashcards/{card_id}/status",
+            json={"status": "mastered"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()["mastered"])
+        with app_module.app.app_context():
+            card = db.session.get(Flashcard, card_id)
+            self.assertTrue(card.mastered)
+            self.assertFalse(card.needs_revision)
+            self.assertEqual(card.review_count, 1)
+
+        self.client.get("/logout")
+        self.register_user(username="other", email="other@example.com")
+        self.login_user(identifier="other")
+        forbidden_response = self.client.post(
+            f"/api/flashcards/{card_id}/status",
+            json={"status": "needs_revision"},
+        )
+        self.assertEqual(forbidden_response.status_code, 404)
+
+    @patch.object(app_module, "generate_content_with_fallback")
+    def test_learning_history_and_dashboard_show_flashcards(self, generate_content):
+        self.register_user()
+        self.login_user()
+        generate_content.return_value = self.flashcard_response(10)
+        with app_module.app.app_context():
+            lesson_id = app_module.save_learning_history(
+                1,
+                "Science",
+                "NCERT",
+                "Plants",
+                "Plant notes.",
+                {},
+                ["Q1"],
+            )
+        self.client.get(f"/flashcards/{lesson_id}")
+
+        history_response = self.client.get("/learning-history")
+        dashboard_response = self.client.get("/dashboard")
+
+        self.assertIn("Open Flashcards", history_response.get_data(as_text=True))
+        dashboard_page = dashboard_response.get_data(as_text=True)
+        self.assertIn("Flashcards Studied", dashboard_page)
+        self.assertIn("<strong>10</strong>", dashboard_page)
 
     @patch.object(app_module.model, "generate_content")
     def test_logged_in_learn_autosaves_learning_session(self, generate_content):

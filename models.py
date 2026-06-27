@@ -38,6 +38,7 @@ class User(ModelMappingMixin, db.Model):
     learning_sessions = db.relationship("LearningSession", back_populates="user", lazy=True)
     downloaded_files = db.relationship("DownloadedFile", back_populates="user", lazy=True)
     tutor_lessons = db.relationship("TutorLesson", back_populates="user", lazy=True)
+    flashcard_sets = db.relationship("FlashcardSet", back_populates="user", lazy=True)
 
 
 class QuizHistory(ModelMappingMixin, db.Model):
@@ -110,6 +111,75 @@ class LearningHistory(ModelMappingMixin, db.Model):
         cascade="all, delete-orphan",
         lazy=True,
     )
+    flashcard_sets = db.relationship(
+        "FlashcardSet",
+        back_populates="learning_history",
+        cascade="all, delete-orphan",
+        lazy=True,
+    )
+
+
+class FlashcardSet(ModelMappingMixin, db.Model):
+    __tablename__ = "flashcard_sets"
+    __table_args__ = (
+        db.UniqueConstraint("user_id", "learning_history_id", name="uq_flashcard_set_user_history"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    learning_history_id = db.Column(
+        db.Integer,
+        db.ForeignKey("learning_history.id"),
+        nullable=False,
+        index=True,
+    )
+    source_model = db.Column(db.Text, nullable=False, default="gemini-2.5-flash")
+    created_at = db.Column(db.DateTime, nullable=False, default=utc_now, index=True)
+    updated_at = db.Column(db.DateTime, nullable=False, default=utc_now, onupdate=utc_now, index=True)
+
+    user = db.relationship("User", back_populates="flashcard_sets")
+    learning_history = db.relationship("LearningHistory", back_populates="flashcard_sets")
+    flashcards = db.relationship(
+        "Flashcard",
+        back_populates="flashcard_set",
+        cascade="all, delete-orphan",
+        lazy=True,
+        order_by="Flashcard.position",
+    )
+
+
+class Flashcard(ModelMappingMixin, db.Model):
+    __tablename__ = "flashcards"
+
+    id = db.Column(db.Integer, primary_key=True)
+    flashcard_set_id = db.Column(
+        db.Integer,
+        db.ForeignKey("flashcard_sets.id"),
+        nullable=False,
+        index=True,
+    )
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    learning_history_id = db.Column(
+        db.Integer,
+        db.ForeignKey("learning_history.id"),
+        nullable=False,
+        index=True,
+    )
+    position = db.Column(db.Integer, nullable=False, default=0)
+    front = db.Column(db.Text, nullable=False)
+    back = db.Column(db.Text, nullable=False)
+    mastered = db.Column(db.Boolean, nullable=False, default=False)
+    needs_revision = db.Column(db.Boolean, nullable=False, default=False)
+    review_count = db.Column(db.Integer, nullable=False, default=0)
+    interval_days = db.Column(db.Integer, nullable=False, default=0)
+    ease_factor = db.Column(db.Float, nullable=False, default=2.5)
+    memory_tip = db.Column(db.Text)
+    weak_topic_tag = db.Column(db.Text)
+    last_reviewed_at = db.Column(db.DateTime)
+    next_review_at = db.Column(db.DateTime)
+    created_at = db.Column(db.DateTime, nullable=False, default=utc_now, index=True)
+
+    flashcard_set = db.relationship("FlashcardSet", back_populates="flashcards")
 
 
 class TutorLesson(ModelMappingMixin, db.Model):

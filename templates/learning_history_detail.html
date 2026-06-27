@@ -35,6 +35,27 @@
         {{ notes_html|safe }}
     </div>
 
+    <section class="revision-tools-section" aria-labelledby="saved-revision-tools-title">
+        <div class="continue-learning-heading">
+            <span class="eyebrow">&#127183; Revision Tools</span>
+            <h2 id="saved-revision-tools-title">Revision Tools</h2>
+            <p>Use active recall to revise this saved lesson before tutoring or quizzes.</p>
+        </div>
+        <div class="revision-tool-grid">
+            <article class="learning-action-card learning-card-flashcards">
+                <span class="learning-card-icon" aria-hidden="true">&#127183;</span>
+                <div class="learning-card-copy">
+                    <h3>AI Flashcards</h3>
+                    <p>Revise this lesson with interactive flashcards generated from your notes.</p>
+                </div>
+                <a class="learning-card-button" href="{{ url_for('flashcards', lesson_id=lesson.id) }}">
+                    {% if has_flashcards %}Open Flashcards{% else %}Generate Flashcards{% endif %}
+                    <span aria-hidden="true">&rarr;</span>
+                </a>
+            </article>
+        </div>
+    </section>
+
     <div class="diagram-card" data-diagram-card>
         <h2>&#128202; Diagram</h2>
         {% if diagram_available %}
@@ -69,6 +90,7 @@
     </section>
 
     <div class="result-actions">
+        <a class="button-link" href="{{ url_for('flashcards', lesson_id=lesson.id) }}">&#127183; Open Flashcards</a>
         <form action="{{ url_for('start_ai_tutor') }}" method="POST">
             <input type="hidden" name="lesson_id" value="{{ lesson.id }}">
             <button type="submit">&#128104;&#8205;&#127979; Start AI Tutor</button>
