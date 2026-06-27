@@ -39,6 +39,9 @@
         <button type="button" data-zoom-out>-</button>
         <button type="button" data-zoom-reset>Reset</button>
         <button type="button" onclick="window.print()">Print</button>
+        <a class="button-link secondary-link" href="{{ url_for('important_questions', lesson_id=lesson.id) }}">
+            {% if has_important_questions %}Open Important Questions{% else %}Generate Questions{% endif %}
+        </a>
         <a class="button-link secondary-link" href="{{ url_for('flashcards', lesson_id=lesson.id) }}">
             {% if has_flashcards %}Open Flashcards{% else %}Generate Flashcards{% endif %}
         </a>

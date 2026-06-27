@@ -15,6 +15,7 @@ from models import (
     DownloadedFile,
     Flashcard,
     FlashcardSet,
+    ImportantQuestionSet,
     LearningHistory,
     LearningSession,
     MindMap,
@@ -1309,6 +1310,40 @@ Photosynthesis helps plants prepare food and release oxygen.
 """
         )
 
+    def important_questions_response(self):
+        return MockResponse(
+            """# Important Exam Questions: Photosynthesis
+
+## MCQs
+1. What do green plants use to make food?
+   A. Sunlight
+   B. Sand
+   C. Plastic
+   D. Smoke
+   Answer: A. Sunlight
+
+## Very Short Questions
+1. What is photosynthesis?
+   Answer: The process by which green plants make food.
+
+## Short Questions
+1. Why is chlorophyll important?
+   Answer: It helps leaves trap sunlight for photosynthesis.
+
+## Long Questions
+1. Explain photosynthesis with the word equation.
+   Outline: Mention raw materials, sunlight, chlorophyll, glucose, and oxygen.
+
+## HOTS Questions
+1. Why may a covered leaf make less food?
+   Hint: Think about sunlight.
+
+## Revision Tips
+- Practice the word equation.
+- Revise raw materials and products.
+"""
+        )
+
     def mind_map_response(self):
         return MockResponse(
             json.dumps(
@@ -1412,6 +1447,138 @@ Photosynthesis helps plants prepare food and release oxygen.
         self.assertEqual(pdf_response.status_code, 200)
         self.assertEqual(pdf_response.mimetype, "application/pdf")
         self.assertTrue(pdf_response.data.startswith(b"%PDF"))
+
+    @patch.object(app_module, "generate_content_with_fallback")
+    def test_important_questions_generate_once_and_reopen(self, generate_content):
+        self.register_user()
+        self.login_user()
+        generate_content.return_value = self.important_questions_response()
+        with app_module.app.app_context():
+            lesson_id = app_module.save_learning_history(
+                1,
+                "Science",
+                "NCERT",
+                "Photosynthesis",
+                "Plants make food using sunlight and chlorophyll.",
+                {},
+                self.questions,
+            )
+            db.session.add(
+                RevisionSheet(
+                    user_id=1,
+                    learning_history_id=lesson_id,
+                    content_markdown="## Important Points\n- Chlorophyll traps sunlight.",
+                )
+            )
+            db.session.commit()
+
+        first_response = self.client.get(f"/important-questions/{lesson_id}")
+        second_response = self.client.get(f"/important-questions/{lesson_id}")
+
+        self.assertEqual(first_response.status_code, 200)
+        self.assertEqual(second_response.status_code, 200)
+        generate_content.assert_called_once()
+        prompt = generate_content.call_args.args[0]
+        self.assertIn("Class: 8", prompt)
+        self.assertIn("Subject: Science", prompt)
+        self.assertIn("Chapter / Topic: Photosynthesis", prompt)
+        self.assertIn("Plants make food using sunlight and chlorophyll.", prompt)
+        self.assertIn("Chlorophyll traps sunlight.", prompt)
+        page = first_response.get_data(as_text=True)
+        self.assertIn('<meta name="viewport"', page)
+        self.assertIn("Important Exam Questions", page)
+        self.assertIn("MCQs", page)
+        self.assertIn("Very Short Questions", page)
+        self.assertIn("Short Questions", page)
+        self.assertIn("Long Questions", page)
+        self.assertIn("HOTS Questions", page)
+        self.assertIn("Revision Tips", page)
+        self.assertIn("Download PDF", page)
+        self.assertIn("Open Revision", page)
+        self.assertIn("Open Mind Map", page)
+        self.assertIn("Open Flashcards", page)
+        self.assertIn("AI Tutor", page)
+        self.assertIn("Quiz", page)
+        with app_module.app.app_context():
+            self.assertEqual(ImportantQuestionSet.query.count(), 1)
+            question_set = ImportantQuestionSet.query.first()
+            self.assertEqual(question_set.learning_history_id, lesson_id)
+            self.assertEqual(question_set.user_id, 1)
+            self.assertEqual(question_set.learning_history.topic, "Photosynthesis")
+            self.assertNotIn("Plants make food using sunlight and chlorophyll.", question_set.markdown)
+
+    @patch.object(app_module, "generate_content_with_fallback")
+    def test_important_questions_permissions_require_lesson_owner(self, generate_content):
+        self.register_user()
+        with app_module.app.app_context():
+            lesson_id = app_module.save_learning_history(
+                1,
+                "Science",
+                "NCERT",
+                "Photosynthesis",
+                "Plants make food using sunlight.",
+                {},
+                self.questions,
+            )
+        self.register_user(username="other", email="other@example.com")
+        self.login_user(identifier="other")
+
+        response = self.client.get(f"/important-questions/{lesson_id}")
+        pdf_response = self.client.get(f"/important-questions/{lesson_id}/download")
+
+        self.assertEqual(response.status_code, 404)
+        self.assertEqual(pdf_response.status_code, 404)
+        generate_content.assert_not_called()
+
+    @patch.object(app_module, "generate_content_with_fallback")
+    def test_important_questions_dashboard_history_and_pdf_integration(self, generate_content):
+        self.register_user()
+        self.login_user()
+        generate_content.return_value = self.important_questions_response()
+        with app_module.app.app_context():
+            lesson_id = app_module.save_learning_history(
+                1,
+                "Science",
+                "NCERT",
+                "Photosynthesis",
+                "Plants make food using sunlight.",
+                {},
+                self.questions,
+            )
+
+        question_response = self.client.get(f"/important-questions/{lesson_id}")
+        history_response = self.client.get("/learning-history")
+        detail_response = self.client.get(f"/learning-history/{lesson_id}")
+        dashboard_response = self.client.get("/dashboard")
+        pdf_response = self.client.get(f"/important-questions/{lesson_id}/download")
+
+        self.assertEqual(question_response.status_code, 200)
+        self.assertIn("Open Important Questions", history_response.get_data(as_text=True))
+        self.assertIn("Open Important Questions", detail_response.get_data(as_text=True))
+        dashboard_page = dashboard_response.get_data(as_text=True)
+        self.assertIn("Important Question Sets Generated", dashboard_page)
+        self.assertIn("<strong>1</strong>", dashboard_page)
+        self.assertEqual(pdf_response.status_code, 200)
+        self.assertEqual(pdf_response.mimetype, "application/pdf")
+        self.assertTrue(pdf_response.data.startswith(b"%PDF"))
+
+    def test_important_questions_pdf_requires_existing_generated_set(self):
+        self.register_user()
+        self.login_user()
+        with app_module.app.app_context():
+            lesson_id = app_module.save_learning_history(
+                1,
+                "Science",
+                "NCERT",
+                "Photosynthesis",
+                "Plants make food using sunlight.",
+                {},
+                self.questions,
+            )
+
+        response = self.client.get(f"/important-questions/{lesson_id}/download")
+
+        self.assertEqual(response.status_code, 404)
 
     @patch.object(app_module, "generate_content_with_fallback")
     def test_mind_map_generates_once_and_reopens(self, generate_content):

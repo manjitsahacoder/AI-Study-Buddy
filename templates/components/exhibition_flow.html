@@ -4,16 +4,32 @@
         <span>1</span>
         <strong>Notes</strong>
     </a>
-    <a class="{% if exhibition_step == 'tutor' %}active{% endif %}" href="{{ url_for('learning_history') if user else url_for('home') }}#lesson-form">
+    <a class="{% if exhibition_step == 'revision' %}active{% endif %}" href="{{ url_for('learning_history') if user else url_for('home') }}#lesson-form">
         <span>2</span>
+        <strong>Revision</strong>
+    </a>
+    <a class="{% if exhibition_step == 'mindmap' %}active{% endif %}" href="{{ url_for('learning_history') if user else url_for('home') }}#lesson-form">
+        <span>3</span>
+        <strong>Mind Map</strong>
+    </a>
+    <a class="{% if exhibition_step == 'important_questions' %}active{% endif %}" href="{{ url_for('learning_history') if user else url_for('home') }}#lesson-form">
+        <span>4</span>
+        <strong>Important Questions</strong>
+    </a>
+    <a class="{% if exhibition_step == 'flashcards' %}active{% endif %}" href="{{ url_for('learning_history') if user else url_for('home') }}#lesson-form">
+        <span>5</span>
+        <strong>Flashcards</strong>
+    </a>
+    <a class="{% if exhibition_step == 'tutor' %}active{% endif %}" href="{{ url_for('learning_history') if user else url_for('home') }}#lesson-form">
+        <span>6</span>
         <strong>AI Tutor</strong>
     </a>
     <a class="{% if exhibition_step == 'quiz' %}active{% endif %}" href="{{ url_for('home') }}#lesson-form">
-        <span>3</span>
+        <span>7</span>
         <strong>Quiz</strong>
     </a>
     <a class="{% if exhibition_step == 'performance' %}active{% endif %}" href="{{ url_for('performance') if user else url_for('home') }}#lesson-form">
-        <span>4</span>
+        <span>8</span>
         <strong>Performance</strong>
     </a>
 </nav>

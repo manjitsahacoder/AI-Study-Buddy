@@ -60,19 +60,6 @@
                 {% endif %}
             </article>
 
-            <article class="learning-action-card learning-card-flashcards">
-                <span class="learning-card-icon" aria-hidden="true">&#127183;</span>
-                <div class="learning-card-copy">
-                    <h3>AI Flashcards</h3>
-                    <p>Revise this lesson with interactive flashcards generated from your notes.</p>
-                </div>
-                {% if lesson_id %}
-                <a class="learning-card-button" href="{{ url_for('flashcards', lesson_id=lesson_id) }}">Generate Flashcards <span aria-hidden="true">&rarr;</span></a>
-                {% else %}
-                <a class="learning-card-button" href="{{ url_for('login', next=url_for('home')) }}">Generate Flashcards <span aria-hidden="true">&rarr;</span></a>
-                {% endif %}
-            </article>
-
             <article class="learning-action-card learning-card-mindmap">
                 <span class="learning-card-icon" aria-hidden="true">&#129504;</span>
                 <div class="learning-card-copy">
@@ -83,6 +70,32 @@
                 <a class="learning-card-button" href="{{ url_for('mindmap', lesson_id=lesson_id) }}">Generate Mind Map <span aria-hidden="true">&rarr;</span></a>
                 {% else %}
                 <a class="learning-card-button" href="{{ url_for('login', next=url_for('home')) }}">Generate Mind Map <span aria-hidden="true">&rarr;</span></a>
+                {% endif %}
+            </article>
+
+            <article class="learning-action-card learning-card-important">
+                <span class="learning-card-icon" aria-hidden="true">&#11088;</span>
+                <div class="learning-card-copy">
+                    <h3>Important Exam Questions</h3>
+                    <p>Generate likely exam questions for this chapter.</p>
+                </div>
+                {% if lesson_id %}
+                <a class="learning-card-button" href="{{ url_for('important_questions', lesson_id=lesson_id) }}">Generate Questions <span aria-hidden="true">&rarr;</span></a>
+                {% else %}
+                <a class="learning-card-button" href="{{ url_for('login', next=url_for('home')) }}">Generate Questions <span aria-hidden="true">&rarr;</span></a>
+                {% endif %}
+            </article>
+
+            <article class="learning-action-card learning-card-flashcards">
+                <span class="learning-card-icon" aria-hidden="true">&#127183;</span>
+                <div class="learning-card-copy">
+                    <h3>AI Flashcards</h3>
+                    <p>Revise this lesson with interactive flashcards generated from your notes.</p>
+                </div>
+                {% if lesson_id %}
+                <a class="learning-card-button" href="{{ url_for('flashcards', lesson_id=lesson_id) }}">Generate Flashcards <span aria-hidden="true">&rarr;</span></a>
+                {% else %}
+                <a class="learning-card-button" href="{{ url_for('login', next=url_for('home')) }}">Generate Flashcards <span aria-hidden="true">&rarr;</span></a>
                 {% endif %}
             </article>
 

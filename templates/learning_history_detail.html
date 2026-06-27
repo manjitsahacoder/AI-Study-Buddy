@@ -77,6 +77,18 @@
                     <span aria-hidden="true">&rarr;</span>
                 </a>
             </article>
+
+            <article class="learning-action-card learning-card-important">
+                <span class="learning-card-icon" aria-hidden="true">&#11088;</span>
+                <div class="learning-card-copy">
+                    <h3>Important Exam Questions</h3>
+                    <p>Generate likely exam questions for this chapter.</p>
+                </div>
+                <a class="learning-card-button" href="{{ url_for('important_questions', lesson_id=lesson.id) }}">
+                    {% if has_important_questions %}Open Important Questions{% else %}Generate Questions{% endif %}
+                    <span aria-hidden="true">&rarr;</span>
+                </a>
+            </article>
         </div>
     </section>
 
@@ -116,6 +128,7 @@
     <div class="result-actions">
         <a class="button-link" href="{{ url_for('revision', lesson_id=lesson.id) }}">&#128214; Open Revision</a>
         <a class="button-link" href="{{ url_for('mindmap', lesson_id=lesson.id) }}">&#129504; {% if has_mind_map %}Open Mind Map{% else %}Generate Mind Map{% endif %}</a>
+        <a class="button-link" href="{{ url_for('important_questions', lesson_id=lesson.id) }}">&#11088; {% if has_important_questions %}Open Important Questions{% else %}Generate Questions{% endif %}</a>
         <a class="button-link" href="{{ url_for('flashcards', lesson_id=lesson.id) }}">&#127183; Open Flashcards</a>
         <form action="{{ url_for('start_ai_tutor') }}" method="POST">
             <input type="hidden" name="lesson_id" value="{{ lesson.id }}">

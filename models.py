@@ -41,6 +41,7 @@ class User(ModelMappingMixin, db.Model):
     flashcard_sets = db.relationship("FlashcardSet", back_populates="user", lazy=True)
     revision_sheets = db.relationship("RevisionSheet", back_populates="user", lazy=True)
     mind_maps = db.relationship("MindMap", back_populates="user", lazy=True)
+    important_question_sets = db.relationship("ImportantQuestionSet", back_populates="user", lazy=True)
 
 
 class QuizHistory(ModelMappingMixin, db.Model):
@@ -131,6 +132,12 @@ class LearningHistory(ModelMappingMixin, db.Model):
         cascade="all, delete-orphan",
         lazy=True,
     )
+    important_question_sets = db.relationship(
+        "ImportantQuestionSet",
+        back_populates="learning_history",
+        cascade="all, delete-orphan",
+        lazy=True,
+    )
 
 
 class MindMap(ModelMappingMixin, db.Model):
@@ -177,6 +184,29 @@ class RevisionSheet(ModelMappingMixin, db.Model):
 
     user = db.relationship("User", back_populates="revision_sheets")
     learning_history = db.relationship("LearningHistory", back_populates="revision_sheets")
+
+
+class ImportantQuestionSet(ModelMappingMixin, db.Model):
+    __tablename__ = "important_question_sets"
+    __table_args__ = (
+        db.UniqueConstraint("user_id", "learning_history_id", name="uq_important_question_set_user_history"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    learning_history_id = db.Column(
+        db.Integer,
+        db.ForeignKey("learning_history.id"),
+        nullable=False,
+        index=True,
+    )
+    markdown = db.Column(db.Text, nullable=False)
+    source_model = db.Column(db.Text, nullable=False, default="gemini-2.5-flash")
+    created_at = db.Column(db.DateTime, nullable=False, default=utc_now, index=True)
+    updated_at = db.Column(db.DateTime, nullable=False, default=utc_now, onupdate=utc_now, index=True)
+
+    user = db.relationship("User", back_populates="important_question_sets")
+    learning_history = db.relationship("LearningHistory", back_populates="important_question_sets")
 
 
 class FlashcardSet(ModelMappingMixin, db.Model):

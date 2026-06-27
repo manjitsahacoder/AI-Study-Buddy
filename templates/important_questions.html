@@ -3,21 +3,21 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{{ lesson.topic }} Quick Revision - AI Study Buddy</title>
+    <title>{{ lesson.topic }} Important Questions - AI Study Buddy</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 
-<body class="learn-page revision-page">
+<body class="learn-page revision-page important-questions-page">
 <button id="theme-toggle" onclick="toggleTheme()">
     &#127769; Dark Mode
 </button>
 
-<main class="learn-container revision-shell">
+<main class="learn-container revision-shell important-questions-shell">
     <div class="auth-header-row revision-header">
         <div>
-            <span class="eyebrow">&#128214; Quick Revision</span>
+            <span class="eyebrow">&#11088; Important Exam Questions</span>
             <h1>{{ lesson.topic }}</h1>
-            <p>Exam-ready revision distilled from your saved AI notes.</p>
+            <p>Likely exam questions organized for fast practice and confident revision.</p>
         </div>
         <div class="auth-page-actions">
             <a class="button-link secondary-link" href="{{ url_for('view_learning_history', lesson_id=lesson.id) }}">Back to Lesson</a>
@@ -31,23 +31,21 @@
         <span><strong>Subject</strong> {{ lesson.subject }}</span>
         <span><strong>Book</strong> {{ lesson.book_name or 'N/A' }}</span>
         <span><strong>Chapter</strong> {{ lesson.topic }}</span>
-        <span><strong>Generated</strong> {{ revision_sheet.created_at }}</span>
+        <span><strong>Generated</strong> {{ question_set.created_at }}</span>
     </div>
 
-    <section class="revision-command-bar" aria-label="Revision actions">
-        <a class="button-link" href="{{ url_for('download_revision_pdf', lesson_id=lesson.id) }}">&#128196; Download PDF</a>
+    <section class="revision-command-bar" aria-label="Important question actions">
+        <a class="button-link" href="{{ url_for('download_important_questions_pdf', lesson_id=lesson.id) }}">&#128196; Download PDF</a>
+        <a class="button-link secondary-link" href="{{ url_for('revision', lesson_id=lesson.id) }}">&#128214; Open Revision</a>
         <a class="button-link secondary-link" href="{{ url_for('mindmap', lesson_id=lesson.id) }}">
-            &#129504; {% if has_mind_map %}Open Mind Map{% else %}Generate Mind Map{% endif %}
-        </a>
-        <a class="button-link secondary-link" href="{{ url_for('important_questions', lesson_id=lesson.id) }}">
-            &#11088; {% if has_important_questions %}Open Important Questions{% else %}Generate Questions{% endif %}
+            &#129504; Open Mind Map
         </a>
         <a class="button-link secondary-link" href="{{ url_for('flashcards', lesson_id=lesson.id) }}">
             &#127183; Open Flashcards
         </a>
         <form action="{{ url_for('start_ai_tutor') }}" method="POST">
             <input type="hidden" name="lesson_id" value="{{ lesson.id }}">
-            <button type="submit">&#128104;&#8205;&#127979; Learn with AI Tutor</button>
+            <button type="submit">&#128104;&#8205;&#127979; AI Tutor</button>
         </form>
         {% if questions %}
         <form action="{{ url_for('quiz') }}" method="POST">
@@ -58,23 +56,24 @@
             {% for question in questions %}
             <input type="hidden" name="question{{ loop.index }}" value="{{ question }}">
             {% endfor %}
-            <button type="submit">&#128221; Take Quiz</button>
+            <button type="submit">&#128221; Quiz</button>
         </form>
         {% endif %}
     </section>
 
-    <section class="revision-layout">
-        <aside class="revision-section-nav" aria-label="Revision sections">
-            <span>&#128214; Important Points</span>
-            <span>&#128218; Definitions</span>
-            <span>&#129518; Formulas</span>
-            <span>&#9888;&#65039; Common Mistakes</span>
-            <span>&#127919; Exam Tips</span>
+    <section class="revision-layout important-questions-layout">
+        <aside class="revision-section-nav" aria-label="Important question sections">
+            <span>&#128221; MCQs</span>
+            <span>&#9997; Very Short</span>
+            <span>&#128214; Short</span>
+            <span>&#128218; Long</span>
+            <span>&#129504; HOTS</span>
+            <span>&#127919; Revision Tips</span>
         </aside>
 
-        <article class="revision-sheet-card">
-            <div class="revision-sheet-content">
-                {{ revision_html|safe }}
+        <article class="revision-sheet-card important-questions-card">
+            <div class="revision-sheet-content important-questions-content">
+                {{ questions_html|safe }}
             </div>
         </article>
     </section>

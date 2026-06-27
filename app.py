@@ -53,6 +53,7 @@ from models import (
     DownloadedFile,
     Flashcard,
     FlashcardSet,
+    ImportantQuestionSet,
     LearningHistory,
     LearningSession,
     MindMap,
@@ -670,10 +671,12 @@ def get_learning_history_entries(user_id, search="", subject_filter="all", sort_
     lesson_ids_with_flashcards = flashcard_lesson_ids(user_id, [lesson.id for lesson in lessons])
     lesson_ids_with_revisions = revision_lesson_ids(user_id, [lesson.id for lesson in lessons])
     lesson_ids_with_mind_maps = mind_map_lesson_ids(user_id, [lesson.id for lesson in lessons])
+    lesson_ids_with_important_questions = important_question_lesson_ids(user_id, [lesson.id for lesson in lessons])
     for lesson in lessons:
         lesson.has_flashcards = lesson.id in lesson_ids_with_flashcards
         lesson.has_revision = lesson.id in lesson_ids_with_revisions
         lesson.has_mind_map = lesson.id in lesson_ids_with_mind_maps
+        lesson.has_important_questions = lesson.id in lesson_ids_with_important_questions
     return lessons
 
 
@@ -738,6 +741,25 @@ def get_mind_map_lesson(entry_id, user_id):
     )
 
 
+def get_important_questions_lesson(entry_id, user_id):
+    return (
+        LearningHistory.query.options(
+            load_only(
+                LearningHistory.id,
+                LearningHistory.user_id,
+                LearningHistory.subject,
+                LearningHistory.book_name,
+                LearningHistory.topic,
+                LearningHistory.notes,
+                LearningHistory.quiz_questions,
+                LearningHistory.created_at,
+            )
+        )
+        .filter_by(id=entry_id, user_id=user_id)
+        .first()
+    )
+
+
 def existing_flashcard_set(lesson_id, user_id):
     return (
         FlashcardSet.query.filter_by(
@@ -784,6 +806,30 @@ def existing_mind_map(lesson_id, user_id):
         )
         .first()
     )
+
+
+def existing_important_question_set(lesson_id, user_id):
+    return (
+        ImportantQuestionSet.query.filter_by(
+            user_id=user_id,
+            learning_history_id=lesson_id,
+        )
+        .first()
+    )
+
+
+def important_question_lesson_ids(user_id, lesson_ids):
+    if not lesson_ids:
+        return set()
+    return {
+        row.learning_history_id
+        for row in ImportantQuestionSet.query.with_entities(ImportantQuestionSet.learning_history_id)
+        .filter(
+            ImportantQuestionSet.user_id == user_id,
+            ImportantQuestionSet.learning_history_id.in_(lesson_ids),
+        )
+        .all()
+    }
 
 
 def mind_map_lesson_ids(user_id, lesson_ids):
@@ -1421,6 +1467,115 @@ def get_revision_sheet_for_lesson(lesson_id, user_id):
     )
 
 
+def get_important_question_set_for_lesson(lesson_id, user_id):
+    return (
+        ImportantQuestionSet.query.options(
+            load_only(
+                ImportantQuestionSet.id,
+                ImportantQuestionSet.learning_history_id,
+                ImportantQuestionSet.markdown,
+                ImportantQuestionSet.created_at,
+            )
+        )
+        .filter_by(user_id=user_id, learning_history_id=lesson_id)
+        .first()
+    )
+
+
+def build_important_questions_prompt(lesson, revision_sheet, student_class):
+    notes_excerpt = (lesson.notes or "").strip()
+    if len(notes_excerpt) > 14000:
+        notes_excerpt = f"{notes_excerpt[:14000]}\n\n[Notes truncated for important question generation.]"
+
+    revision_excerpt = (revision_sheet.markdown if hasattr(revision_sheet, "markdown") else "")
+    if revision_sheet and not revision_excerpt:
+        revision_excerpt = (revision_sheet.content_markdown or "").strip()
+    if len(revision_excerpt) > 7000:
+        revision_excerpt = f"{revision_excerpt[:7000]}\n\n[Revision truncated for important question generation.]"
+    if not revision_excerpt:
+        revision_excerpt = "No separate quick revision sheet exists yet. Use the lesson notes carefully."
+
+    return f"""
+You are an expert school teacher preparing important exam questions.
+
+Class: {student_class or "student's class"}
+Subject: {lesson.subject}
+Book Name: {lesson.book_name or "N/A"}
+Chapter / Topic: {lesson.topic}
+
+Lesson Notes:
+{notes_excerpt}
+
+Quick Revision:
+{revision_excerpt}
+
+Generate likely exam questions for this chapter only.
+Use the lesson notes and quick revision as the source.
+Do not regenerate lesson notes.
+Do not add unsupported facts.
+Use language suitable for the student's class level.
+Return Markdown only.
+
+Use exactly these section headings:
+
+# Important Exam Questions: {lesson.topic}
+
+## MCQs
+Create exactly 10 multiple-choice questions. Include four options and the answer.
+
+## Very Short Questions
+Create exactly 10 very short questions with concise answers.
+
+## Short Questions
+Create exactly 10 short-answer questions with model answers.
+
+## Long Questions
+Create exactly 5 long-answer questions with answer outlines.
+
+## HOTS Questions
+Create exactly 5 higher-order thinking questions with hints or model answer points.
+
+## Revision Tips
+Give practical revision tips for exam preparation.
+"""
+
+
+def create_important_question_set(lesson, user_id, student_class):
+    revision_sheet = existing_revision_sheet(lesson.id, user_id)
+    prompt = build_important_questions_prompt(lesson, revision_sheet, student_class)
+    print("Gemini call: Important Questions")
+    response = gemini_request(
+        "Important Questions",
+        prompt,
+        user_id=user_id,
+        lesson_id=lesson.id,
+    )
+    content_markdown = (getattr(response, "text", "") or "").strip()
+    if not content_markdown:
+        raise ValueError("The AI did not return important exam questions.")
+
+    question_set = ImportantQuestionSet(
+        user_id=user_id,
+        learning_history_id=lesson.id,
+        markdown=content_markdown,
+        source_model="gemini-2.5-flash",
+    )
+    db.session.add(question_set)
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        question_set = existing_important_question_set(lesson.id, user_id)
+    return question_set
+
+
+def get_or_create_important_question_set(lesson, user_id, student_class):
+    question_set = existing_important_question_set(lesson.id, user_id)
+    if question_set:
+        return question_set, False
+    return create_important_question_set(lesson, user_id, student_class), True
+
+
 def create_flashcard_set(lesson, user_id, student_class):
     prompt = build_flashcard_prompt(lesson, student_class)
     try:
@@ -1625,6 +1780,12 @@ def get_dashboard_stats(user_id):
         .scalar()
         or 0
     )
+    important_question_sets_generated = (
+        ImportantQuestionSet.query.with_entities(func.count(ImportantQuestionSet.id))
+        .filter(ImportantQuestionSet.user_id == user_id)
+        .scalar()
+        or 0
+    )
 
     scores = [
         numeric_score
@@ -1652,6 +1813,7 @@ def get_dashboard_stats(user_id):
         "flashcards_studied": flashcards_studied,
         "revision_sheets_generated": revision_sheets_generated,
         "mind_maps_generated": mind_maps_generated,
+        "important_question_sets_generated": important_question_sets_generated,
     }
 
 
@@ -3808,6 +3970,86 @@ def create_revision_pdf(lesson, revision_sheet):
     return buffer
 
 
+def create_important_questions_pdf(lesson, question_set):
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=letter,
+        rightMargin=0.58 * inch,
+        leftMargin=0.58 * inch,
+        topMargin=0.62 * inch,
+        bottomMargin=0.62 * inch,
+        pageCompression=0,
+    )
+    base_styles = getSampleStyleSheet()
+    styles = {
+        "Title": ParagraphStyle(
+            "Title",
+            parent=base_styles["Title"],
+            fontName="Helvetica-Bold",
+            fontSize=23,
+            leading=28,
+            textColor=colors.HexColor("#172033"),
+            alignment=TA_CENTER,
+            spaceAfter=8,
+        ),
+        "Subtitle": ParagraphStyle(
+            "Subtitle",
+            parent=base_styles["Normal"],
+            fontName="Helvetica",
+            fontSize=10,
+            leading=14,
+            textColor=colors.HexColor("#667085"),
+            alignment=TA_CENTER,
+            spaceAfter=18,
+        ),
+        "SectionHeading": ParagraphStyle(
+            "SectionHeading",
+            parent=base_styles["Heading2"],
+            fontName="Helvetica-Bold",
+            fontSize=14,
+            leading=18,
+            textColor=colors.HexColor("#3157d5"),
+            spaceBefore=8,
+            spaceAfter=6,
+        ),
+        "ReportBody": ParagraphStyle(
+            "ReportBody",
+            parent=base_styles["BodyText"],
+            fontName="Helvetica",
+            fontSize=10.5,
+            leading=15,
+            textColor=colors.HexColor("#2d3748"),
+            spaceAfter=4,
+        ),
+        "BulletLine": ParagraphStyle(
+            "BulletLine",
+            parent=base_styles["BodyText"],
+            fontName="Helvetica",
+            fontSize=10.5,
+            leading=15,
+            leftIndent=12,
+            textColor=colors.HexColor("#2d3748"),
+            spaceAfter=4,
+        ),
+    }
+    story = [
+        Paragraph("Important Exam Questions", styles["Title"]),
+        Paragraph(
+            (
+                f"Subject: {escape(lesson.subject)} &nbsp;&nbsp; | &nbsp;&nbsp; "
+                f"Book: {escape(lesson.book_name or 'N/A')} &nbsp;&nbsp; | &nbsp;&nbsp; "
+                f"Chapter: {escape(lesson.topic)}"
+            ),
+            styles["Subtitle"],
+        ),
+    ]
+    story.extend(report_text_to_flowables(question_set.markdown, styles))
+    doc.build(story, onFirstPage=add_pdf_background, onLaterPages=add_pdf_background)
+    buffer.seek(0)
+    return buffer
+
+
 TEXTBOOK_SUBJECTS = (
     "english",
     "hindi",
@@ -4459,6 +4701,7 @@ def view_learning_history(lesson_id):
         has_flashcards=has_flashcards,
         has_revision=bool(existing_revision_sheet(lesson.id, session["user_id"])),
         has_mind_map=bool(existing_mind_map(lesson.id, session["user_id"])),
+        has_important_questions=bool(existing_important_question_set(lesson.id, session["user_id"])),
     )
 
 
@@ -4493,6 +4736,7 @@ def revision(lesson_id):
         questions=decode_json_list(lesson.quiz_questions),
         has_flashcards=bool(existing_flashcard_set(lesson.id, session["user_id"])),
         has_mind_map=bool(existing_mind_map(lesson.id, session["user_id"])),
+        has_important_questions=bool(existing_important_question_set(lesson.id, session["user_id"])),
     )
 
 
@@ -4516,6 +4760,64 @@ def download_revision_pdf(lesson_id):
         mimetype="application/pdf",
         as_attachment=True,
         download_name=safe_notes_filename(f"{lesson.topic}_revision", extension="pdf"),
+    )
+
+
+@app.route("/important-questions/<int:lesson_id>")
+@login_required
+def important_questions(lesson_id):
+    lesson = get_important_questions_lesson(lesson_id, session["user_id"])
+    if not lesson:
+        abort(404)
+
+    try:
+        question_set, created = get_or_create_important_question_set(
+            lesson,
+            session["user_id"],
+            current_user()["student_class"],
+        )
+    except GeminiRequestError as error:
+        return render_gemini_error(error.error_info)
+    except ValueError as error:
+        abort(502, description=str(error))
+    except Exception:
+        abort(503, description="The important questions service is unavailable. Please try again later.")
+
+    if created:
+        flash("Important Exam Questions generated. Your exam practice set is ready.", "success")
+
+    return render_template(
+        "important_questions.html",
+        lesson=lesson,
+        question_set=question_set,
+        questions_html=markdown.markdown(question_set.markdown),
+        questions=decode_json_list(lesson.quiz_questions),
+        has_revision=bool(existing_revision_sheet(lesson.id, session["user_id"])),
+        has_mind_map=bool(existing_mind_map(lesson.id, session["user_id"])),
+        has_flashcards=bool(existing_flashcard_set(lesson.id, session["user_id"])),
+    )
+
+
+@app.route("/important-questions/<int:lesson_id>/download")
+@login_required
+def download_important_questions_pdf(lesson_id):
+    lesson = get_important_questions_lesson(lesson_id, session["user_id"])
+    question_set = get_important_question_set_for_lesson(lesson_id, session["user_id"])
+    if not lesson or not question_set:
+        abort(404)
+
+    pdf_file = create_important_questions_pdf(lesson, question_set)
+    save_downloaded_file(
+        session["user_id"],
+        "important_questions",
+        lesson.subject,
+        lesson.topic,
+    )
+    return send_file(
+        pdf_file,
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=safe_notes_filename(f"{lesson.topic}_important_questions", extension="pdf"),
     )
 
 
@@ -4549,6 +4851,7 @@ def mindmap(lesson_id):
         mind_map=mind_map,
         nodes=payload["nodes"],
         has_flashcards=bool(existing_flashcard_set(lesson.id, session["user_id"])),
+        has_important_questions=bool(existing_important_question_set(lesson.id, session["user_id"])),
         questions=decode_json_list(lesson.quiz_questions),
     )
 
