@@ -115,9 +115,38 @@
                         <span>Saved Notes</span>
                         <strong>{{ stats.saved_notes }}</strong>
                     </article>
+                    <article>
+                        <span>Total XP</span>
+                        <strong>{{ stats.total_xp }}</strong>
+                    </article>
+                    <article>
+                        <span>Level</span>
+                        <strong>{{ stats.level }}</strong>
+                    </article>
+                    <article>
+                        <span>Badges Unlocked</span>
+                        <strong>{{ stats.badges_unlocked }}</strong>
+                    </article>
+                    <article>
+                        <span>Achievements</span>
+                        <strong>{{ stats.gamification.achievements_unlocked }}</strong>
+                    </article>
                 </div>
             </section>
         </div>
+
+        <section class="dashboard-panel">
+            <div class="dashboard-section-heading">
+                <div>
+                    <span class="eyebrow">Gamification</span>
+                    <h2>XP Progress</h2>
+                </div>
+                <strong>{{ stats.gamification.level.progress_percentage }}%</strong>
+            </div>
+            <div class="xp-progress-track" aria-label="Developer user XP progress">
+                <span style="width: {{ stats.gamification.level.progress_percentage }}%"></span>
+            </div>
+        </section>
 
         <section class="dashboard-panel">
             <div class="dashboard-section-heading">

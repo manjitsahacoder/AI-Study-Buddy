@@ -1408,6 +1408,17 @@ button:hover,
     box-shadow: var(--soft-shadow);
 }
 
+.profile-gamification-card {
+    display: grid;
+    gap: 16px;
+    margin-top: 18px;
+    padding: clamp(18px, 3vw, 26px);
+    border: 1px solid rgba(49, 87, 213, 0.18);
+    border-radius: 8px;
+    background: rgba(255, 253, 248, 0.95);
+    box-shadow: var(--soft-shadow);
+}
+
 .profile-card-header {
     display: flex;
     align-items: flex-start;
@@ -1472,6 +1483,41 @@ button:hover,
     border: 1px dashed rgba(49, 87, 213, 0.28);
     border-radius: 8px;
     background: rgba(49, 87, 213, 0.05);
+}
+
+.profile-future-card.completed {
+    border-style: solid;
+    border-color: rgba(31, 122, 77, 0.24);
+    background: rgba(31, 122, 77, 0.08);
+}
+
+.profile-gamification-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.profile-gamification-grid article {
+    min-width: 0;
+    padding: 14px;
+    border: 1px solid rgba(49, 87, 213, 0.13);
+    border-radius: 8px;
+    background: rgba(49, 87, 213, 0.06);
+}
+
+.profile-gamification-grid span {
+    display: block;
+    margin-bottom: 6px;
+    color: var(--muted);
+    font-size: 0.78rem;
+    font-weight: 900;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+}
+
+.profile-gamification-grid strong {
+    color: var(--ink);
+    font-size: 1.45rem;
 }
 
 .profile-future-card h3 {
@@ -1992,7 +2038,7 @@ body.dashboard-page #theme-toggle {
 }
 
 .developer-users-table {
-    min-width: 1180px;
+    min-width: 1420px;
 }
 
 .developer-users-table a {
@@ -2155,7 +2201,9 @@ body.dashboard-page #theme-toggle {
 }
 
 .learning-progress-track,
-.weekly-summary-track {
+.weekly-summary-track,
+.xp-progress-track,
+.challenge-progress-track {
     height: 13px;
     overflow: hidden;
     border-radius: 999px;
@@ -2164,12 +2212,123 @@ body.dashboard-page #theme-toggle {
 }
 
 .learning-progress-track span,
-.weekly-summary-track span {
+.weekly-summary-track span,
+.xp-progress-track span,
+.challenge-progress-track span {
     display: block;
     height: 100%;
     border-radius: inherit;
     background: linear-gradient(90deg, var(--primary), var(--teal), var(--green));
     animation: progressGrow 0.78s var(--ease-premium) both;
+}
+
+.gamification-panel,
+.daily-challenge-panel {
+    display: grid;
+    gap: 16px;
+}
+
+.gamification-level-card {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 18px;
+}
+
+.gamification-level-card h2 {
+    margin-bottom: 8px;
+}
+
+.gamification-level-card p {
+    margin-bottom: 0;
+    font-weight: 800;
+}
+
+.gamification-level-card > strong {
+    color: var(--primary);
+    font-size: clamp(2rem, 4vw, 3.2rem);
+    line-height: 1;
+}
+
+.xp-award-grid,
+.daily-challenge-grid,
+.achievement-progress-grid {
+    display: grid;
+    gap: 12px;
+}
+
+.xp-award-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.xp-award-grid span {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    min-width: 0;
+    min-height: 44px;
+    padding: 10px 12px;
+    border: 1px solid rgba(49, 87, 213, 0.13);
+    border-radius: 8px;
+    color: var(--muted);
+    background: rgba(49, 87, 213, 0.06);
+    font-size: 0.86rem;
+    font-weight: 900;
+}
+
+.xp-award-grid strong {
+    color: var(--primary);
+}
+
+.daily-challenge-grid,
+.achievement-progress-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.achievement-progress-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.daily-challenge-card,
+.achievement-progress-card {
+    display: grid;
+    gap: 12px;
+    min-width: 0;
+    min-height: 142px;
+    padding: 16px;
+    border: 1px solid rgba(49, 87, 213, 0.14);
+    border-radius: 8px;
+    background: rgba(49, 87, 213, 0.055);
+}
+
+.daily-challenge-card.completed,
+.achievement-progress-card.completed {
+    border-color: rgba(31, 122, 77, 0.24);
+    background: rgba(31, 122, 77, 0.08);
+}
+
+.daily-challenge-card strong,
+.achievement-progress-card strong {
+    display: block;
+    margin-bottom: 6px;
+    color: var(--ink);
+}
+
+.daily-challenge-card span,
+.achievement-progress-card span {
+    color: var(--muted);
+    font-weight: 800;
+}
+
+.daily-challenge-card small,
+.achievement-progress-card small {
+    color: var(--primary);
+    font-weight: 900;
+}
+
+.challenge-progress-track {
+    height: 9px;
 }
 
 .dashboard-progress-card p,
@@ -6521,6 +6680,27 @@ textarea:focus {
     background: rgba(134, 161, 255, 0.14);
 }
 
+.dark-mode .profile-gamification-card,
+.dark-mode .daily-challenge-card,
+.dark-mode .achievement-progress-card,
+.dark-mode .xp-award-grid span,
+.dark-mode .profile-gamification-grid article {
+    border-color: rgba(134, 161, 255, 0.18);
+    background: rgba(134, 161, 255, 0.08);
+}
+
+.dark-mode .daily-challenge-card.completed,
+.dark-mode .achievement-progress-card.completed,
+.dark-mode .profile-future-card.completed {
+    border-color: rgba(92, 211, 153, 0.24);
+    background: rgba(92, 211, 153, 0.1);
+}
+
+.dark-mode .xp-progress-track,
+.dark-mode .challenge-progress-track {
+    background: rgba(134, 161, 255, 0.13);
+}
+
 .dark-mode .dashboard-topbar,
 .dark-mode .dashboard-panel,
 .dark-mode .student-sidebar,
@@ -6823,6 +7003,10 @@ textarea:focus {
     .dashboard-stat-grid,
     .dashboard-hero-grid,
     .dashboard-insight-grid,
+    .xp-award-grid,
+    .daily-challenge-grid,
+    .achievement-progress-grid,
+    .profile-gamification-grid,
     .exhibition-demo-grid,
     .exhibition-flow-ribbon,
     .rbac-stat-grid,
@@ -7016,6 +7200,10 @@ textarea:focus {
     .dashboard-hero-grid,
     .dashboard-insight-grid,
     .weekly-summary-grid,
+    .xp-award-grid,
+    .daily-challenge-grid,
+    .achievement-progress-grid,
+    .profile-gamification-grid,
     .exhibition-demo-grid,
     .exhibition-flow-ribbon,
     .rbac-stat-grid,

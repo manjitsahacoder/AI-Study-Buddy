@@ -924,6 +924,107 @@ Grade: A
         self.assertIn("Open flashcards", page)
         self.assertIn("/flashcards/", page)
 
+    def test_gamification_summary_calculates_local_xp_levels_and_badges(self):
+        self.register_user()
+        self.login_user()
+
+        with app_module.app.app_context():
+            user = User.query.filter_by(username="asha").first()
+            lesson_one_id = app_module.save_learning_history(
+                user.id,
+                "Science",
+                "Biology",
+                "Plants",
+                "Plants make food.",
+                {},
+                ["Q1"],
+            )
+            lesson_two_id = app_module.save_learning_history(
+                user.id,
+                "Science",
+                "Biology",
+                "Cells",
+                "Cells are basic units of life.",
+                {},
+                ["Q1"],
+            )
+            app_module.save_quiz_history(
+                "Asha Student",
+                "8",
+                "Science",
+                "Plants",
+                "8/10",
+                "A",
+                ["Q1"],
+                ["A1"],
+                "{}",
+                user_id=user.id,
+            )
+            db.session.add_all(
+                [
+                    RevisionSheet(
+                        user_id=user.id,
+                        learning_history_id=lesson_one_id,
+                        content_markdown="# Quick Revision",
+                        source_model="local-test",
+                    ),
+                    MindMap(
+                        user_id=user.id,
+                        learning_history_id=lesson_one_id,
+                        map_json="{}",
+                        source_model="local-test",
+                    ),
+                    FlashcardSet(
+                        user_id=user.id,
+                        learning_history_id=lesson_two_id,
+                        source_model="local-test",
+                    ),
+                    TutorLesson(
+                        user_id=user.id,
+                        learning_history_id=lesson_two_id,
+                        name="Asha Student",
+                        student_class="8",
+                        subject="Science",
+                        book_name="Biology",
+                        chapter="Cells",
+                    ),
+                ]
+            )
+            db.session.commit()
+
+            summary = app_module.get_gamification_summary(user.id)
+
+        self.assertEqual(summary["total_xp"], 105)
+        self.assertEqual(summary["level"]["level"], 2)
+        self.assertEqual(summary["level"]["progress_percentage"], 5)
+        self.assertEqual(summary["counts"]["notes"], 2)
+        self.assertEqual(summary["counts"]["revision"], 1)
+        self.assertEqual(summary["counts"]["mind_map"], 1)
+        self.assertEqual(summary["counts"]["flashcards"], 1)
+        self.assertEqual(summary["counts"]["tutor"], 1)
+        self.assertEqual(summary["counts"]["quiz"], 1)
+        self.assertTrue(
+            next(badge for badge in summary["badges"] if badge["title"] == "All-round Learner")["unlocked"]
+        )
+
+        with patch("app.gemini_request") as gemini_request:
+            dashboard_response = self.client.get("/dashboard")
+            profile_response = self.client.get("/profile")
+
+        self.assertFalse(gemini_request.called)
+        self.assertEqual(dashboard_response.status_code, 200)
+        self.assertEqual(profile_response.status_code, 200)
+        dashboard_page = dashboard_response.get_data(as_text=True)
+        profile_page = profile_response.get_data(as_text=True)
+        self.assertIn("105 XP earned", dashboard_page)
+        self.assertIn("Level 2", dashboard_page)
+        self.assertIn("Daily Challenges", dashboard_page)
+        self.assertIn("Notes <strong>+10</strong>", dashboard_page)
+        self.assertIn("All-round Learner", dashboard_page)
+        self.assertIn("Milestone Progress", dashboard_page)
+        self.assertIn("Level 2 &middot; 105 XP", profile_page)
+        self.assertIn("Badges Unlocked", profile_page)
+
     def test_rbac_panels_require_login(self):
         for path in ["/developer", "/developer/users", "/developer/user/1", "/support", "/qa"]:
             with self.subTest(path=path):
@@ -982,6 +1083,11 @@ Grade: A
         self.assertIn("Total Notes Saved", page)
         self.assertIn("Total Downloads", page)
         self.assertIn("Active Users Today", page)
+        self.assertIn("Total XP Awarded", page)
+        self.assertIn("Highest Level", page)
+        self.assertIn("Badges Unlocked", page)
+        self.assertIn("Average XP/User", page)
+        self.assertIn(">35</strong>", page)
         self.assertIn("Recent Registrations", page)
         self.assertIn("Manage Users", page)
         self.assertIn("AI Provider Status", page)
@@ -1127,6 +1233,10 @@ Grade: A
         self.assertIn("90%", page)
         self.assertIn("Downloads", page)
         self.assertIn("Saved Notes", page)
+        self.assertIn("Total XP", page)
+        self.assertIn("Level", page)
+        self.assertIn("Badges Unlocked", page)
+        self.assertIn("XP Progress", page)
         self.assertIn("Recent Activity", page)
         self.assertIn("Saved Note", page)
         self.assertIn("Quiz", page)
@@ -1364,9 +1474,11 @@ Grade: A
         self.assertIn("Take Quiz", page)
         self.assertIn("No learning activity yet.", page)
         self.assertIn("Performance Analytics", page)
-        self.assertIn("Coming Soon", page)
-        self.assertIn("AI Recommendations", page)
-        self.assertIn("Study Planner", page)
+        self.assertIn("Gamification progress", page)
+        self.assertIn("0 XP earned", page)
+        self.assertIn("Daily Challenges", page)
+        self.assertIn("Learning Badges", page)
+        self.assertIn("Milestone Progress", page)
         self.assertIn("Student", page)
         self.assertIn("role-student", page)
         self.assertIn("Recommended For You", page)
@@ -2674,7 +2786,7 @@ Q5. What is question five?
             (1, "performance_report", "Biology", "Plants", "8/10", "A"),
         )
 
-    def test_profile_page_shows_account_and_future_sections(self):
+    def test_profile_page_shows_account_and_gamification_sections(self):
         self.register_user()
         self.login_user()
 
@@ -2693,9 +2805,11 @@ Q5. What is question five?
         self.assertIn("Student", page)
         self.assertIn("role-student", page)
         self.assertIn("Account Created", page)
-        self.assertIn("Future Achievement Section", page)
-        self.assertIn("Future Study Streak", page)
-        self.assertIn("Future AI Usage Statistics", page)
+        self.assertIn("Gamification", page)
+        self.assertIn("Level 1 &middot; 0 XP", page)
+        self.assertIn("Study Streak", page)
+        self.assertIn("Badges Unlocked", page)
+        self.assertIn("XP Rookie", page)
         self.assertIn("Edit Profile", page)
 
     def test_settings_profile_update_changes_account_fields(self):

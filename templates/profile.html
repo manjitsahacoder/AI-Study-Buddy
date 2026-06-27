@@ -68,19 +68,41 @@
         </dl>
     </section>
 
-    <section class="profile-future-grid" aria-label="Future profile features">
-        <article class="profile-future-card">
-            <h3>Future Achievement Section</h3>
-            <p>Badges and learning milestones will appear here later.</p>
+    <section class="profile-gamification-card">
+        <div class="gamification-level-card">
+            <div>
+                <span class="eyebrow">Gamification</span>
+                <h2>Level {{ gamification.level.level }} &middot; {{ gamification.total_xp }} XP</h2>
+                <p>{{ gamification.level.remaining_xp }} XP to Level {{ gamification.level.level + 1 }}</p>
+            </div>
+            <strong>{{ gamification.level.progress_percentage }}%</strong>
+        </div>
+        <div class="xp-progress-track" aria-label="Profile XP progress">
+            <span style="width: {{ gamification.level.progress_percentage }}%"></span>
+        </div>
+        <div class="profile-gamification-grid">
+            <article>
+                <span>Study Streak</span>
+                <strong>{{ gamification.study_streak }}</strong>
+            </article>
+            <article>
+                <span>Badges Unlocked</span>
+                <strong>{{ gamification.badges_unlocked }}</strong>
+            </article>
+            <article>
+                <span>Achievements</span>
+                <strong>{{ gamification.achievements_unlocked }}</strong>
+            </article>
+        </div>
+    </section>
+
+    <section class="profile-future-grid" aria-label="Profile badges and achievements">
+        {% for badge in gamification.badges[:3] %}
+        <article class="profile-future-card {% if badge.unlocked %}completed{% endif %}">
+            <h3>{{ badge.title }}</h3>
+            <p>{{ badge.description }}</p>
         </article>
-        <article class="profile-future-card">
-            <h3>Future Study Streak</h3>
-            <p>Daily study streaks and consistency tracking will appear here later.</p>
-        </article>
-        <article class="profile-future-card">
-            <h3>Future AI Usage Statistics</h3>
-            <p>AI notes, quizzes, and report activity will appear here later.</p>
-        </article>
+        {% endfor %}
     </section>
 
     {% include 'components/footer.html' %}

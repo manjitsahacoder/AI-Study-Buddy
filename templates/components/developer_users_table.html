@@ -18,6 +18,9 @@
                     <th>Total Topics Studied</th>
                     <th>Total Quizzes Attempted</th>
                     <th>Average Quiz Score</th>
+                    <th>Total XP</th>
+                    <th>Level</th>
+                    <th>Badges</th>
                     <th>Last Login</th>
                 </tr>
             </thead>
@@ -34,6 +37,9 @@
                     <td>{{ rollup.topics_studied }}</td>
                     <td>{{ rollup.quizzes_attempted }}</td>
                     <td><strong>{{ rollup.average_quiz_score }}</strong></td>
+                    <td><strong>{{ rollup.total_xp }}</strong></td>
+                    <td>{{ rollup.level }}</td>
+                    <td>{{ rollup.badges_unlocked }}</td>
                     <td>Not tracked</td>
                 </tr>
                 {% endfor %}

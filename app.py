@@ -150,6 +150,15 @@ SPECIAL_ROLE_ACCOUNTS = {
 
 WEBSITE_VERSION = os.environ.get("WEBSITE_VERSION", "AI Study Buddy 1.0")
 DEVELOPER_USERS_PER_PAGE = 25
+GAMIFICATION_XP_VALUES = {
+    "notes": 10,
+    "revision": 15,
+    "mind_map": 20,
+    "flashcards": 15,
+    "tutor": 10,
+    "quiz": 25,
+}
+GAMIFICATION_LEVEL_XP = 100
 LEARN_BUSY_MESSAGE = "AI Study Buddy is temporarily busy. Please try again in a moment."
 LEARN_MAX_TEXTBOOK_CONTEXT_CHARS = int(os.environ.get("LEARN_MAX_TEXTBOOK_CONTEXT_CHARS", "7000"))
 LEARN_MAX_PDF_TEXT_CHARS = int(os.environ.get("LEARN_MAX_PDF_TEXT_CHARS", "45000"))
@@ -2157,16 +2166,9 @@ def get_dashboard_stats(user_id):
         if numeric_score is not None
     ]
     average_score = f"{sum(scores) / len(scores):.1f}/10" if scores else "0"
-    study_streak = calculate_study_streak(
-        lesson_dates + [row.created_at for row in quiz_rows]
-    )
-    achievements_count = (
-        1
-        + (1 if topics_studied else 0)
-        + (1 if quizzes_attempted else 0)
-        + (1 if downloaded_count else 0)
-        + (1 if study_streak >= 7 else 0)
-    )
+    gamification = get_gamification_summary(user_id)
+    study_streak = gamification["study_streak"]
+    achievements_count = gamification["achievements_unlocked"]
 
     return {
         "topics_studied": topics_studied,
@@ -2178,6 +2180,9 @@ def get_dashboard_stats(user_id):
         "revision_sheets_generated": revision_sheets_generated,
         "mind_maps_generated": mind_maps_generated,
         "important_question_sets_generated": important_question_sets_generated,
+        "total_xp": gamification["total_xp"],
+        "level": gamification["level"]["level"],
+        "badges_unlocked": gamification["badges_unlocked"],
     }
 
 
@@ -2239,6 +2244,282 @@ def count_user_rows(model, user_id):
         .scalar()
         or 0
     )
+
+
+def count_user_rows_between(model, user_id, start, end):
+    return (
+        model.query.with_entities(func.count(model.id))
+        .filter(
+            model.user_id == user_id,
+            model.created_at >= start,
+            model.created_at < end,
+        )
+        .scalar()
+        or 0
+    )
+
+
+def get_gamification_counts(user_id):
+    return {
+        "notes": count_user_rows(LearningHistory, user_id),
+        "revision": count_user_rows(RevisionSheet, user_id),
+        "mind_map": count_user_rows(MindMap, user_id),
+        "flashcards": count_user_rows(FlashcardSet, user_id),
+        "tutor": count_user_rows(TutorLesson, user_id),
+        "quiz": count_user_rows(QuizHistory, user_id),
+    }
+
+
+def calculate_xp_from_counts(counts):
+    return sum(
+        counts.get(activity, 0) * xp
+        for activity, xp in GAMIFICATION_XP_VALUES.items()
+    )
+
+
+def gamification_level(total_xp):
+    level = (total_xp // GAMIFICATION_LEVEL_XP) + 1
+    current_level_start = (level - 1) * GAMIFICATION_LEVEL_XP
+    next_level_xp = level * GAMIFICATION_LEVEL_XP
+    current_xp = total_xp - current_level_start
+    return {
+        "level": level,
+        "total_xp": total_xp,
+        "current_xp": current_xp,
+        "level_xp": GAMIFICATION_LEVEL_XP,
+        "next_level_xp": next_level_xp,
+        "progress_percentage": int((current_xp / GAMIFICATION_LEVEL_XP) * 100),
+        "remaining_xp": max(0, next_level_xp - total_xp),
+    }
+
+
+def get_gamification_activity_dates(user_id):
+    activity_dates = []
+    for model in (LearningHistory, RevisionSheet, MindMap, FlashcardSet, TutorLesson, QuizHistory):
+        activity_dates.extend(
+            row.created_at
+            for row in model.query.with_entities(model.created_at)
+            .filter_by(user_id=user_id)
+            .all()
+        )
+    return activity_dates
+
+
+def build_gamification_badges(counts, total_xp, study_streak):
+    return [
+        {
+            "icon": "&#127775;",
+            "title": "XP Rookie",
+            "description": "Earn your first XP.",
+            "unlocked": total_xp > 0,
+        },
+        {
+            "icon": "&#128218;",
+            "title": "Note Builder",
+            "description": "Save 3 notes.",
+            "unlocked": counts["notes"] >= 3,
+        },
+        {
+            "icon": "&#128221;",
+            "title": "Quiz Climber",
+            "description": "Complete 3 quizzes.",
+            "unlocked": counts["quiz"] >= 3,
+        },
+        {
+            "icon": "&#129504;",
+            "title": "Mind Mapper",
+            "description": "Create your first mind map.",
+            "unlocked": counts["mind_map"] >= 1,
+        },
+        {
+            "icon": "&#127183;",
+            "title": "Flashcard Starter",
+            "description": "Generate flashcards for a lesson.",
+            "unlocked": counts["flashcards"] >= 1,
+        },
+        {
+            "icon": "&#128293;",
+            "title": "Streak Spark",
+            "description": "Reach a 3-day study streak.",
+            "unlocked": study_streak >= 3,
+        },
+        {
+            "icon": "&#127942;",
+            "title": "Level 3 Scholar",
+            "description": "Reach Level 3.",
+            "unlocked": total_xp >= GAMIFICATION_LEVEL_XP * 2,
+        },
+        {
+            "icon": "&#9989;",
+            "title": "All-round Learner",
+            "description": "Use every XP activity once.",
+            "unlocked": all(counts.get(activity, 0) > 0 for activity in GAMIFICATION_XP_VALUES),
+        },
+    ]
+
+
+def build_gamification_achievements(counts, total_xp, study_streak):
+    achievements = [
+        ("First Notes", "Save a lesson note.", counts["notes"], 1),
+        ("Revision Ready", "Generate a quick revision sheet.", counts["revision"], 1),
+        ("Visual Thinker", "Create a mind map.", counts["mind_map"], 1),
+        ("Card Collector", "Generate flashcards.", counts["flashcards"], 1),
+        ("Tutor Time", "Start an AI Tutor lesson.", counts["tutor"], 1),
+        ("Quiz Courage", "Complete a quiz.", counts["quiz"], 1),
+        ("XP 250", "Earn 250 XP.", total_xp, 250),
+        ("7-Day Streak", "Study across seven days.", study_streak, 7),
+    ]
+    return [
+        {
+            "title": title,
+            "description": description,
+            "progress": min(progress, target),
+            "target": target,
+            "percentage": int((min(progress, target) / target) * 100) if target else 0,
+            "unlocked": progress >= target,
+        }
+        for title, description, progress, target in achievements
+    ]
+
+
+def get_today_gamification_counts(user_id):
+    today_start, tomorrow_start = utc_day_range()
+    return {
+        "notes": count_user_rows_between(LearningHistory, user_id, today_start, tomorrow_start),
+        "revision": count_user_rows_between(RevisionSheet, user_id, today_start, tomorrow_start),
+        "mind_map": count_user_rows_between(MindMap, user_id, today_start, tomorrow_start),
+        "flashcards": count_user_rows_between(FlashcardSet, user_id, today_start, tomorrow_start),
+        "tutor": count_user_rows_between(TutorLesson, user_id, today_start, tomorrow_start),
+        "tutor_messages": count_user_rows_between(TutorMessage, user_id, today_start, tomorrow_start),
+        "quiz": count_user_rows_between(QuizHistory, user_id, today_start, tomorrow_start),
+    }
+
+
+def build_daily_challenges(user_id):
+    today_counts = get_today_gamification_counts(user_id)
+    available_challenges = [
+        {
+            "key": "notes",
+            "title": "Save one lesson",
+            "description": "+10 XP when you create notes today.",
+            "progress": today_counts["notes"],
+            "target": 1,
+            "xp": GAMIFICATION_XP_VALUES["notes"],
+        },
+        {
+            "key": "quiz",
+            "title": "Complete one quiz",
+            "description": "+25 XP for testing what you remember.",
+            "progress": today_counts["quiz"],
+            "target": 1,
+            "xp": GAMIFICATION_XP_VALUES["quiz"],
+        },
+        {
+            "key": "revision",
+            "title": "Generate quick revision",
+            "description": "+15 XP for a focused study sheet.",
+            "progress": today_counts["revision"],
+            "target": 1,
+            "xp": GAMIFICATION_XP_VALUES["revision"],
+        },
+        {
+            "key": "mind_map",
+            "title": "Build a mind map",
+            "description": "+20 XP for visual learning.",
+            "progress": today_counts["mind_map"],
+            "target": 1,
+            "xp": GAMIFICATION_XP_VALUES["mind_map"],
+        },
+        {
+            "key": "flashcards",
+            "title": "Make flashcards",
+            "description": "+15 XP for spaced revision.",
+            "progress": today_counts["flashcards"],
+            "target": 1,
+            "xp": GAMIFICATION_XP_VALUES["flashcards"],
+        },
+        {
+            "key": "tutor",
+            "title": "Open a tutor session",
+            "description": "+10 XP for guided practice.",
+            "progress": max(today_counts["tutor"], today_counts["tutor_messages"]),
+            "target": 1,
+            "xp": GAMIFICATION_XP_VALUES["tutor"],
+        },
+    ]
+    start_index = datetime.now(timezone.utc).date().toordinal() % len(available_challenges)
+    selected = [
+        available_challenges[(start_index + offset) % len(available_challenges)]
+        for offset in range(3)
+    ]
+    for challenge in selected:
+        challenge["completed"] = challenge["progress"] >= challenge["target"]
+        challenge["percentage"] = min(100, int((challenge["progress"] / challenge["target"]) * 100))
+    return selected
+
+
+def get_gamification_summary(user_id):
+    counts = get_gamification_counts(user_id)
+    total_xp = calculate_xp_from_counts(counts)
+    study_streak = calculate_study_streak(get_gamification_activity_dates(user_id))
+    badges = build_gamification_badges(counts, total_xp, study_streak)
+    achievements = build_gamification_achievements(counts, total_xp, study_streak)
+    return {
+        "counts": counts,
+        "xp_values": GAMIFICATION_XP_VALUES,
+        "total_xp": total_xp,
+        "level": gamification_level(total_xp),
+        "study_streak": study_streak,
+        "badges": badges,
+        "badges_unlocked": sum(1 for badge in badges if badge["unlocked"]),
+        "achievements": achievements,
+        "achievements_unlocked": sum(1 for achievement in achievements if achievement["unlocked"]),
+        "daily_challenges": build_daily_challenges(user_id),
+    }
+
+
+def get_gamification_rollups(user_ids):
+    rollups = {
+        user_id: {
+            "counts": {activity: 0 for activity in GAMIFICATION_XP_VALUES},
+            "total_xp": 0,
+            "level": 1,
+            "badges_unlocked": 0,
+        }
+        for user_id in user_ids
+    }
+    if not user_ids:
+        return rollups
+
+    model_activity_pairs = (
+        (LearningHistory, "notes"),
+        (RevisionSheet, "revision"),
+        (MindMap, "mind_map"),
+        (FlashcardSet, "flashcards"),
+        (TutorLesson, "tutor"),
+        (QuizHistory, "quiz"),
+    )
+    for model, activity in model_activity_pairs:
+        for user_id, total in (
+            model.query.with_entities(model.user_id, func.count(model.id))
+            .filter(model.user_id.in_(user_ids))
+            .group_by(model.user_id)
+            .all()
+        ):
+            if user_id in rollups:
+                rollups[user_id]["counts"][activity] = total
+
+    for user_id, rollup in rollups.items():
+        total_xp = calculate_xp_from_counts(rollup["counts"])
+        study_streak = calculate_study_streak(get_gamification_activity_dates(user_id))
+        rollup["total_xp"] = total_xp
+        rollup["level"] = gamification_level(total_xp)["level"]
+        rollup["badges_unlocked"] = sum(
+            1
+            for badge in build_gamification_badges(rollup["counts"], total_xp, study_streak)
+            if badge["unlocked"]
+        )
+    return rollups
 
 
 def performance_recent_activity(lesson_rows, quiz_rows, tutor_rows=None, limit=10):
@@ -2628,9 +2909,22 @@ def get_developer_panel_stats():
         "learning_sessions": LearningSession.query.count(),
         "quiz_history": QuizHistory.query.count(),
         "downloaded_files": DownloadedFile.query.count(),
+        "revision_sheets": RevisionSheet.query.count(),
+        "mind_maps": MindMap.query.count(),
+        "flashcard_sets": FlashcardSet.query.count(),
+        "tutor_lessons": TutorLesson.query.count(),
     }
     active_user_ids = set()
-    for model in (LearningHistory, LearningSession, QuizHistory, DownloadedFile):
+    for model in (
+        LearningHistory,
+        LearningSession,
+        RevisionSheet,
+        MindMap,
+        FlashcardSet,
+        TutorLesson,
+        QuizHistory,
+        DownloadedFile,
+    ):
         active_user_ids.update(
             user_id
             for (user_id,) in model.query.with_entities(model.user_id)
@@ -2648,6 +2942,11 @@ def get_developer_panel_stats():
         .limit(10)
         .all()
     )
+    user_ids = [user_id for (user_id,) in User.query.with_entities(User.id).all()]
+    gamification_rollups = get_gamification_rollups(user_ids)
+    total_xp_awarded = sum(rollup["total_xp"] for rollup in gamification_rollups.values())
+    highest_level = max((rollup["level"] for rollup in gamification_rollups.values()), default=1)
+    average_xp = round(total_xp_awarded / len(user_ids), 1) if user_ids else 0
 
     return {
         "total_users": table_counts["users"],
@@ -2661,6 +2960,10 @@ def get_developer_panel_stats():
         "total_notes_saved": table_counts["learning_history"],
         "total_downloads": table_counts["downloaded_files"],
         "active_users_today": len(active_user_ids),
+        "total_xp_awarded": total_xp_awarded,
+        "highest_level": highest_level,
+        "average_xp_per_user": average_xp,
+        "badges_unlocked": sum(rollup["badges_unlocked"] for rollup in gamification_rollups.values()),
         "recent_registrations": recent_registrations,
         "ai_provider_status": {
             "gemini": "Configured" if GEMINI_API_KEY else "Missing API key",
@@ -2748,6 +3051,9 @@ def empty_developer_rollup():
         "lowest_score": "No quizzes",
         "downloads": 0,
         "saved_notes": 0,
+        "total_xp": 0,
+        "level": 1,
+        "badges_unlocked": 0,
     }
 
 
@@ -2804,6 +3110,12 @@ def developer_user_rollups(user_ids):
         .all()
     ):
         rollups[user_id]["downloads"] = total
+
+    gamification_rollups = get_gamification_rollups(user_ids)
+    for user_id, gamification in gamification_rollups.items():
+        rollups[user_id]["total_xp"] = gamification["total_xp"]
+        rollups[user_id]["level"] = gamification["level"]
+        rollups[user_id]["badges_unlocked"] = gamification["badges_unlocked"]
 
     return rollups
 
@@ -2868,19 +3180,9 @@ def get_developer_user_detail(user_id):
         return None
 
     rollup = developer_user_rollups([user.id])[user.id]
-    learning_dates = [
-        row.created_at
-        for row in LearningHistory.query.with_entities(LearningHistory.created_at)
-        .filter_by(user_id=user.id)
-        .all()
-    ]
-    quiz_dates = [
-        row.created_at
-        for row in QuizHistory.query.with_entities(QuizHistory.created_at)
-        .filter_by(user_id=user.id)
-        .all()
-    ]
-    rollup["study_streak"] = calculate_study_streak(learning_dates + quiz_dates)
+    gamification = get_gamification_summary(user.id)
+    rollup["study_streak"] = gamification["study_streak"]
+    rollup["gamification"] = gamification
 
     return {
         "user": user,
@@ -5333,12 +5635,14 @@ def toggle_exhibition_mode():
 def dashboard():
     account = current_user()
     stats = get_dashboard_stats(account["id"])
+    gamification = get_gamification_summary(account["id"])
     continue_lesson = get_continue_lesson(account["id"])
     weekly_summary = get_weekly_study_summary(account["id"])
     return render_template(
         "dashboard.html",
         account=account,
         stats=stats,
+        gamification=gamification,
         daily_quote=dashboard_daily_quote(),
         continue_lesson=continue_lesson,
         recent_tutor_conversation=get_recent_tutor_conversation(account["id"]),
@@ -5346,7 +5650,8 @@ def dashboard():
         weekly_summary=weekly_summary,
         today_recommendation=get_today_recommendation(stats, continue_lesson),
         recent_activity=get_recent_learning_activity(account["id"]),
-        achievements=dashboard_achievements(stats),
+        achievements=gamification["badges"],
+        achievement_progress=gamification["achievements"],
         recommendations=get_smart_recommendations(account["id"], stats, continue_lesson),
     )
 
@@ -5436,7 +5741,12 @@ def qa_panel():
 @app.route("/profile")
 @login_required
 def profile():
-    return render_template("profile.html", account=current_user())
+    account = current_user()
+    return render_template(
+        "profile.html",
+        account=account,
+        gamification=get_gamification_summary(account["id"]),
+    )
 
 
 @app.route("/learning-history")

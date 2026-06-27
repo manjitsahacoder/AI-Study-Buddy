@@ -63,7 +63,43 @@
             </article>
         </section>
 
+        <section class="dashboard-panel gamification-panel" aria-label="Gamification progress">
+            <div class="gamification-level-card">
+                <div>
+                    <span class="eyebrow">Level {{ gamification.level.level }}</span>
+                    <h2>{{ gamification.total_xp }} XP earned</h2>
+                    <p>{{ gamification.level.remaining_xp }} XP to Level {{ gamification.level.level + 1 }}</p>
+                </div>
+                <strong>{{ gamification.level.progress_percentage }}%</strong>
+            </div>
+            <div class="xp-progress-track" aria-label="XP progress to next level">
+                <span style="width: {{ gamification.level.progress_percentage }}%"></span>
+            </div>
+            <div class="xp-award-grid" aria-label="XP award values">
+                <span>Notes <strong>+{{ gamification.xp_values.notes }}</strong></span>
+                <span>Revision <strong>+{{ gamification.xp_values.revision }}</strong></span>
+                <span>Mind Map <strong>+{{ gamification.xp_values.mind_map }}</strong></span>
+                <span>Flashcards <strong>+{{ gamification.xp_values.flashcards }}</strong></span>
+                <span>Tutor <strong>+{{ gamification.xp_values.tutor }}</strong></span>
+                <span>Quiz <strong>+{{ gamification.xp_values.quiz }}</strong></span>
+            </div>
+        </section>
+
         <section class="dashboard-stat-grid" aria-label="Learning statistics">
+            <article class="dashboard-stat-card">
+                <span aria-hidden="true">&#127942;</span>
+                <div>
+                    <p>Level</p>
+                    <strong>{{ gamification.level.level }}</strong>
+                </div>
+            </article>
+            <article class="dashboard-stat-card">
+                <span aria-hidden="true">&#9889;</span>
+                <div>
+                    <p>Total XP</p>
+                    <strong>{{ gamification.total_xp }}</strong>
+                </div>
+            </article>
             <article class="dashboard-stat-card">
                 <span aria-hidden="true">&#128218;</span>
                 <div>
@@ -88,7 +124,7 @@
             <article class="dashboard-stat-card">
                 <span aria-hidden="true">&#127942;</span>
                 <div>
-                    <p>Achievements</p>
+                    <p>Badges</p>
                     <strong>{{ stats.achievements }}</strong>
                 </div>
             </article>
@@ -127,6 +163,29 @@
                     <strong>{{ stats.important_question_sets_generated }}</strong>
                 </div>
             </article>
+        </section>
+
+        <section class="dashboard-panel daily-challenge-panel">
+            <div class="dashboard-section-heading">
+                <div>
+                    <span class="eyebrow">Daily Challenges</span>
+                    <h2>Today's XP goals</h2>
+                </div>
+            </div>
+            <div class="daily-challenge-grid">
+                {% for challenge in gamification.daily_challenges %}
+                <article class="daily-challenge-card {% if challenge.completed %}completed{% endif %}">
+                    <div>
+                        <strong>{{ challenge.title }}</strong>
+                        <span>{{ challenge.description }}</span>
+                    </div>
+                    <small>{{ challenge.progress }}/{{ challenge.target }}</small>
+                    <div class="challenge-progress-track">
+                        <span style="width: {{ challenge.percentage }}%"></span>
+                    </div>
+                </article>
+                {% endfor %}
+            </div>
         </section>
 
         <section class="dashboard-panel continue-dashboard-panel">
@@ -280,7 +339,7 @@
         <section class="dashboard-panel">
             <div class="dashboard-section-heading">
                 <div>
-                    <span class="eyebrow">Achievements</span>
+                    <span class="eyebrow">Badges</span>
                     <h2>Learning Badges</h2>
                 </div>
             </div>
@@ -290,6 +349,29 @@
                     <span aria-hidden="true">{{ achievement.icon|safe }}</span>
                     <strong>{{ achievement.title }}</strong>
                     <p>{{ achievement.description }}</p>
+                </article>
+                {% endfor %}
+            </div>
+        </section>
+
+        <section class="dashboard-panel">
+            <div class="dashboard-section-heading">
+                <div>
+                    <span class="eyebrow">Achievements</span>
+                    <h2>Milestone Progress</h2>
+                </div>
+            </div>
+            <div class="achievement-progress-grid">
+                {% for achievement in achievement_progress %}
+                <article class="achievement-progress-card {% if achievement.unlocked %}completed{% endif %}">
+                    <div>
+                        <strong>{{ achievement.title }}</strong>
+                        <span>{{ achievement.description }}</span>
+                    </div>
+                    <small>{{ achievement.progress }}/{{ achievement.target }}</small>
+                    <div class="challenge-progress-track">
+                        <span style="width: {{ achievement.percentage }}%"></span>
+                    </div>
                 </article>
                 {% endfor %}
             </div>
@@ -311,32 +393,6 @@
                     <a class="button-link secondary-link" href="{{ recommendation.url }}">{{ recommendation.cta }}</a>
                 </article>
                 {% endfor %}
-            </div>
-        </section>
-
-        <section class="dashboard-panel">
-            <div class="dashboard-section-heading">
-                <div>
-                    <span class="eyebrow">Future Tools</span>
-                    <h2>Personalized features coming soon</h2>
-                </div>
-            </div>
-            <div class="locked-dashboard-grid">
-                <article class="locked-dashboard-card">
-                    <span aria-hidden="true">&#128274;</span>
-                    <strong>AI Recommendations</strong>
-                    <p>Coming Soon</p>
-                </article>
-                <article class="locked-dashboard-card">
-                    <span aria-hidden="true">&#128274;</span>
-                    <strong>Study Planner</strong>
-                    <p>Coming Soon</p>
-                </article>
-                <article class="locked-dashboard-card">
-                    <span aria-hidden="true">&#128274;</span>
-                    <strong>Achievements</strong>
-                    <p>Coming Soon</p>
-                </article>
             </div>
         </section>
 
