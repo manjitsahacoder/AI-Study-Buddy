@@ -37,6 +37,7 @@ import json
 import markdown
 import os
 import re
+import time
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -140,6 +141,43 @@ SPECIAL_ROLE_ACCOUNTS = {
 
 WEBSITE_VERSION = os.environ.get("WEBSITE_VERSION", "AI Study Buddy 1.0")
 DEVELOPER_USERS_PER_PAGE = 25
+LEARN_BUSY_MESSAGE = "AI Study Buddy is temporarily busy. Please try again in a moment."
+LEARN_MAX_TEXTBOOK_CONTEXT_CHARS = int(os.environ.get("LEARN_MAX_TEXTBOOK_CONTEXT_CHARS", "7000"))
+LEARN_MAX_PDF_TEXT_CHARS = int(os.environ.get("LEARN_MAX_PDF_TEXT_CHARS", "45000"))
+LEARN_MAX_PROMPT_CHARS = int(os.environ.get("LEARN_MAX_PROMPT_CHARS", "12000"))
+LEARN_MAX_RESPONSE_CHARS = int(os.environ.get("LEARN_MAX_RESPONSE_CHARS", "55000"))
+LEARN_MAX_OUTPUT_TOKENS = int(os.environ.get("LEARN_MAX_OUTPUT_TOKENS", "4500"))
+LEARN_GEMINI_TIMEOUT_SECONDS = int(os.environ.get("LEARN_GEMINI_TIMEOUT_SECONDS", "45"))
+
+
+class LearnServiceBusy(Exception):
+    pass
+
+
+def estimate_tokens(text):
+    return max(1, (len(text or "") + 3) // 4)
+
+
+def truncate_text(text, max_chars, suffix="\n\n[Content shortened to keep the request lightweight.]"):
+    if not text or len(text) <= max_chars:
+        return text or ""
+    if max_chars <= len(suffix):
+        return text[:max_chars]
+    return f"{text[:max_chars - len(suffix)].rstrip()}{suffix}"
+
+
+def log_learn_metric(event, started_at=None, **fields):
+    if started_at is not None:
+        fields["total_request_time_seconds"] = round(time.perf_counter() - started_at, 3)
+    details = " ".join(f"{key}={value}" for key, value in fields.items())
+    app.logger.info("learn_flow event=%s %s", event, details)
+
+
+def learn_busy_response(started_at, error=None):
+    if error:
+        app.logger.warning("learn_flow busy_response error=%s", error)
+    log_learn_metric("busy_response", started_at=started_at)
+    return render_template("ai_busy.html", message=LEARN_BUSY_MESSAGE), 503
 
 
 def is_quota_error(error):
@@ -156,9 +194,21 @@ def backup_gemini_api_keys():
     return [key for key in [GEMINI_API_KEY_2] if key]
 
 
-def generate_content_with_fallback(prompt):
+def generate_model_content(model_instance, prompt, generation_config=None, request_options=None):
+    kwargs = {}
+    if generation_config:
+        kwargs["generation_config"] = generation_config
+    if request_options:
+        kwargs["request_options"] = request_options
     try:
-        return model.generate_content(prompt)
+        return model_instance.generate_content(prompt, **kwargs)
+    except TypeError:
+        return model_instance.generate_content(prompt)
+
+
+def generate_content_with_fallback(prompt, generation_config=None, request_options=None):
+    try:
+        return generate_model_content(model, prompt, generation_config, request_options)
     except Exception as primary_error:
         if not is_quota_error(primary_error):
             raise
@@ -168,7 +218,7 @@ def generate_content_with_fallback(prompt):
             try:
                 genai.configure(api_key=api_key)
                 backup_model = genai.GenerativeModel("gemini-2.5-flash")
-                return backup_model.generate_content(prompt)
+                return generate_model_content(backup_model, prompt, generation_config, request_options)
             except Exception as backup_error:
                 last_error = backup_error
                 if not is_quota_error(backup_error):
@@ -3332,7 +3382,7 @@ def find_registered_textbook(student_class, subject, book_name):
 
 
 @lru_cache(maxsize=16)
-def extract_pdf_text(pdf_path):
+def extract_pdf_text(pdf_path, max_chars=LEARN_MAX_PDF_TEXT_CHARS):
     try:
         from pypdf import PdfReader
     except ImportError:
@@ -3341,12 +3391,22 @@ def extract_pdf_text(pdf_path):
 
     try:
         reader = PdfReader(pdf_path)
-        page_text = [page.extract_text() or "" for page in reader.pages]
+        chunks = []
+        total_chars = 0
+        for page in reader.pages:
+            page_text = page.extract_text() or ""
+            if not page_text:
+                continue
+            remaining_chars = max_chars - total_chars
+            if remaining_chars <= 0:
+                break
+            chunks.append(page_text[:remaining_chars])
+            total_chars += min(len(page_text), remaining_chars)
     except Exception as error:
         print("PDF EXTRACTION ERROR:", error)
         return ""
 
-    return "\n".join(page_text)
+    return "\n".join(chunks)
 
 
 def find_topic_start(compact_text, topic):
@@ -3385,8 +3445,8 @@ def find_topic_start(compact_text, topic):
     return None
 
 
-def extract_chapter_context(pdf_path, topic, max_chars=14000):
-    raw_text = extract_pdf_text(str(pdf_path))
+def extract_chapter_context(pdf_path, topic, max_chars=LEARN_MAX_TEXTBOOK_CONTEXT_CHARS):
+    raw_text = extract_pdf_text(str(pdf_path), max(LEARN_MAX_PDF_TEXT_CHARS, max_chars + 2000))
     compact_text = re.sub(r"\s+", " ", raw_text).strip()
     if not compact_text:
         return ""
@@ -3395,7 +3455,7 @@ def extract_chapter_context(pdf_path, topic, max_chars=14000):
     if topic_start is None:
         return ""
 
-    start = max(0, topic_start - 800)
+    start = max(0, topic_start - 500)
     end = min(len(compact_text), topic_start + max_chars)
     return compact_text[start:end].strip()
 
@@ -3408,15 +3468,21 @@ def textbook_pdf_paths(textbook_path):
     return []
 
 
-def find_chapter_context(textbook_path, topic):
+def find_chapter_context(textbook_path, topic, max_chars=LEARN_MAX_TEXTBOOK_CONTEXT_CHARS):
     for pdf_path in textbook_pdf_paths(textbook_path):
-        chapter_context = extract_chapter_context(pdf_path, topic)
+        chapter_context = extract_chapter_context(pdf_path, topic, max_chars=max_chars)
         if chapter_context:
             return pdf_path, chapter_context
     return None, ""
 
 
-def local_textbook_context_section(student_class, subject, book_name, topic):
+def local_textbook_context_section(
+    student_class,
+    subject,
+    book_name,
+    topic,
+    max_chars=LEARN_MAX_TEXTBOOK_CONTEXT_CHARS,
+):
     textbook_path = find_registered_textbook(student_class, subject, book_name)
     if not textbook_path:
         return ""
@@ -3430,7 +3496,11 @@ Local Textbook PDF Context:
 - Do not guess chapter content.
 """
 
-    chapter_pdf_path, chapter_context = find_chapter_context(textbook_path, topic)
+    chapter_pdf_path, chapter_context = find_chapter_context(
+        textbook_path,
+        topic,
+        max_chars=max_chars,
+    )
     if not chapter_context:
         return f"""
 Local Textbook PDF Context:
@@ -3465,6 +3535,84 @@ Textbook Subject Instructions:
 - Generate chapter notes, revision points, diagram labels, and questions only from the chapter.
 - If the chapter is unknown, still return the required sections and create questions that ask the student to find details in the textbook, without adding any chapter facts.
 """
+
+
+def trim_learn_prompt(prompt, max_chars=LEARN_MAX_PROMPT_CHARS):
+    prompt = (prompt or "").strip()
+    if len(prompt) <= max_chars:
+        return prompt
+
+    suffix = "\n\n[Prompt shortened automatically for Render Free memory limits.]"
+    rules_marker = "\nRules:\n"
+    if rules_marker in prompt:
+        context_section, rules_section = prompt.split(rules_marker, 1)
+        tail = f"{rules_marker}{rules_section}"
+        context_budget = max_chars - len(tail) - len(suffix)
+        if context_budget > 1200:
+            return f"{context_section[:context_budget].rstrip()}{suffix}{tail}"
+
+    return truncate_text(prompt, max_chars, suffix=suffix)
+
+
+def build_learn_retry_prompt(original_prompt):
+    retry_instructions = """
+
+Your previous response did not follow the required format.
+Rewrite the answer using this exact structure:
+
+# Notes
+
+## Quick Revision
+- point 1
+- point 2
+- point 3
+- point 4
+- point 5
+
+## Diagram JSON
+{"diagram_type":"process","title":"Topic Diagram","labels":["label 1","label 2","label 3"],"arrows":[],"notes":[]}
+
+## Questions
+Q1. question
+
+Q2. question
+
+Q3. question
+
+Q4. question
+
+Q5. question
+
+Do not provide answers to the questions.
+Do not invent textbook chapter content.
+"""
+    base_prompt = trim_learn_prompt(
+        original_prompt,
+        max(4000, LEARN_MAX_PROMPT_CHARS - len(retry_instructions)),
+    )
+    return trim_learn_prompt(f"{base_prompt}{retry_instructions}")
+
+
+def learn_generation_options():
+    return {
+        "generation_config": {
+            "max_output_tokens": LEARN_MAX_OUTPUT_TOKENS,
+        },
+        "request_options": {
+            "timeout": LEARN_GEMINI_TIMEOUT_SECONDS,
+        },
+    }
+
+
+def response_text_or_busy(response):
+    response_text = (getattr(response, "text", "") or "").strip()
+    if len(response_text) > LEARN_MAX_RESPONSE_CHARS:
+        raise LearnServiceBusy(
+            f"Gemini response exceeded {LEARN_MAX_RESPONSE_CHARS} characters."
+        )
+    if not response_text:
+        raise LearnServiceBusy("Gemini returned an empty learning response.")
+    return response_text
 
 
 def science_math_prompt_section():
@@ -4087,6 +4235,7 @@ def history():
 
 @app.route("/learn", methods=["POST"])
 def learn():
+    request_started_at = time.perf_counter()
     name = request.form.get("name", "").strip()
     student_class = request.form.get("student_class", "").strip()
     subject = request.form.get("subject", "").strip()
@@ -4102,6 +4251,7 @@ def learn():
         subject,
         book_name,
         topic,
+        max_chars=LEARN_MAX_TEXTBOOK_CONTEXT_CHARS,
     )
 
     prompt = f"""
@@ -4164,57 +4314,54 @@ Rules:
 - Always include exactly 5 questions, even if the chapter is unknown.
 - If the chapter is unknown, questions must not include invented facts.
 """
+    prompt = trim_learn_prompt(prompt)
+    log_learn_metric(
+        "prompt_ready",
+        prompt_length=len(prompt),
+        estimated_characters=len(prompt),
+        estimated_tokens=estimate_tokens(prompt),
+        textbook_context_length=len(textbook_context_section),
+    )
 
     try:
         print("Gemini call: Learn")
-        response = generate_content_with_fallback(prompt)
+        response = generate_content_with_fallback(prompt, **learn_generation_options())
+        response_text = response_text_or_busy(response)
+        log_learn_metric(
+            "gemini_response",
+            gemini_response_length=len(response_text),
+            estimated_characters=len(response_text),
+            estimated_tokens=estimate_tokens(response_text),
+        )
     except Exception as error:
         print("LEARN ERROR:", error)
-        abort(503, description="The learning service is unavailable. Please try again later.")
+        return learn_busy_response(request_started_at, error)
 
     try:
-        notes, raw_diagram, questions = split_learning_content(response.text)
+        notes, raw_diagram, questions = split_learning_content(response_text)
     except ValueError as error:
         print("LEARN RESPONSE ERROR:", error)
-        retry_prompt = f"""
-{prompt}
-
-Your previous response did not follow the required format.
-Rewrite the answer using this exact structure:
-
-# Notes
-
-## Quick Revision
-- point 1
-- point 2
-- point 3
-- point 4
-- point 5
-
-## Diagram JSON
-{{"diagram_type":"process","title":"Topic Diagram","labels":["label 1","label 2","label 3"],"arrows":[],"notes":[]}}
-
-## Questions
-Q1. question
-
-Q2. question
-
-Q3. question
-
-Q4. question
-
-Q5. question
-
-Do not provide answers to the questions.
-Do not invent textbook chapter content.
-"""
+        retry_prompt = build_learn_retry_prompt(prompt)
+        log_learn_metric(
+            "retry_prompt_ready",
+            prompt_length=len(retry_prompt),
+            estimated_characters=len(retry_prompt),
+            estimated_tokens=estimate_tokens(retry_prompt),
+        )
         try:
             print("Gemini call: Learn retry")
-            response = generate_content_with_fallback(retry_prompt)
-            notes, raw_diagram, questions = split_learning_content(response.text)
+            response = generate_content_with_fallback(retry_prompt, **learn_generation_options())
+            response_text = response_text_or_busy(response)
+            log_learn_metric(
+                "retry_gemini_response",
+                gemini_response_length=len(response_text),
+                estimated_characters=len(response_text),
+                estimated_tokens=estimate_tokens(response_text),
+            )
+            notes, raw_diagram, questions = split_learning_content(response_text)
         except Exception as retry_error:
             print("LEARN RETRY ERROR:", retry_error)
-            abort(502, description="The AI did not return a valid five-question quiz. Please try again.")
+            return learn_busy_response(request_started_at, retry_error)
 
     diagram_payload = build_diagram_payload(subject, topic, raw_diagram)
     diagram_image = create_diagram_image(topic, diagram_payload)
@@ -4240,6 +4387,13 @@ Do not invent textbook chapter content.
             notes,
         )
 
+    log_learn_metric(
+        "complete",
+        started_at=request_started_at,
+        gemini_response_length=len(response_text),
+        estimated_characters=len(response_text),
+        estimated_tokens=estimate_tokens(response_text),
+    )
     return render_template(
         "learn.html",
         name=name,

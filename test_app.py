@@ -269,6 +269,112 @@ Q5. What is question five?
         self.assertIn("No diagram available for this topic.", page)
         self.assertNotIn("Download Diagram", page)
 
+    @patch.object(app_module, "local_textbook_context_section")
+    @patch.object(app_module.model, "generate_content")
+    def test_learn_shortens_large_textbook_context_before_gemini(
+        self,
+        generate_content,
+        local_textbook_context_section,
+    ):
+        local_textbook_context_section.return_value = (
+            "Local Textbook PDF Context:\n" + ("cell structure " * 3000)
+        )
+        generate_content.return_value = MockResponse(
+            """# Cell Notes
+Cells are the basic unit of life.
+
+## Quick Revision
+- Cells make up living things.
+
+## Questions
+Q1. What is question one?
+
+Q2. What is question two?
+
+Q3. What is question three?
+
+Q4. What is question four?
+
+Q5. What is question five?
+"""
+        )
+
+        response = self.client.post(
+            "/learn",
+            data={
+                "name": "Asha",
+                "student_class": "8",
+                "subject": "Biology",
+                "book_name": "Science",
+                "topic": "Cells",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        prompt = generate_content.call_args.args[0]
+        self.assertLessEqual(len(prompt), app_module.LEARN_MAX_PROMPT_CHARS)
+        self.assertIn("Rules:", prompt)
+        self.assertIn("## Questions", prompt)
+        self.assertIn("Prompt shortened automatically", prompt)
+
+    @patch.object(app_module, "generate_content_with_fallback")
+    def test_learn_returns_friendly_busy_page_when_gemini_times_out(self, generate_content):
+        generate_content.side_effect = TimeoutError("Gemini timed out")
+
+        response = self.client.post(
+            "/learn",
+            data={
+                "name": "Asha",
+                "student_class": "8",
+                "subject": "Biology",
+                "topic": "Plants",
+            },
+        )
+
+        self.assertEqual(response.status_code, 503)
+        self.assertIn(
+            "AI Study Buddy is temporarily busy. Please try again in a moment.",
+            response.get_data(as_text=True),
+        )
+
+    @patch.object(app_module.model, "generate_content")
+    def test_learn_does_not_load_ai_tutor_data(self, generate_content):
+        generate_content.return_value = MockResponse(
+            """# Plant Notes
+Plants use sunlight.
+
+## Quick Revision
+- Plants need light.
+
+## Questions
+Q1. What is question one?
+
+Q2. What is question two?
+
+Q3. What is question three?
+
+Q4. What is question four?
+
+Q5. What is question five?
+"""
+        )
+
+        with patch.object(app_module, "get_recent_tutor_messages") as recent_messages:
+            with patch.object(app_module, "get_tutor_messages") as tutor_messages:
+                response = self.client.post(
+                    "/learn",
+                    data={
+                        "name": "Asha",
+                        "student_class": "8",
+                        "subject": "Biology",
+                        "topic": "Plants",
+                    },
+                )
+
+        self.assertEqual(response.status_code, 200)
+        recent_messages.assert_not_called()
+        tutor_messages.assert_not_called()
+
     def test_download_notes_rejects_missing_notes(self):
         response = self.client.post(
             "/download_notes",
@@ -1303,6 +1409,8 @@ Q5. What is question five?
             (history_row.user_id, history_row.subject, history_row.book_name, history_row.topic),
             (1, "Biology", "", "Plants"),
         )
+        with app_module.app.app_context():
+            self.assertEqual(FlashcardSet.query.count(), 0)
         self.assertIn("Plant Notes", history_row.notes)
         saved_diagram = json.loads(history_row.diagram_data)
         self.assertEqual(saved_diagram["template_key"], "flower")
@@ -1922,7 +2030,11 @@ Grade: A
             },
         )
 
-        self.assertEqual(response.status_code, 502)
+        self.assertEqual(response.status_code, 503)
+        self.assertIn(
+            "AI Study Buddy is temporarily busy. Please try again in a moment.",
+            response.get_data(as_text=True),
+        )
 
 
 if __name__ == "__main__":
