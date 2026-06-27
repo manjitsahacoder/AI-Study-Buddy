@@ -53,15 +53,19 @@
             </div>
             <div class="performance-summary-grid">
                 <div>
+                    <span>Overall Progress</span>
+                    <strong>{{ summary.overall_progress }}</strong>
+                </div>
+                <div>
                     <span>Average Score</span>
                     <strong>{{ summary.average_score }}</strong>
                 </div>
                 <div>
-                    <span>Best Subject</span>
+                    <span>Strongest Subject</span>
                     <strong>{{ summary.best_subject }}</strong>
                 </div>
                 <div>
-                    <span>Needs Improvement</span>
+                    <span>Weakest Subject</span>
                     <strong>{{ summary.needs_improvement }}</strong>
                 </div>
                 <div>
@@ -86,7 +90,7 @@
                 <article class="dashboard-stat-card">
                     <span aria-hidden="true">&#128218;</span>
                     <div>
-                        <p>Total Topics Studied</p>
+                        <p>Topics Studied</p>
                         <strong>{{ overview.total_topics_studied }}</strong>
                     </div>
                 </article>
@@ -135,11 +139,60 @@
                 <article class="dashboard-stat-card">
                     <span aria-hidden="true">&#128197;</span>
                     <div>
-                        <p>Last Study Date</p>
-                        <strong>{{ overview.last_study_date }}</strong>
+                        <p>Study Streak</p>
+                        <strong>{{ overview.study_streak }}</strong>
+                    </div>
+                </article>
+                <article class="dashboard-stat-card">
+                    <span aria-hidden="true">&#127183;</span>
+                    <div>
+                        <p>Flashcards Completed</p>
+                        <strong>{{ overview.flashcards_completed }}</strong>
+                    </div>
+                </article>
+                <article class="dashboard-stat-card">
+                    <span aria-hidden="true">&#128214;</span>
+                    <div>
+                        <p>Revision Sheets</p>
+                        <strong>{{ overview.revision_sheets }}</strong>
+                    </div>
+                </article>
+                <article class="dashboard-stat-card">
+                    <span aria-hidden="true">&#129504;</span>
+                    <div>
+                        <p>Mind Maps</p>
+                        <strong>{{ overview.mind_maps }}</strong>
+                    </div>
+                </article>
+                <article class="dashboard-stat-card">
+                    <span aria-hidden="true">&#129302;</span>
+                    <div>
+                        <p>Tutor Sessions</p>
+                        <strong>{{ overview.tutor_sessions }}</strong>
+                    </div>
+                </article>
+                <article class="dashboard-stat-card">
+                    <span aria-hidden="true">&#11088;</span>
+                    <div>
+                        <p>Important Question Sets</p>
+                        <strong>{{ overview.important_question_sets }}</strong>
                     </div>
                 </article>
             </div>
+        </section>
+
+        <section class="dashboard-panel recent-progress-panel">
+            <div class="dashboard-section-heading">
+                <div>
+                    <span class="eyebrow">Recent Progress</span>
+                    <h2>Recent Progress</h2>
+                </div>
+                <strong class="recent-progress-pill {{ analytics.recent_progress.direction }}">{{ analytics.recent_progress.label }}</strong>
+            </div>
+            <div class="overall-progress-meter" aria-label="Overall progress">
+                <span style="width: {{ overview.overall_progress }}%"></span>
+            </div>
+            <p>{{ overview.overall_progress_label }}. {{ analytics.recent_progress.detail }}</p>
         </section>
 
         <section class="dashboard-panel">
@@ -180,6 +233,28 @@
                     <div class="dashboard-empty-state">
                         <h3>No quiz timeline yet.</h3>
                         <p>Your quiz score trend will appear after your first attempt.</p>
+                    </div>
+                    {% endif %}
+                </article>
+                <article class="performance-chart-card">
+                    <h3>Learning Tools Completed</h3>
+                    {% if analytics.has_tool_data %}
+                    <canvas id="learningToolsChart" aria-label="Learning tools completed doughnut chart"></canvas>
+                    {% else %}
+                    <div class="dashboard-empty-state">
+                        <h3>No learning tools completed yet.</h3>
+                        <p>Use flashcards, revision sheets, mind maps, tutor sessions, or important questions to fill this chart.</p>
+                    </div>
+                    {% endif %}
+                </article>
+                <article class="performance-chart-card">
+                    <h3>Learning Activity Timeline</h3>
+                    {% if analytics.has_timeline_data %}
+                    <canvas id="learningTimelineChart" aria-label="Learning activity timeline stacked bar chart"></canvas>
+                    {% else %}
+                    <div class="dashboard-empty-state">
+                        <h3>No timeline yet.</h3>
+                        <p>Lessons, quizzes, and tutor sessions will appear here.</p>
                     </div>
                     {% endif %}
                 </article>
@@ -242,8 +317,8 @@
             <section class="dashboard-panel">
                 <div class="dashboard-section-heading">
                     <div>
-                        <span class="eyebrow">AI Study Insights</span>
-                        <h2>AI Study Insights</h2>
+                        <span class="eyebrow">Study Insights</span>
+                        <h2>Study Insights</h2>
                     </div>
                 </div>
 
@@ -308,6 +383,14 @@ function createChart(canvasId, config) {
     new Chart(canvas, config);
 }
 
+function axisColor() {
+    return document.body.classList.contains("dark-mode") ? "#b8c0cf" : "#667085";
+}
+
+function gridColor() {
+    return document.body.classList.contains("dark-mode") ? "rgba(184, 192, 207, 0.16)" : "rgba(102, 112, 133, 0.18)";
+}
+
 createChart("averageScoreChart", {
     type: "bar",
     data: {
@@ -325,8 +408,20 @@ createChart("averageScoreChart", {
             y: {
                 beginAtZero: true,
                 max: 100,
+                grid: {
+                    color: gridColor()
+                },
                 ticks: {
+                    color: axisColor(),
                     callback: value => value + "%"
+                }
+            },
+            x: {
+                ticks: {
+                    color: axisColor()
+                },
+                grid: {
+                    color: gridColor()
                 }
             }
         }
@@ -343,7 +438,14 @@ createChart("topicsBySubjectChart", {
         }]
     },
     options: {
-        responsive: true
+        responsive: true,
+        plugins: {
+            legend: {
+                labels: {
+                    color: axisColor()
+                }
+            }
+        }
     }
 });
 
@@ -367,8 +469,100 @@ createChart("quizScoresChart", {
             y: {
                 beginAtZero: true,
                 max: 100,
+                grid: {
+                    color: gridColor()
+                },
                 ticks: {
+                    color: axisColor(),
                     callback: value => value + "%"
+                }
+            },
+            x: {
+                ticks: {
+                    color: axisColor()
+                },
+                grid: {
+                    color: gridColor()
+                }
+            }
+        }
+    }
+});
+
+createChart("learningToolsChart", {
+    type: "doughnut",
+    data: {
+        labels: performanceChartData.learning_tools.labels,
+        datasets: [{
+            data: performanceChartData.learning_tools.values,
+            backgroundColor: chartColors()
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: {
+            legend: {
+                labels: {
+                    color: axisColor()
+                }
+            }
+        }
+    }
+});
+
+createChart("learningTimelineChart", {
+    type: "bar",
+    data: {
+        labels: performanceChartData.learning_activity_timeline.labels,
+        datasets: [
+            {
+                label: "Lessons",
+                data: performanceChartData.learning_activity_timeline.learning,
+                backgroundColor: chartColors()[0],
+                borderRadius: 6
+            },
+            {
+                label: "Quizzes",
+                data: performanceChartData.learning_activity_timeline.quizzes,
+                backgroundColor: chartColors()[2],
+                borderRadius: 6
+            },
+            {
+                label: "Tutor",
+                data: performanceChartData.learning_activity_timeline.tutor,
+                backgroundColor: chartColors()[1],
+                borderRadius: 6
+            }
+        ]
+    },
+    options: {
+        responsive: true,
+        scales: {
+            x: {
+                stacked: true,
+                ticks: {
+                    color: axisColor()
+                },
+                grid: {
+                    color: gridColor()
+                }
+            },
+            y: {
+                stacked: true,
+                beginAtZero: true,
+                ticks: {
+                    color: axisColor(),
+                    precision: 0
+                },
+                grid: {
+                    color: gridColor()
+                }
+            }
+        },
+        plugins: {
+            legend: {
+                labels: {
+                    color: axisColor()
                 }
             }
         }

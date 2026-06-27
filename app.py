@@ -2226,7 +2226,22 @@ def datetime_sort_value(date_value):
     return 0
 
 
-def performance_recent_activity(lesson_rows, quiz_rows, limit=10):
+def format_timeline_date(date_value):
+    if hasattr(date_value, "strftime"):
+        return date_value.strftime("%d %b")
+    return str(date_value)[:10]
+
+
+def count_user_rows(model, user_id):
+    return (
+        model.query.with_entities(func.count(model.id))
+        .filter(model.user_id == user_id)
+        .scalar()
+        or 0
+    )
+
+
+def performance_recent_activity(lesson_rows, quiz_rows, tutor_rows=None, limit=10):
     activities = []
     for lesson in lesson_rows:
         activities.append(
@@ -2249,6 +2264,18 @@ def performance_recent_activity(lesson_rows, quiz_rows, limit=10):
                 "score": quiz.score,
                 "date": format_activity_date(quiz.created_at),
                 "created_at": quiz.created_at,
+            }
+        )
+
+    for tutor in tutor_rows or []:
+        activities.append(
+            {
+                "type": "Tutor",
+                "topic": tutor.chapter,
+                "subject": normalize_subject_label(tutor.subject),
+                "score": "Session",
+                "date": format_activity_date(tutor.created_at),
+                "created_at": tutor.created_at,
             }
         )
 
@@ -2284,6 +2311,9 @@ def build_performance_insights(overview, subject_analysis, quiz_scores, activity
     if len(studied_dates) >= 3:
         insights.append("You are studying consistently.")
 
+    if overview["flashcards_completed"]:
+        insights.append(f"You have completed {overview['flashcards_completed']} flashcards.")
+
     if overview["total_quizzes_attempted"] == 0 and overview["total_topics_studied"] == 0:
         return ["Not enough data yet."]
 
@@ -2292,40 +2322,94 @@ def build_performance_insights(overview, subject_analysis, quiz_scores, activity
 
 def get_performance_analytics(user_id):
     quiz_rows = (
-        QuizHistory.query.options(
-            load_only(
-                QuizHistory.id,
-                QuizHistory.subject,
-                QuizHistory.topic,
-                QuizHistory.score,
-                QuizHistory.created_at,
-            )
+        QuizHistory.query.with_entities(
+            QuizHistory.id,
+            QuizHistory.subject,
+            QuizHistory.topic,
+            QuizHistory.score,
+            QuizHistory.created_at,
         )
-        .filter_by(user_id=user_id)
+        .filter(QuizHistory.user_id == user_id)
         .order_by(QuizHistory.created_at.asc(), QuizHistory.id.asc())
         .all()
     )
     lesson_rows = (
-        LearningHistory.query.options(
-            load_only(
-                LearningHistory.id,
-                LearningHistory.subject,
-                LearningHistory.topic,
-                LearningHistory.created_at,
-            )
+        LearningHistory.query.with_entities(
+            LearningHistory.id,
+            LearningHistory.subject,
+            LearningHistory.topic,
+            LearningHistory.created_at,
         )
-        .filter_by(user_id=user_id)
+        .filter(LearningHistory.user_id == user_id)
         .order_by(LearningHistory.created_at.asc(), LearningHistory.id.asc())
         .all()
     )
-    learning_session_count = LearningSession.query.filter_by(user_id=user_id).count()
+    recent_lesson_rows = (
+        LearningHistory.query.with_entities(
+            LearningHistory.id,
+            LearningHistory.subject,
+            LearningHistory.topic,
+            LearningHistory.created_at,
+        )
+        .filter(LearningHistory.user_id == user_id)
+        .order_by(LearningHistory.created_at.desc(), LearningHistory.id.desc())
+        .limit(10)
+        .all()
+    )
+    recent_quiz_rows = (
+        QuizHistory.query.with_entities(
+            QuizHistory.id,
+            QuizHistory.subject,
+            QuizHistory.topic,
+            QuizHistory.score,
+            QuizHistory.created_at,
+        )
+        .filter(QuizHistory.user_id == user_id)
+        .order_by(QuizHistory.created_at.desc(), QuizHistory.id.desc())
+        .limit(10)
+        .all()
+    )
+    recent_tutor_rows = (
+        TutorLesson.query.with_entities(
+            TutorLesson.id,
+            TutorLesson.subject,
+            TutorLesson.chapter,
+            TutorLesson.created_at,
+        )
+        .filter(TutorLesson.user_id == user_id)
+        .order_by(TutorLesson.created_at.desc(), TutorLesson.id.desc())
+        .limit(10)
+        .all()
+    )
 
-    topic_keys = {
-        (normalize_subject_label(row.subject).lower(), (row.topic or "").strip().lower())
-        for row in lesson_rows
-        if (row.topic or "").strip()
-    }
-    subject_counts = Counter(normalize_subject_label(row.subject) for row in lesson_rows)
+    topic_rows = (
+        LearningHistory.query.with_entities(LearningHistory.subject, LearningHistory.topic)
+        .filter(LearningHistory.user_id == user_id)
+        .group_by(LearningHistory.subject, LearningHistory.topic)
+        .all()
+    )
+    subject_count_rows = (
+        LearningHistory.query.with_entities(
+            LearningHistory.subject,
+            func.count(LearningHistory.id),
+        )
+        .filter(LearningHistory.user_id == user_id)
+        .group_by(LearningHistory.subject)
+        .all()
+    )
+    quiz_subject_count_rows = (
+        QuizHistory.query.with_entities(QuizHistory.subject)
+        .filter(QuizHistory.user_id == user_id)
+        .group_by(QuizHistory.subject)
+        .all()
+    )
+
+    subject_counts = Counter(
+        {
+            normalize_subject_label(subject): count
+            for subject, count in subject_count_rows
+        }
+    )
     quiz_subject_scores = defaultdict(list)
     quiz_scores = []
 
@@ -2347,22 +2431,63 @@ def get_performance_analytics(user_id):
         )
 
     score_values = [item["percentage"] for item in quiz_scores]
-    all_subjects = {
-        normalize_subject_label(row.subject)
-        for row in [*lesson_rows, *quiz_rows]
-        if normalize_subject_label(row.subject)
-    }
+    all_subjects = {normalize_subject_label(row.subject) for row in topic_rows}
+    all_subjects.update(normalize_subject_label(row.subject) for row in quiz_subject_count_rows)
     activity_dates = [row.created_at for row in lesson_rows] + [row.created_at for row in quiz_rows]
     last_activity_date = max(activity_dates, key=datetime_sort_value) if activity_dates else None
+    study_streak = calculate_study_streak(activity_dates)
+    learning_session_count = count_user_rows(LearningSession, user_id)
+    revision_sheet_count = count_user_rows(RevisionSheet, user_id)
+    mind_map_count = count_user_rows(MindMap, user_id)
+    tutor_session_count = count_user_rows(TutorLesson, user_id)
+    important_question_set_count = count_user_rows(ImportantQuestionSet, user_id)
+    flashcards_completed = (
+        Flashcard.query.with_entities(func.count(Flashcard.id))
+        .filter(Flashcard.user_id == user_id, Flashcard.mastered.is_(True))
+        .scalar()
+        or 0
+    )
+    flashcards_created = count_user_rows(Flashcard, user_id)
+    artifact_total = (
+        flashcards_completed
+        + revision_sheet_count
+        + mind_map_count
+        + tutor_session_count
+        + important_question_set_count
+    )
+    overall_progress = min(
+        100,
+        (len(topic_rows) * 8)
+        + (len(quiz_rows) * 7)
+        + (study_streak * 4)
+        + (artifact_total * 5),
+    )
 
     overview = {
-        "total_topics_studied": len(topic_keys),
+        "overall_progress": overall_progress,
+        "overall_progress_label": (
+            "Advanced momentum"
+            if overall_progress >= 80
+            else "Building momentum"
+            if overall_progress >= 40
+            else "Getting started"
+            if overall_progress
+            else "Ready to begin"
+        ),
+        "total_topics_studied": len(topic_rows),
         "total_quizzes_attempted": len(quiz_rows),
         "average_quiz_score": format_percentage(sum(score_values) / len(score_values)) if score_values else "Not enough data yet.",
         "highest_score": format_percentage(max(score_values)) if score_values else "Not enough data yet.",
         "lowest_score": format_percentage(min(score_values)) if score_values else "Not enough data yet.",
         "subjects_studied": len(all_subjects),
         "total_learning_sessions": learning_session_count,
+        "study_streak": study_streak,
+        "flashcards_completed": flashcards_completed,
+        "flashcards_created": flashcards_created,
+        "revision_sheets": revision_sheet_count,
+        "mind_maps": mind_map_count,
+        "tutor_sessions": tutor_session_count,
+        "important_question_sets": important_question_set_count,
         "last_study_date": format_activity_date(last_activity_date),
     }
 
@@ -2411,7 +2536,67 @@ def get_performance_analytics(user_id):
         },
     }
 
+    timeline_buckets = defaultdict(lambda: {"Learning": 0, "Quiz": 0, "Tutor": 0})
+    for row in lesson_rows:
+        if row.created_at:
+            timeline_buckets[row.created_at.date()]["Learning"] += 1
+    for row in quiz_rows:
+        if row.created_at:
+            timeline_buckets[row.created_at.date()]["Quiz"] += 1
+    tutor_date_rows = (
+        TutorLesson.query.with_entities(TutorLesson.created_at)
+        .filter(TutorLesson.user_id == user_id)
+        .order_by(TutorLesson.created_at.asc(), TutorLesson.id.asc())
+        .all()
+    )
+    for row in tutor_date_rows:
+        if row.created_at:
+            timeline_buckets[row.created_at.date()]["Tutor"] += 1
+
+    timeline_dates = sorted(timeline_buckets.keys())
+    chart_data["learning_activity_timeline"] = {
+        "labels": [format_timeline_date(date_value) for date_value in timeline_dates],
+        "learning": [timeline_buckets[date_value]["Learning"] for date_value in timeline_dates],
+        "quizzes": [timeline_buckets[date_value]["Quiz"] for date_value in timeline_dates],
+        "tutor": [timeline_buckets[date_value]["Tutor"] for date_value in timeline_dates],
+    }
+    chart_data["learning_tools"] = {
+        "labels": ["Flashcards", "Revision Sheets", "Mind Maps", "Tutor Sessions", "Question Sets"],
+        "values": [
+            flashcards_completed,
+            revision_sheet_count,
+            mind_map_count,
+            tutor_session_count,
+            important_question_set_count,
+        ],
+    }
+
+    recent_score_values = [item["percentage"] for item in quiz_scores[-3:]]
+    previous_score_values = [item["percentage"] for item in quiz_scores[-6:-3]]
+    recent_average = sum(recent_score_values) / len(recent_score_values) if recent_score_values else None
+    previous_average = sum(previous_score_values) / len(previous_score_values) if previous_score_values else None
+    if recent_average is None:
+        recent_progress = {
+            "label": "No recent quiz trend yet.",
+            "detail": "Complete a quiz to start tracking score movement.",
+            "direction": "neutral",
+        }
+    elif previous_average is None:
+        recent_progress = {
+            "label": f"Recent quiz average: {format_percentage(recent_average)}",
+            "detail": "More attempts will unlock comparisons over time.",
+            "direction": "neutral",
+        }
+    else:
+        delta = recent_average - previous_average
+        recent_progress = {
+            "label": f"{format_percentage(abs(delta))} {'up' if delta >= 0 else 'down'} recently",
+            "detail": f"Recent average {format_percentage(recent_average)} vs previous {format_percentage(previous_average)}.",
+            "direction": "up" if delta > 0 else "down" if delta < 0 else "neutral",
+        }
+
     summary = {
+        "overall_progress": f"{overall_progress}%",
         "average_score": overview["average_quiz_score"],
         "best_subject": strongest_subject,
         "needs_improvement": weakest_subject,
@@ -2423,11 +2608,14 @@ def get_performance_analytics(user_id):
         "overview": overview,
         "summary": summary,
         "subject_analysis": subject_analysis,
+        "recent_progress": recent_progress,
         "insights": build_performance_insights(overview, subject_analysis, quiz_scores, activity_dates),
-        "recent_activity": performance_recent_activity(lesson_rows, quiz_rows),
+        "recent_activity": performance_recent_activity(recent_lesson_rows, recent_quiz_rows, recent_tutor_rows),
         "chart_data": chart_data,
         "has_quiz_data": bool(score_values),
         "has_topic_data": bool(subject_counts),
+        "has_tool_data": bool(artifact_total),
+        "has_timeline_data": bool(timeline_dates),
         "has_any_activity": bool(activity_dates),
     }
 

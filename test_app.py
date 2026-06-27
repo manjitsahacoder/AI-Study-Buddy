@@ -2325,6 +2325,72 @@ Q5. What is question five?
                 ]
             )
             db.session.commit()
+            db.session.add_all(
+                [
+                    FlashcardSet(user_id=1, learning_history_id=1, created_at=third_date),
+                    RevisionSheet(
+                        user_id=1,
+                        learning_history_id=1,
+                        content_markdown="# Plants",
+                        created_at=third_date,
+                    ),
+                    MindMap(
+                        user_id=1,
+                        learning_history_id=2,
+                        map_json="{}",
+                        created_at=third_date,
+                    ),
+                    ImportantQuestionSet(
+                        user_id=1,
+                        learning_history_id=3,
+                        markdown="# Important Questions",
+                        created_at=third_date,
+                    ),
+                    TutorLesson(
+                        user_id=1,
+                        learning_history_id=1,
+                        name="Asha",
+                        student_class="8",
+                        subject="Science",
+                        chapter="Plants",
+                        created_at=third_date,
+                    ),
+                ]
+            )
+            db.session.flush()
+            flashcard_set = FlashcardSet.query.filter_by(user_id=1).first()
+            db.session.add_all(
+                [
+                    Flashcard(
+                        flashcard_set_id=flashcard_set.id,
+                        user_id=1,
+                        learning_history_id=1,
+                        position=1,
+                        front="Front 1",
+                        back="Back 1",
+                        mastered=True,
+                    ),
+                    Flashcard(
+                        flashcard_set_id=flashcard_set.id,
+                        user_id=1,
+                        learning_history_id=1,
+                        position=2,
+                        front="Front 2",
+                        back="Back 2",
+                        mastered=True,
+                    ),
+                    Flashcard(
+                        flashcard_set_id=flashcard_set.id,
+                        user_id=1,
+                        learning_history_id=1,
+                        position=3,
+                        front="Front 3",
+                        back="Back 3",
+                        mastered=False,
+                    ),
+                ]
+            )
+            db.session.commit()
 
             app_module.save_quiz_history(
                 "Asha",
@@ -2381,20 +2447,44 @@ Q5. What is question five?
         page = response.get_data(as_text=True)
         self.assertIn("Average Score", page)
         self.assertIn("76.7%", page)
+        self.assertIn("Overall Progress", page)
+        self.assertIn("Subjects Studied", page)
+        self.assertIn("Topics Studied", page)
+        self.assertIn("Study Streak", page)
+        self.assertIn("Flashcards Completed", page)
+        self.assertIn("Revision Sheets", page)
+        self.assertIn("Mind Maps", page)
+        self.assertIn("Tutor Sessions", page)
+        self.assertIn("Important Question Sets", page)
         self.assertIn("Highest Score", page)
         self.assertIn("90%", page)
         self.assertIn("Lowest Score", page)
         self.assertIn("60%", page)
         self.assertIn("Mathematics is currently your strongest subject.", page)
         self.assertIn("Science needs more practice.", page)
+        self.assertIn("You have completed 2 flashcards.", page)
         self.assertIn("You are studying consistently.", page)
         self.assertIn("Total Learning Sessions", page)
         self.assertIn("Average Score by Subject", page)
         self.assertIn("Quiz Scores Over Time", page)
+        self.assertIn("Learning Activity Timeline", page)
+        self.assertIn("Learning Tools Completed", page)
+        self.assertIn("Recent Progress", page)
+        self.assertIn("Recent quiz average: 76.7%", page)
         self.assertIn("Plants", page)
         self.assertIn("Algebra", page)
         self.assertNotIn("Geography", page)
-        self.assertNotIn("Maps", page)
+        self.assertNotIn("Geography &bull; Maps", page)
+
+    @patch.object(app_module.model, "generate_content")
+    def test_performance_analytics_does_not_call_gemini(self, generate_content):
+        self.register_user()
+        self.login_user()
+
+        response = self.client.get("/performance")
+
+        self.assertEqual(response.status_code, 200)
+        generate_content.assert_not_called()
 
     def test_logged_in_download_pdf_autosaves_file(self):
         self.register_user()

@@ -2460,7 +2460,7 @@ body.dashboard-page #theme-toggle {
 
 .performance-summary-grid {
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
     gap: 12px;
 }
 
@@ -2498,8 +2498,60 @@ body.dashboard-page #theme-toggle {
 }
 
 .performance-stat-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
     margin-bottom: 0;
+}
+
+.recent-progress-panel {
+    display: grid;
+    gap: 14px;
+}
+
+.recent-progress-panel p {
+    margin-bottom: 0;
+    color: var(--muted);
+    font-weight: 800;
+}
+
+.recent-progress-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 38px;
+    padding: 8px 12px;
+    border: 1px solid rgba(49, 87, 213, 0.18);
+    border-radius: 8px;
+    color: var(--primary);
+    background: rgba(49, 87, 213, 0.08);
+    font-size: 0.92rem;
+    overflow-wrap: anywhere;
+}
+
+.recent-progress-pill.up {
+    color: #1f7a4d;
+    background: rgba(31, 122, 77, 0.1);
+    border-color: rgba(31, 122, 77, 0.2);
+}
+
+.recent-progress-pill.down {
+    color: #b84335;
+    background: rgba(226, 93, 79, 0.1);
+    border-color: rgba(226, 93, 79, 0.2);
+}
+
+.overall-progress-meter {
+    overflow: hidden;
+    height: 12px;
+    border: 1px solid rgba(49, 87, 213, 0.16);
+    border-radius: 8px;
+    background: rgba(49, 87, 213, 0.08);
+}
+
+.overall-progress-meter span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, var(--primary), var(--teal), var(--green));
 }
 
 .performance-chart-grid {
@@ -6510,6 +6562,29 @@ textarea:focus {
 .dark-mode .weekly-summary-grid strong,
 .dark-mode .tutor-preview-card strong {
     color: var(--ink);
+}
+
+.dark-mode .recent-progress-pill {
+    color: var(--primary);
+    background: rgba(134, 161, 255, 0.11);
+    border-color: rgba(134, 161, 255, 0.2);
+}
+
+.dark-mode .recent-progress-pill.up {
+    color: #a8efc4;
+    background: rgba(31, 122, 77, 0.18);
+    border-color: rgba(110, 213, 155, 0.22);
+}
+
+.dark-mode .recent-progress-pill.down {
+    color: #ffc1b6;
+    background: rgba(255, 157, 132, 0.14);
+    border-color: rgba(255, 157, 132, 0.24);
+}
+
+.dark-mode .overall-progress-meter {
+    background: rgba(134, 161, 255, 0.1);
+    border-color: rgba(134, 161, 255, 0.18);
 }
 
 .dark-mode .exhibition-toolbar,
