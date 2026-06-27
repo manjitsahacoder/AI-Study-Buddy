@@ -56,6 +56,7 @@ from models import (
     LearningHistory,
     LearningSession,
     QuizHistory,
+    RevisionSheet,
     TutorLesson,
     TutorMessage,
     User,
@@ -666,8 +667,10 @@ def get_learning_history_entries(user_id, search="", subject_filter="all", sort_
         query = query.order_by(LearningHistory.created_at.desc(), LearningHistory.id.desc())
     lessons = query.all()
     lesson_ids_with_flashcards = flashcard_lesson_ids(user_id, [lesson.id for lesson in lessons])
+    lesson_ids_with_revisions = revision_lesson_ids(user_id, [lesson.id for lesson in lessons])
     for lesson in lessons:
         lesson.has_flashcards = lesson.id in lesson_ids_with_flashcards
+        lesson.has_revision = lesson.id in lesson_ids_with_revisions
     return lessons
 
 
@@ -685,6 +688,25 @@ def get_flashcard_lesson(entry_id, user_id):
                 LearningHistory.book_name,
                 LearningHistory.topic,
                 LearningHistory.notes,
+                LearningHistory.created_at,
+            )
+        )
+        .filter_by(id=entry_id, user_id=user_id)
+        .first()
+    )
+
+
+def get_revision_lesson(entry_id, user_id):
+    return (
+        LearningHistory.query.options(
+            load_only(
+                LearningHistory.id,
+                LearningHistory.user_id,
+                LearningHistory.subject,
+                LearningHistory.book_name,
+                LearningHistory.topic,
+                LearningHistory.notes,
+                LearningHistory.quiz_questions,
                 LearningHistory.created_at,
             )
         )
@@ -712,6 +734,20 @@ def flashcard_lesson_ids(user_id, lesson_ids):
         .filter(
             FlashcardSet.user_id == user_id,
             FlashcardSet.learning_history_id.in_(lesson_ids),
+        )
+        .all()
+    }
+
+
+def revision_lesson_ids(user_id, lesson_ids):
+    if not lesson_ids:
+        return set()
+    return {
+        row.learning_history_id
+        for row in RevisionSheet.query.with_entities(RevisionSheet.learning_history_id)
+        .filter(
+            RevisionSheet.user_id == user_id,
+            RevisionSheet.learning_history_id.in_(lesson_ids),
         )
         .all()
     }
@@ -1089,6 +1125,114 @@ Use exactly this structure:
 """
 
 
+def existing_revision_sheet(lesson_id, user_id):
+    return (
+        RevisionSheet.query.filter_by(
+            user_id=user_id,
+            learning_history_id=lesson_id,
+        )
+        .first()
+    )
+
+
+def build_revision_prompt(lesson, student_class):
+    notes_excerpt = (lesson.notes or "").strip()
+    if len(notes_excerpt) > 14000:
+        notes_excerpt = f"{notes_excerpt[:14000]}\n\n[Notes truncated for quick revision generation.]"
+
+    return f"""
+You are an expert school teacher creating a one-page quick revision sheet.
+
+Class: {student_class or "student's class"}
+Subject: {lesson.subject}
+Book Name: {lesson.book_name or "N/A"}
+Chapter / Topic: {lesson.topic}
+
+Generated Notes:
+{notes_excerpt}
+
+Create a concise revision sheet from this existing lesson.
+Do not regenerate the full notes.
+Do not ask for the chapter again.
+Do not add unsupported facts.
+
+Use simple language and match the student's class level.
+Return Markdown only.
+
+Use exactly these section headings:
+
+# Quick Revision: {lesson.topic}
+
+## Important Points
+List the top 10 important points.
+
+## Definitions
+List key definitions. If there are none, write "No key definitions needed for this lesson."
+
+## Formulas
+List formulas if applicable. If there are none, write "No formulas needed for this lesson."
+
+## Common Mistakes
+List common student mistakes.
+
+## Exam Tips
+List practical exam tips.
+
+## One-page Summary
+Write a concise summary that fits on one page.
+"""
+
+
+def create_revision_sheet(lesson, user_id, student_class):
+    prompt = build_revision_prompt(lesson, student_class)
+    print("Gemini call: Quick Revision")
+    response = gemini_request(
+        "Quick Revision",
+        prompt,
+        user_id=user_id,
+        lesson_id=lesson.id,
+    )
+    content_markdown = (getattr(response, "text", "") or "").strip()
+    if not content_markdown:
+        raise ValueError("The AI did not return a revision sheet.")
+
+    revision_sheet = RevisionSheet(
+        user_id=user_id,
+        learning_history_id=lesson.id,
+        content_markdown=content_markdown,
+        source_model="gemini-2.5-flash",
+    )
+    db.session.add(revision_sheet)
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        revision_sheet = existing_revision_sheet(lesson.id, user_id)
+    return revision_sheet
+
+
+def get_or_create_revision_sheet(lesson, user_id, student_class):
+    revision_sheet = existing_revision_sheet(lesson.id, user_id)
+    if revision_sheet:
+        return revision_sheet, False
+    return create_revision_sheet(lesson, user_id, student_class), True
+
+
+def get_revision_sheet_for_lesson(lesson_id, user_id):
+    return (
+        RevisionSheet.query.options(
+            load_only(
+                RevisionSheet.id,
+                RevisionSheet.learning_history_id,
+                RevisionSheet.content_markdown,
+                RevisionSheet.created_at,
+            )
+        )
+        .filter_by(user_id=user_id, learning_history_id=lesson_id)
+        .first()
+    )
+
+
 def create_flashcard_set(lesson, user_id, student_class):
     prompt = build_flashcard_prompt(lesson, student_class)
     try:
@@ -1281,6 +1425,12 @@ def get_dashboard_stats(user_id):
         .scalar()
         or 0
     )
+    revision_sheets_generated = (
+        RevisionSheet.query.with_entities(func.count(RevisionSheet.id))
+        .filter(RevisionSheet.user_id == user_id)
+        .scalar()
+        or 0
+    )
 
     scores = [
         numeric_score
@@ -1306,6 +1456,7 @@ def get_dashboard_stats(user_id):
         "achievements": achievements_count,
         "study_streak": study_streak,
         "flashcards_studied": flashcards_studied,
+        "revision_sheets_generated": revision_sheets_generated,
     }
 
 
@@ -3382,6 +3533,86 @@ def create_learning_history_pdf(entry, diagram_payload, questions):
     return buffer
 
 
+def create_revision_pdf(lesson, revision_sheet):
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=letter,
+        rightMargin=0.58 * inch,
+        leftMargin=0.58 * inch,
+        topMargin=0.62 * inch,
+        bottomMargin=0.62 * inch,
+        pageCompression=0,
+    )
+    base_styles = getSampleStyleSheet()
+    styles = {
+        "Title": ParagraphStyle(
+            "Title",
+            parent=base_styles["Title"],
+            fontName="Helvetica-Bold",
+            fontSize=23,
+            leading=28,
+            textColor=colors.HexColor("#172033"),
+            alignment=TA_CENTER,
+            spaceAfter=8,
+        ),
+        "Subtitle": ParagraphStyle(
+            "Subtitle",
+            parent=base_styles["Normal"],
+            fontName="Helvetica",
+            fontSize=10,
+            leading=14,
+            textColor=colors.HexColor("#667085"),
+            alignment=TA_CENTER,
+            spaceAfter=18,
+        ),
+        "SectionHeading": ParagraphStyle(
+            "SectionHeading",
+            parent=base_styles["Heading2"],
+            fontName="Helvetica-Bold",
+            fontSize=14,
+            leading=18,
+            textColor=colors.HexColor("#3157d5"),
+            spaceBefore=8,
+            spaceAfter=6,
+        ),
+        "ReportBody": ParagraphStyle(
+            "ReportBody",
+            parent=base_styles["BodyText"],
+            fontName="Helvetica",
+            fontSize=10.5,
+            leading=15,
+            textColor=colors.HexColor("#2d3748"),
+            spaceAfter=4,
+        ),
+        "BulletLine": ParagraphStyle(
+            "BulletLine",
+            parent=base_styles["BodyText"],
+            fontName="Helvetica",
+            fontSize=10.5,
+            leading=15,
+            leftIndent=12,
+            textColor=colors.HexColor("#2d3748"),
+            spaceAfter=4,
+        ),
+    }
+    story = [
+        Paragraph("Quick Revision", styles["Title"]),
+        Paragraph(
+            (
+                f"Subject: {escape(lesson.subject)} &nbsp;&nbsp; | &nbsp;&nbsp; "
+                f"Book: {escape(lesson.book_name or 'N/A')} &nbsp;&nbsp; | &nbsp;&nbsp; "
+                f"Chapter: {escape(lesson.topic)}"
+            ),
+            styles["Subtitle"],
+        ),
+    ]
+    story.extend(report_text_to_flowables(revision_sheet.content_markdown, styles))
+    doc.build(story, onFirstPage=add_pdf_background, onLaterPages=add_pdf_background)
+    buffer.seek(0)
+    return buffer
+
+
 TEXTBOOK_SUBJECTS = (
     "english",
     "hindi",
@@ -4031,6 +4262,63 @@ def view_learning_history(lesson_id):
         diagram_available=diagram_payload.get("available", False),
         questions=questions,
         has_flashcards=has_flashcards,
+        has_revision=bool(existing_revision_sheet(lesson.id, session["user_id"])),
+    )
+
+
+@app.route("/revision/<int:lesson_id>")
+@login_required
+def revision(lesson_id):
+    lesson = get_revision_lesson(lesson_id, session["user_id"])
+    if not lesson:
+        abort(404)
+
+    try:
+        revision_sheet, created = get_or_create_revision_sheet(
+            lesson,
+            session["user_id"],
+            current_user()["student_class"],
+        )
+    except GeminiRequestError as error:
+        return render_gemini_error(error.error_info)
+    except ValueError as error:
+        abort(502, description=str(error))
+    except Exception:
+        abort(503, description="The revision service is unavailable. Please try again later.")
+
+    if created:
+        flash("Quick Revision generated. Your one-page study sheet is ready.", "success")
+
+    return render_template(
+        "revision.html",
+        lesson=lesson,
+        revision_sheet=revision_sheet,
+        revision_html=markdown.markdown(revision_sheet.content_markdown),
+        questions=decode_json_list(lesson.quiz_questions),
+        has_flashcards=bool(existing_flashcard_set(lesson.id, session["user_id"])),
+    )
+
+
+@app.route("/revision/<int:lesson_id>/download")
+@login_required
+def download_revision_pdf(lesson_id):
+    lesson = get_revision_lesson(lesson_id, session["user_id"])
+    revision_sheet = get_revision_sheet_for_lesson(lesson_id, session["user_id"])
+    if not lesson or not revision_sheet:
+        abort(404)
+
+    pdf_file = create_revision_pdf(lesson, revision_sheet)
+    save_downloaded_file(
+        session["user_id"],
+        "revision_sheet",
+        lesson.subject,
+        lesson.topic,
+    )
+    return send_file(
+        pdf_file,
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=safe_notes_filename(f"{lesson.topic}_revision", extension="pdf"),
     )
 
 

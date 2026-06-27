@@ -47,6 +47,19 @@
         </div>
 
         <div class="revision-tool-grid">
+            <article class="learning-action-card learning-card-revision">
+                <span class="learning-card-icon" aria-hidden="true">&#128214;</span>
+                <div class="learning-card-copy">
+                    <h3>Quick Revision</h3>
+                    <p>Generate a concise revision sheet for this lesson.</p>
+                </div>
+                {% if lesson_id %}
+                <a class="learning-card-button" href="{{ url_for('revision', lesson_id=lesson_id) }}">Generate Revision <span aria-hidden="true">&rarr;</span></a>
+                {% else %}
+                <a class="learning-card-button" href="{{ url_for('login', next=url_for('home')) }}">Generate Revision <span aria-hidden="true">&rarr;</span></a>
+                {% endif %}
+            </article>
+
             <article class="learning-action-card learning-card-flashcards">
                 <span class="learning-card-icon" aria-hidden="true">&#127183;</span>
                 <div class="learning-card-copy">
@@ -148,15 +161,6 @@
                 <div class="learning-card-copy">
                     <h3>Mind Map</h3>
                     <p>See the topic as connected ideas so the chapter feels easier to remember.</p>
-                </div>
-                <span class="coming-soon-pill">Coming Soon</span>
-            </article>
-
-            <article class="learning-action-card is-coming-soon learning-card-revision">
-                <span class="learning-card-icon" aria-hidden="true">&#128214;</span>
-                <div class="learning-card-copy">
-                    <h3>Quick Revision</h3>
-                    <p>Review the most important points in a short exam-ready recap.</p>
                 </div>
                 <span class="coming-soon-pill">Coming Soon</span>
             </article>

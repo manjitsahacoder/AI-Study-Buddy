@@ -42,6 +42,18 @@
             <p>Use active recall to revise this saved lesson before tutoring or quizzes.</p>
         </div>
         <div class="revision-tool-grid">
+            <article class="learning-action-card learning-card-revision">
+                <span class="learning-card-icon" aria-hidden="true">&#128214;</span>
+                <div class="learning-card-copy">
+                    <h3>Quick Revision</h3>
+                    <p>Generate a concise revision sheet for this lesson.</p>
+                </div>
+                <a class="learning-card-button" href="{{ url_for('revision', lesson_id=lesson.id) }}">
+                    {% if has_revision %}Open Revision{% else %}Generate Revision{% endif %}
+                    <span aria-hidden="true">&rarr;</span>
+                </a>
+            </article>
+
             <article class="learning-action-card learning-card-flashcards">
                 <span class="learning-card-icon" aria-hidden="true">&#127183;</span>
                 <div class="learning-card-copy">
@@ -90,6 +102,7 @@
     </section>
 
     <div class="result-actions">
+        <a class="button-link" href="{{ url_for('revision', lesson_id=lesson.id) }}">&#128214; Open Revision</a>
         <a class="button-link" href="{{ url_for('flashcards', lesson_id=lesson.id) }}">&#127183; Open Flashcards</a>
         <form action="{{ url_for('start_ai_tutor') }}" method="POST">
             <input type="hidden" name="lesson_id" value="{{ lesson.id }}">

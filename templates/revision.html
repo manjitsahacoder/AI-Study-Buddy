@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ lesson.topic }} Quick Revision - AI Study Buddy</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body class="learn-page revision-page">
+<button id="theme-toggle" onclick="toggleTheme()">
+    &#127769; Dark Mode
+</button>
+
+<main class="learn-container revision-shell">
+    <div class="auth-header-row revision-header">
+        <div>
+            <span class="eyebrow">&#128214; Quick Revision</span>
+            <h1>{{ lesson.topic }}</h1>
+            <p>Exam-ready revision distilled from your saved AI notes.</p>
+        </div>
+        <div class="auth-page-actions">
+            <a class="button-link secondary-link" href="{{ url_for('view_learning_history', lesson_id=lesson.id) }}">Back to Lesson</a>
+            {% include 'components/auth_nav.html' %}
+        </div>
+    </div>
+
+    {% include 'components/flash_messages.html' %}
+
+    <div class="lesson-info-strip">
+        <span><strong>Subject</strong> {{ lesson.subject }}</span>
+        <span><strong>Book</strong> {{ lesson.book_name or 'N/A' }}</span>
+        <span><strong>Chapter</strong> {{ lesson.topic }}</span>
+        <span><strong>Generated</strong> {{ revision_sheet.created_at }}</span>
+    </div>
+
+    <section class="revision-command-bar" aria-label="Revision actions">
+        <a class="button-link" href="{{ url_for('download_revision_pdf', lesson_id=lesson.id) }}">&#128196; Download PDF</a>
+        <a class="button-link secondary-link" href="{{ url_for('flashcards', lesson_id=lesson.id) }}">
+            &#127183; Open Flashcards
+        </a>
+        <form action="{{ url_for('start_ai_tutor') }}" method="POST">
+            <input type="hidden" name="lesson_id" value="{{ lesson.id }}">
+            <button type="submit">&#128104;&#8205;&#127979; Learn with AI Tutor</button>
+        </form>
+        {% if questions %}
+        <form action="{{ url_for('quiz') }}" method="POST">
+            <input type="hidden" name="name" value="{{ current_user.full_name if current_user else 'Student' }}">
+            <input type="hidden" name="student_class" value="{{ current_user.student_class if current_user else '' }}">
+            <input type="hidden" name="subject" value="{{ lesson.subject }}">
+            <input type="hidden" name="topic" value="{{ lesson.topic }}">
+            {% for question in questions %}
+            <input type="hidden" name="question{{ loop.index }}" value="{{ question }}">
+            {% endfor %}
+            <button type="submit">&#128221; Take Quiz</button>
+        </form>
+        {% endif %}
+    </section>
+
+    <section class="revision-layout">
+        <aside class="revision-section-nav" aria-label="Revision sections">
+            <span>&#128214; Important Points</span>
+            <span>&#128218; Definitions</span>
+            <span>&#129518; Formulas</span>
+            <span>&#9888;&#65039; Common Mistakes</span>
+            <span>&#127919; Exam Tips</span>
+        </aside>
+
+        <article class="revision-sheet-card">
+            <div class="revision-sheet-content">
+                {{ revision_html|safe }}
+            </div>
+        </article>
+    </section>
+
+    {% include 'components/footer.html' %}
+</main>
+
+<script>
+function toggleTheme() {
+    document.body.classList.toggle("dark-mode");
+
+    let btn = document.getElementById("theme-toggle");
+    if (document.body.classList.contains("dark-mode")) {
+        btn.innerHTML = "&#9728;&#65039; Light Mode";
+    } else {
+        btn.innerHTML = "&#127769; Dark Mode";
+    }
+}
+</script>
+</body>
+</html>

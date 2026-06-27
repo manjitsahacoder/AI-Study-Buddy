@@ -18,6 +18,7 @@ from models import (
     LearningHistory,
     LearningSession,
     QuizHistory,
+    RevisionSheet,
     TutorLesson,
     TutorMessage,
     User,
@@ -1281,6 +1282,121 @@ Grade: A
                 }
             )
         )
+
+    def revision_response(self):
+        return MockResponse(
+            """# Quick Revision: Photosynthesis
+
+## Important Points
+1. Plants make food using sunlight.
+2. Chlorophyll traps sunlight.
+
+## Definitions
+- Photosynthesis: The process by which green plants make food.
+
+## Formulas
+- Carbon dioxide + water -> glucose + oxygen.
+
+## Common Mistakes
+- Do not forget sunlight and chlorophyll.
+
+## Exam Tips
+- Write the word equation clearly.
+
+## One-page Summary
+Photosynthesis helps plants prepare food and release oxygen.
+"""
+        )
+
+    @patch.object(app_module, "generate_content_with_fallback")
+    def test_revision_generates_once_and_reopens(self, generate_content):
+        self.register_user()
+        self.login_user()
+        generate_content.return_value = self.revision_response()
+        with app_module.app.app_context():
+            lesson_id = app_module.save_learning_history(
+                1,
+                "Science",
+                "NCERT",
+                "Photosynthesis",
+                "Plants make food using sunlight.",
+                {},
+                self.questions,
+            )
+
+        first_response = self.client.get(f"/revision/{lesson_id}")
+        second_response = self.client.get(f"/revision/{lesson_id}")
+
+        self.assertEqual(first_response.status_code, 200)
+        self.assertEqual(second_response.status_code, 200)
+        generate_content.assert_called_once()
+        page = first_response.get_data(as_text=True)
+        self.assertIn("Quick Revision", page)
+        self.assertIn("Important Points", page)
+        self.assertIn("Definitions", page)
+        self.assertIn("Formulas", page)
+        self.assertIn("Common Mistakes", page)
+        self.assertIn("Exam Tips", page)
+        self.assertIn("Download PDF", page)
+        self.assertIn("Open Flashcards", page)
+        self.assertIn("Learn with AI Tutor", page)
+        self.assertIn("Take Quiz", page)
+        with app_module.app.app_context():
+            self.assertEqual(RevisionSheet.query.count(), 1)
+            revision_sheet = RevisionSheet.query.first()
+            self.assertEqual(revision_sheet.learning_history_id, lesson_id)
+            self.assertEqual(revision_sheet.user_id, 1)
+
+    @patch.object(app_module, "generate_content_with_fallback")
+    def test_revision_permissions_require_lesson_owner(self, generate_content):
+        self.register_user()
+        with app_module.app.app_context():
+            lesson_id = app_module.save_learning_history(
+                1,
+                "Science",
+                "NCERT",
+                "Photosynthesis",
+                "Plants make food using sunlight.",
+                {},
+                self.questions,
+            )
+        self.register_user(username="other", email="other@example.com")
+        self.login_user(identifier="other")
+
+        response = self.client.get(f"/revision/{lesson_id}")
+
+        self.assertEqual(response.status_code, 404)
+        generate_content.assert_not_called()
+
+    @patch.object(app_module, "generate_content_with_fallback")
+    def test_revision_dashboard_history_and_pdf_integration(self, generate_content):
+        self.register_user()
+        self.login_user()
+        generate_content.return_value = self.revision_response()
+        with app_module.app.app_context():
+            lesson_id = app_module.save_learning_history(
+                1,
+                "Science",
+                "NCERT",
+                "Photosynthesis",
+                "Plants make food using sunlight.",
+                {},
+                self.questions,
+            )
+
+        revision_response = self.client.get(f"/revision/{lesson_id}")
+        history_response = self.client.get("/learning-history")
+        dashboard_response = self.client.get("/dashboard")
+        pdf_response = self.client.get(f"/revision/{lesson_id}/download")
+
+        self.assertEqual(revision_response.status_code, 200)
+        self.assertIn("Open Revision", history_response.get_data(as_text=True))
+        dashboard_page = dashboard_response.get_data(as_text=True)
+        self.assertIn("Revision Sheets Generated", dashboard_page)
+        self.assertIn("<strong>1</strong>", dashboard_page)
+        self.assertEqual(pdf_response.status_code, 200)
+        self.assertEqual(pdf_response.mimetype, "application/pdf")
+        self.assertTrue(pdf_response.data.startswith(b"%PDF"))
 
     @patch.object(app_module, "generate_content_with_fallback")
     def test_flashcards_generate_and_render_responsive_controls(self, generate_content):

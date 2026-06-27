@@ -39,6 +39,7 @@ class User(ModelMappingMixin, db.Model):
     downloaded_files = db.relationship("DownloadedFile", back_populates="user", lazy=True)
     tutor_lessons = db.relationship("TutorLesson", back_populates="user", lazy=True)
     flashcard_sets = db.relationship("FlashcardSet", back_populates="user", lazy=True)
+    revision_sheets = db.relationship("RevisionSheet", back_populates="user", lazy=True)
 
 
 class QuizHistory(ModelMappingMixin, db.Model):
@@ -117,6 +118,35 @@ class LearningHistory(ModelMappingMixin, db.Model):
         cascade="all, delete-orphan",
         lazy=True,
     )
+    revision_sheets = db.relationship(
+        "RevisionSheet",
+        back_populates="learning_history",
+        cascade="all, delete-orphan",
+        lazy=True,
+    )
+
+
+class RevisionSheet(ModelMappingMixin, db.Model):
+    __tablename__ = "revision_sheets"
+    __table_args__ = (
+        db.UniqueConstraint("user_id", "learning_history_id", name="uq_revision_sheet_user_history"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    learning_history_id = db.Column(
+        db.Integer,
+        db.ForeignKey("learning_history.id"),
+        nullable=False,
+        index=True,
+    )
+    content_markdown = db.Column(db.Text, nullable=False)
+    source_model = db.Column(db.Text, nullable=False, default="gemini-2.5-flash")
+    created_at = db.Column(db.DateTime, nullable=False, default=utc_now, index=True)
+    updated_at = db.Column(db.DateTime, nullable=False, default=utc_now, onupdate=utc_now, index=True)
+
+    user = db.relationship("User", back_populates="revision_sheets")
+    learning_history = db.relationship("LearningHistory", back_populates="revision_sheets")
 
 
 class FlashcardSet(ModelMappingMixin, db.Model):

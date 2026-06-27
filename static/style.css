@@ -1704,6 +1704,10 @@ body.dashboard-page #theme-toggle {
     background: var(--gold);
 }
 
+.dashboard-stat-card:nth-child(7) > span {
+    background: var(--primary);
+}
+
 .dashboard-stat-card p {
     margin-bottom: 6px;
     font-size: 0.86rem;
@@ -2702,7 +2706,7 @@ body.dashboard-page #theme-toggle {
 
 .revision-tool-grid {
     display: grid;
-    grid-template-columns: minmax(260px, 420px);
+    grid-template-columns: repeat(auto-fit, minmax(260px, 420px));
     gap: 14px;
 }
 
@@ -2810,6 +2814,110 @@ body.dashboard-page #theme-toggle {
 
 .learning-card-revision .learning-card-icon {
     background: var(--gold);
+}
+
+.revision-shell {
+    max-width: 1180px;
+}
+
+.revision-header p {
+    margin: 8px 0 0;
+    color: var(--muted);
+    font-weight: 700;
+}
+
+.revision-command-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin: 18px 0 22px;
+    padding: 14px;
+    border: 1px solid rgba(231, 223, 210, 0.88);
+    border-radius: 8px;
+    background: rgba(255, 253, 248, 0.88);
+    box-shadow: 0 12px 30px rgba(30, 40, 58, 0.08);
+}
+
+.revision-command-bar form {
+    margin: 0;
+}
+
+.revision-command-bar .button-link,
+.revision-command-bar button {
+    min-height: 42px;
+}
+
+.revision-layout {
+    display: grid;
+    grid-template-columns: minmax(190px, 250px) minmax(0, 1fr);
+    gap: 18px;
+    align-items: start;
+}
+
+.revision-section-nav {
+    position: sticky;
+    top: 18px;
+    display: grid;
+    gap: 10px;
+    padding: 16px;
+    border: 1px solid rgba(49, 87, 213, 0.14);
+    border-radius: 8px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(244, 248, 255, 0.92));
+    box-shadow: 0 12px 28px rgba(30, 40, 58, 0.08);
+}
+
+.revision-section-nav span {
+    display: block;
+    padding: 9px 10px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.72);
+    color: var(--ink);
+    font-size: 0.92rem;
+    font-weight: 800;
+}
+
+.revision-sheet-card {
+    overflow: hidden;
+    border: 1px solid rgba(231, 223, 210, 0.95);
+    border-radius: 8px;
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(255, 253, 248, 0.98)),
+        rgba(255, 253, 248, 0.96);
+    box-shadow: var(--soft-shadow);
+    animation: fadeInUp 0.55s ease both;
+}
+
+.revision-sheet-content {
+    padding: clamp(22px, 4vw, 42px);
+    color: var(--ink);
+}
+
+.revision-sheet-content h1 {
+    margin-bottom: 18px;
+    color: var(--primary);
+    font-size: clamp(1.8rem, 4vw, 2.8rem);
+}
+
+.revision-sheet-content h2 {
+    margin: 28px 0 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(49, 87, 213, 0.16);
+    color: var(--ink);
+    font-size: clamp(1.24rem, 2.5vw, 1.7rem);
+}
+
+.revision-sheet-content p,
+.revision-sheet-content li {
+    color: #2f3a4f;
+    font-size: 1rem;
+    font-weight: 650;
+    line-height: 1.75;
+}
+
+.revision-sheet-content ul,
+.revision-sheet-content ol {
+    padding-left: 1.25rem;
 }
 
 .learning-card-copy {
@@ -5649,7 +5757,10 @@ textarea:focus {
 
 .dark-mode .revision-tools-section,
 .dark-mode .flashcards-header,
-.dark-mode .flashcard-study-panel {
+.dark-mode .flashcard-study-panel,
+.dark-mode .revision-command-bar,
+.dark-mode .revision-section-nav,
+.dark-mode .revision-sheet-card {
     background:
         linear-gradient(145deg, rgba(32, 40, 58, 0.78), rgba(21, 27, 41, 0.96)),
         rgba(21, 27, 41, 0.94);
@@ -5707,6 +5818,22 @@ textarea:focus {
 
 .dark-mode .flashcard-text {
     color: var(--ink);
+}
+
+.dark-mode .revision-section-nav span {
+    color: var(--ink);
+    background: rgba(17, 24, 39, 0.72);
+}
+
+.dark-mode .revision-sheet-content h1,
+.dark-mode .revision-sheet-content h2 {
+    color: var(--ink);
+}
+
+.dark-mode .revision-sheet-content p,
+.dark-mode .revision-sheet-content li,
+.dark-mode .revision-header p {
+    color: var(--muted);
 }
 
 .dark-mode .coming-soon-pill {
@@ -6213,6 +6340,22 @@ textarea:focus {
     .locked-modal-actions,
     .locked-modal-actions .button-link,
     .locked-modal-actions button {
+        width: 100%;
+    }
+
+    .revision-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .revision-section-nav {
+        position: static;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .revision-command-bar,
+    .revision-command-bar .button-link,
+    .revision-command-bar button,
+    .revision-command-bar form {
         width: 100%;
     }
 
