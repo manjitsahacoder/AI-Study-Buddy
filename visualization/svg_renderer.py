@@ -92,7 +92,8 @@ def render_node(node, index, visualization_type):
     fill, stroke = PALETTE[index % len(PALETTE)]
     x = node["x"] - node["width"] / 2
     y = node["y"] - node["height"] / 2
-    label_lines = wrap_words(node.get("label", ""), max_chars=max(13, int(node["width"] / 9)))
+    max_lines = int(node.get("text_max_lines") or 3)
+    label_lines = wrap_words(node.get("label", ""), max_chars=max(13, int(node["width"] / 8)), max_lines=max_lines)
     node_id = escape(str(node.get("id", index)))
     node_class = f"viz-node viz-node-{escape(node.get('kind', 'node'))}"
 

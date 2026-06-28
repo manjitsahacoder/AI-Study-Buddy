@@ -17,6 +17,17 @@ def estimate_node_size(label):
     return width, height
 
 
+def estimate_mind_map_node_size(label):
+    label = label or ""
+    normalized = " ".join(str(label).split())
+    longest_word = max((len(word) for word in normalized.split()), default=0)
+    width = min(320, max(160, 96 + min(34, len(normalized)) * 5.7, longest_word * 8.2 + 36))
+    line_chars = max(16, int((width - 42) / 7.2))
+    lines = max(1, min(5, math.ceil(max(1, len(normalized)) / line_chars)))
+    height = max(70, 38 + lines * 18)
+    return width, height, lines
+
+
 def bounds_for(nodes):
     if not nodes:
         return 900, 560
@@ -40,6 +51,16 @@ def decorate(nodes, kind="node"):
         node["width"] = node.get("width", width)
         node["height"] = node.get("height", height)
         node["kind"] = node.get("kind", kind)
+    return nodes
+
+
+def decorate_mind_map(nodes):
+    for node in nodes:
+        width, height, lines = estimate_mind_map_node_size(node.get("label", ""))
+        node["width"] = node.get("width", width)
+        node["height"] = node.get("height", height)
+        node["text_max_lines"] = node.get("text_max_lines", lines)
+        node["kind"] = node.get("kind", "node")
     return nodes
 
 
@@ -207,6 +228,122 @@ def hierarchy_layout(nodes, connections=None):
     return items
 
 
+def _mind_map_horizontal_gap(left, right, depth):
+    size_gap = (left["width"] + right["width"]) * 0.18
+    depth_gap = max(48, 76 - depth * 5)
+    return max(58, size_gap, depth_gap)
+
+
+def _mind_map_vertical_gap(parent, children):
+    tallest_child = max((child["height"] for child in children), default=NODE_HEIGHT)
+    return max(100, (parent["height"] + tallest_child) * 0.72)
+
+
+def mind_map_layout(nodes, connections=None):
+    items = decorate_mind_map([dict(item) for item in nodes])
+    if not items:
+        return items
+
+    by_id = {node["id"]: node for node in items}
+    children = defaultdict(list)
+    parent_for = {}
+    incoming = defaultdict(int)
+
+    for edge in connections or []:
+        start = edge.get("from")
+        end = edge.get("to")
+        if start not in by_id or end not in by_id or start == end or end in parent_for:
+            continue
+        children[start].append(end)
+        parent_for[end] = start
+        incoming[end] += 1
+
+    root_id = next((node["id"] for node in items if incoming[node["id"]] == 0), items[0]["id"])
+    for node in items:
+        if node["id"] != root_id and node["id"] not in parent_for:
+            children[root_id].append(node["id"])
+            parent_for[node["id"]] = root_id
+
+    reachable = set()
+
+    def collect_reachable(node_id, ancestors=None):
+        ancestors = set(ancestors or ())
+        if node_id in ancestors:
+            return
+        reachable.add(node_id)
+        for child_id in children.get(node_id, []):
+            collect_reachable(child_id, ancestors | {node_id})
+
+    collect_reachable(root_id)
+    for node in items:
+        if node["id"] != root_id and node["id"] not in reachable:
+            children[root_id].append(node["id"])
+
+    measured = {}
+
+    def measure(node_id, depth=0, ancestors=None):
+        ancestors = set(ancestors or ())
+        node = by_id[node_id]
+        valid_children = [
+            child_id
+            for child_id in children.get(node_id, [])
+            if child_id in by_id and child_id not in ancestors
+        ]
+        children[node_id] = valid_children
+
+        child_widths = []
+        for child_id in valid_children:
+            child_widths.append(measure(child_id, depth + 1, ancestors | {node_id}))
+
+        if child_widths:
+            gaps = sum(
+                _mind_map_horizontal_gap(by_id[valid_children[index]], by_id[valid_children[index + 1]], depth + 1)
+                for index in range(len(valid_children) - 1)
+            )
+            children_width = sum(child_widths) + gaps
+        else:
+            children_width = 0
+
+        subtree_width = max(node["width"], children_width)
+        node["subtree_width"] = subtree_width
+        node["rank"] = depth
+        node["kind"] = "root" if node_id == root_id else "node"
+        measured[node_id] = subtree_width
+        return subtree_width
+
+    measure(root_id, 0, set())
+
+    def assign(node_id, left, y):
+        node = by_id[node_id]
+        subtree_width = measured[node_id]
+        center_x = left + subtree_width / 2
+        node["x"] = center_x
+        node["y"] = y
+        node["subtree_left"] = left
+        node["subtree_right"] = left + subtree_width
+
+        child_ids = children.get(node_id, [])
+        if not child_ids:
+            return
+
+        children_width = sum(measured[child_id] for child_id in child_ids)
+        children_width += sum(
+            _mind_map_horizontal_gap(by_id[child_ids[index]], by_id[child_ids[index + 1]], node["rank"] + 1)
+            for index in range(len(child_ids) - 1)
+        )
+        child_left = center_x - children_width / 2
+        child_y = y + node["height"] / 2 + _mind_map_vertical_gap(node, [by_id[child_id] for child_id in child_ids])
+        for index, child_id in enumerate(child_ids):
+            child = by_id[child_id]
+            assign(child_id, child_left, child_y + child["height"] / 2)
+            child_left += measured[child_id]
+            if index < len(child_ids) - 1:
+                child_left += _mind_map_horizontal_gap(child, by_id[child_ids[index + 1]], node["rank"] + 1)
+
+    assign(root_id, -measured[root_id] / 2, 0)
+    return items
+
+
 def anatomy_layout(nodes, connections=None):
     items = decorate([dict(item) for item in nodes])
     if not items:
@@ -316,7 +453,9 @@ def layout_for_type(visualization_type, nodes, connections=None):
         return timeline_layout(nodes, connections)
     if visualization_type in {"tree", "hierarchy", "organization_chart"}:
         return hierarchy_layout(nodes, connections)
-    if visualization_type in {"concept_map", "mind_map", "network_graph", "ecosystem"}:
+    if visualization_type == "mind_map":
+        return mind_map_layout(nodes, connections)
+    if visualization_type in {"concept_map", "network_graph", "ecosystem"}:
         return force_directed_layout(nodes, connections)
     if visualization_type == "comparison":
         return comparison_layout(nodes, connections)
