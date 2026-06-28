@@ -83,6 +83,7 @@
                 <span>Memory Challenge <strong>Easy +15</strong></span>
                 <span>Tutor <strong>+{{ gamification.xp_values.tutor }}</strong></span>
                 <span>Quiz <strong>+{{ gamification.xp_values.quiz }}</strong></span>
+                <span>Study Plan <strong>+{{ gamification.xp_values.study_plan }}</strong></span>
             </div>
         </section>
 
@@ -137,6 +138,13 @@
                 </div>
             </article>
             <article class="dashboard-stat-card">
+                <span aria-hidden="true">&#128467;</span>
+                <div>
+                    <p>Weekly Study Streak</p>
+                    <strong>{{ today_study_goal.weekly_streak }}</strong>
+                </div>
+            </article>
+            <article class="dashboard-stat-card">
                 <span aria-hidden="true">&#127183;</span>
                 <div>
                     <p>Flashcards Studied</p>
@@ -176,6 +184,32 @@
                     {% endif %}
                 </div>
             </article>
+            <article class="dashboard-stat-card">
+                <span aria-hidden="true">&#9989;</span>
+                <div>
+                    <p>Study Plans Completed</p>
+                    <strong>{{ study_planner.completed_lessons }}</strong>
+                </div>
+            </article>
+        </section>
+
+        <section class="dashboard-panel today-study-goal-panel">
+            <div class="dashboard-section-heading">
+                <div>
+                    <span class="eyebrow">Today's Study Goal</span>
+                    <h2>{{ today_study_goal.title }}</h2>
+                </div>
+                <strong>{{ today_study_goal.completion_percentage }}%</strong>
+            </div>
+            <div class="study-plan-progress-track" aria-label="Today study goal progress">
+                <span style="width: {{ today_study_goal.completion_percentage }}%"></span>
+            </div>
+            <p>{{ today_study_goal.description }}</p>
+            <div class="today-study-goal-meta">
+                <span>{{ today_study_goal.estimated_remaining_minutes }} min left</span>
+                <span>{{ today_study_goal.weekly_streak }} day weekly streak</span>
+            </div>
+            <a class="button-link" href="{{ today_study_goal.url }}">{{ today_study_goal.cta }}</a>
         </section>
 
         <section class="dashboard-panel daily-challenge-panel">

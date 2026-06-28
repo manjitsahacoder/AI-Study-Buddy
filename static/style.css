@@ -3367,6 +3367,178 @@ body.dashboard-page #theme-toggle {
     padding-left: 1.25rem;
 }
 
+.study-plan-shell {
+    max-width: 1180px;
+}
+
+.study-plan-header p {
+    margin: 8px 0 0;
+    color: var(--muted);
+    font-weight: 700;
+}
+
+.study-plan-preview-section,
+.study-plan-card {
+    position: relative;
+    margin: 24px 0;
+    padding: clamp(18px, 3vw, 28px);
+    border: 1px solid rgba(231, 223, 210, 0.9);
+    border-radius: 8px;
+    background: rgba(255, 253, 248, 0.9);
+    box-shadow: 0 14px 32px rgba(30, 40, 58, 0.08);
+}
+
+.study-plan-preview-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(180px, 260px) auto;
+    gap: 16px;
+    align-items: center;
+    margin-top: 16px;
+    padding: 16px;
+    border: 1px solid rgba(49, 87, 213, 0.14);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.84);
+}
+
+.study-plan-preview-card strong,
+.study-plan-task-copy strong {
+    display: block;
+    color: var(--ink);
+    font-size: 1.02rem;
+}
+
+.study-plan-preview-card span,
+.study-plan-task-copy span,
+.today-study-goal-meta span {
+    color: var(--muted);
+    font-size: 0.9rem;
+    font-weight: 800;
+}
+
+.study-plan-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px;
+    margin: 18px 0;
+}
+
+.study-plan-summary-card {
+    display: grid;
+    gap: 8px;
+    min-height: 126px;
+    padding: 16px;
+    border: 1px solid rgba(49, 87, 213, 0.13);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.88);
+    box-shadow: 0 12px 28px rgba(30, 40, 58, 0.07);
+}
+
+.study-plan-summary-card span {
+    color: var(--muted);
+    font-size: 0.82rem;
+    font-weight: 900;
+    text-transform: uppercase;
+}
+
+.study-plan-summary-card strong {
+    color: var(--ink);
+    font-size: clamp(1.35rem, 3vw, 2rem);
+}
+
+.study-plan-summary-card.completed {
+    border-color: rgba(47, 168, 118, 0.34);
+    background: rgba(230, 248, 239, 0.92);
+}
+
+.study-plan-progress-track {
+    overflow: hidden;
+    width: 100%;
+    height: 10px;
+    border-radius: 999px;
+    background: rgba(49, 87, 213, 0.12);
+}
+
+.study-plan-progress-track span {
+    display: block;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, var(--primary), var(--green));
+}
+
+.study-plan-task-list {
+    display: grid;
+    gap: 12px;
+}
+
+.study-plan-task {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr) auto;
+    gap: 14px;
+    align-items: center;
+    min-height: 76px;
+    padding: 14px;
+    border: 1px solid rgba(49, 87, 213, 0.13);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.88);
+}
+
+.study-plan-task.completed {
+    border-color: rgba(47, 168, 118, 0.32);
+    background: rgba(242, 251, 246, 0.92);
+}
+
+.study-plan-task-status {
+    display: inline-grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    color: #ffffff;
+    background: var(--primary);
+    font-weight: 950;
+}
+
+.study-plan-task.completed .study-plan-task-status {
+    background: var(--green);
+}
+
+.study-plan-task form {
+    margin: 0;
+}
+
+.study-plan-task .button-link,
+.study-plan-task button {
+    min-height: 40px;
+    white-space: nowrap;
+}
+
+.study-plan-complete-label {
+    padding: 8px 10px;
+    border-radius: 999px;
+    color: #176746;
+    background: rgba(47, 168, 118, 0.14);
+    font-size: 0.86rem;
+    font-weight: 950;
+}
+
+.today-study-goal-panel {
+    display: grid;
+    gap: 12px;
+}
+
+.today-study-goal-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.today-study-goal-meta span {
+    padding: 8px 10px;
+    border: 1px solid rgba(49, 87, 213, 0.12);
+    border-radius: 8px;
+    background: rgba(49, 87, 213, 0.06);
+}
+
 .mindmap-shell {
     max-width: 1240px;
 }
@@ -7009,6 +7181,8 @@ textarea:focus {
 .dark-mode .revision-command-bar,
 .dark-mode .revision-section-nav,
 .dark-mode .revision-sheet-card,
+.dark-mode .study-plan-preview-section,
+.dark-mode .study-plan-card,
 .dark-mode .mindmap-toolbar,
 .dark-mode .mindmap-stage {
     background:
@@ -7033,6 +7207,37 @@ textarea:focus {
     background:
         linear-gradient(180deg, rgba(32, 40, 58, 0.9), rgba(21, 27, 41, 0.98)),
         rgba(21, 27, 41, 0.94);
+}
+
+.dark-mode .study-plan-preview-card,
+.dark-mode .study-plan-summary-card,
+.dark-mode .study-plan-task,
+.dark-mode .today-study-goal-meta span {
+    background: rgba(17, 24, 39, 0.72);
+    border-color: rgba(134, 161, 255, 0.18);
+}
+
+.dark-mode .study-plan-summary-card.completed,
+.dark-mode .study-plan-task.completed {
+    background: rgba(31, 122, 77, 0.16);
+    border-color: rgba(74, 222, 128, 0.24);
+}
+
+.dark-mode .study-plan-preview-card strong,
+.dark-mode .study-plan-task-copy strong,
+.dark-mode .study-plan-summary-card strong {
+    color: var(--ink);
+}
+
+.dark-mode .study-plan-preview-card span,
+.dark-mode .study-plan-task-copy span,
+.dark-mode .study-plan-summary-card span,
+.dark-mode .today-study-goal-meta span {
+    color: var(--muted);
+}
+
+.dark-mode .study-plan-progress-track {
+    background: rgba(134, 161, 255, 0.16);
 }
 
 .dark-mode .learning-action-card:hover,
@@ -7523,6 +7728,7 @@ textarea:focus {
     .dashboard-stat-grid,
     .dashboard-hero-grid,
     .dashboard-insight-grid,
+    .study-plan-summary-grid,
     .xp-award-grid,
     .daily-challenge-grid,
     .achievement-progress-grid,
@@ -7551,6 +7757,10 @@ textarea:focus {
     .locked-feature-grid,
     .locked-dashboard-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .study-plan-preview-card {
+        grid-template-columns: 1fr;
     }
 
     .memory-stats-grid,
@@ -7729,6 +7939,7 @@ textarea:focus {
     .dashboard-stat-grid,
     .dashboard-hero-grid,
     .dashboard-insight-grid,
+    .study-plan-summary-grid,
     .weekly-summary-grid,
     .xp-award-grid,
     .daily-challenge-grid,
@@ -7761,6 +7972,18 @@ textarea:focus {
     .locked-dashboard-grid,
     .account-motivation-card ul {
         grid-template-columns: 1fr;
+        width: 100%;
+    }
+
+    .study-plan-task {
+        grid-template-columns: 44px minmax(0, 1fr);
+    }
+
+    .study-plan-task .button-link,
+    .study-plan-task button,
+    .study-plan-task form,
+    .study-plan-complete-label {
+        grid-column: 1 / -1;
         width: 100%;
     }
 

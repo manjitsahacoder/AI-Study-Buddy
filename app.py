@@ -3,6 +3,7 @@ from flask import (
     abort,
     flash,
     g,
+    has_request_context,
     jsonify,
     redirect,
     render_template,
@@ -61,6 +62,7 @@ from models import (
     MindMap,
     QuizHistory,
     RevisionSheet,
+    StudyPlanProgress,
     TutorLesson,
     TutorMessage,
     User,
@@ -170,7 +172,9 @@ GAMIFICATION_XP_VALUES = {
     "memory_match": 20,
     "tutor": 10,
     "quiz": 25,
+    "study_plan": 40,
 }
+STUDY_PLAN_COMPLETION_XP = GAMIFICATION_XP_VALUES["study_plan"]
 MEMORY_CHALLENGE_BASE_XP = {
     "easy": 15,
     "medium": 25,
@@ -181,6 +185,15 @@ MEMORY_MATCH_DIFFICULTIES = {
     "medium": 10,
     "hard": 15,
 }
+STUDY_PLAN_ACTIVITY_DEFINITIONS = (
+    ("notes", "Notes", "Review saved notes", 12, "lesson_notes"),
+    ("revision", "Quick Revision", "Create a compact revision sheet", 10, "revision"),
+    ("mind_map", "Mind Map", "Map the lesson concepts", 8, "mindmap"),
+    ("flashcards", "Flashcards", "Build active-recall cards", 15, "flashcards"),
+    ("memory_challenge", "Memory Challenge", "Play a matching recall round", 10, "memory_match"),
+    ("ai_tutor", "AI Tutor", "Ask for guided help", 12, "start_ai_tutor"),
+    ("quiz", "Quiz", "Test the lesson questions", 15, "quiz"),
+)
 ALL_ROUND_LEARNER_ACTIVITIES = ("notes", "revision", "mind_map", "flashcards", "tutor", "quiz")
 GAMIFICATION_LEVEL_XP = 100
 LEARN_BUSY_MESSAGE = "AI Study Buddy is temporarily busy. Please try again in a moment."
@@ -2601,6 +2614,284 @@ def count_user_rows_between(model, user_id, start, end):
     )
 
 
+def study_plan_completion_count(user_id):
+    return (
+        StudyPlanProgress.query.with_entities(func.count(StudyPlanProgress.id))
+        .filter(
+            StudyPlanProgress.user_id == user_id,
+            StudyPlanProgress.xp_awarded_at.isnot(None),
+        )
+        .scalar()
+        or 0
+    )
+
+
+def study_plan_xp_for_user(user_id):
+    return (
+        StudyPlanProgress.query.with_entities(func.coalesce(func.sum(StudyPlanProgress.xp_earned), 0))
+        .filter(
+            StudyPlanProgress.user_id == user_id,
+            StudyPlanProgress.xp_awarded_at.isnot(None),
+        )
+        .scalar()
+        or 0
+    )
+
+
+def lesson_quiz_completed(lesson, user_id):
+    return bool(
+        QuizHistory.query.filter(
+            QuizHistory.user_id == user_id,
+            QuizHistory.subject == lesson.subject,
+            QuizHistory.topic == lesson.topic,
+        ).first()
+    )
+
+
+def study_plan_progress_for_lesson(lesson_id, user_id):
+    return StudyPlanProgress.query.filter_by(
+        user_id=user_id,
+        learning_history_id=lesson_id,
+    ).first()
+
+
+def get_or_create_study_plan_progress(lesson_id, user_id):
+    progress = study_plan_progress_for_lesson(lesson_id, user_id)
+    if progress:
+        return progress
+
+    progress = StudyPlanProgress(
+        user_id=user_id,
+        learning_history_id=lesson_id,
+        xp_earned=STUDY_PLAN_COMPLETION_XP,
+    )
+    db.session.add(progress)
+    db.session.flush()
+    return progress
+
+
+def study_plan_activity_statuses(lesson, user_id, current_page_url=None):
+    flashcard_set = existing_flashcard_set(lesson.id, user_id)
+    completions = {
+        "notes": True,
+        "revision": bool(existing_revision_sheet(lesson.id, user_id)),
+        "mind_map": bool(existing_mind_map(lesson.id, user_id)),
+        "flashcards": bool(flashcard_set),
+        "memory_challenge": bool(MemoryChallenge.query.filter_by(user_id=user_id, lesson_id=lesson.id).first()),
+        "ai_tutor": bool(TutorLesson.query.filter_by(user_id=user_id, learning_history_id=lesson.id).first()),
+        "quiz": lesson_quiz_completed(lesson, user_id),
+    }
+    questions = decode_json_list(lesson.quiz_questions)
+    can_build_urls = has_request_context()
+    next_url = current_page_url or (url_for("study_plan", lesson_id=lesson.id) if can_build_urls else None)
+    activities = []
+    for key, title, description, minutes, endpoint in STUDY_PLAN_ACTIVITY_DEFINITIONS:
+        completed = completions[key]
+        if key == "quiz":
+            action_url = url_for("quiz") if can_build_urls else "#"
+            action_label = "Take Quiz" if questions else "No Quiz Available"
+            action_method = "post"
+        else:
+            target_endpoint = endpoint
+            if key == "memory_challenge" and not flashcard_set:
+                target_endpoint = "flashcards"
+            action_url = (
+                url_for(target_endpoint, lesson_id=lesson.id, next=next_url)
+                if can_build_urls
+                else "#"
+            )
+            action_label = {
+                "notes": "Open Notes",
+                "revision": "Generate Revision",
+                "mind_map": "Generate Mind Map",
+                "flashcards": "Generate Flashcards",
+                "memory_challenge": "Generate Flashcards" if not flashcard_set else "Play Challenge",
+                "ai_tutor": "Start Tutor",
+            }[key]
+            action_method = "get"
+        activities.append(
+            {
+                "key": key,
+                "title": title,
+                "description": description,
+                "estimated_minutes": minutes,
+                "completed": completed,
+                "action_url": action_url,
+                "action_label": action_label,
+                "action_method": action_method,
+                "disabled": key == "quiz" and not questions,
+            }
+        )
+    return activities
+
+
+def build_study_plan(lesson, user_id, current_page_url=None, include_questions=False):
+    activities = study_plan_activity_statuses(lesson, user_id, current_page_url=current_page_url)
+    completed_count = sum(1 for activity in activities if activity["completed"])
+    total_count = len(activities)
+    total_minutes = sum(activity["estimated_minutes"] for activity in activities)
+    remaining_minutes = sum(
+        activity["estimated_minutes"]
+        for activity in activities
+        if not activity["completed"]
+    )
+    progress = study_plan_progress_for_lesson(lesson.id, user_id)
+    plan = {
+        "lesson_id": lesson.id,
+        "subject": lesson.subject,
+        "topic": lesson.topic,
+        "activities": activities,
+        "completed_count": completed_count,
+        "total_count": total_count,
+        "completion_percentage": int((completed_count / total_count) * 100) if total_count else 0,
+        "estimated_total_minutes": total_minutes,
+        "estimated_remaining_minutes": remaining_minutes,
+        "completed": completed_count == total_count,
+        "xp_value": STUDY_PLAN_COMPLETION_XP,
+        "xp_awarded": bool(progress and progress.xp_awarded_at),
+        "completed_at": progress.completed_at if progress else None,
+    }
+    if include_questions:
+        plan["questions"] = decode_json_list(lesson.quiz_questions)
+    return plan
+
+
+def award_study_plan_xp_if_completed(lesson, user_id, plan):
+    if not plan["completed"] or plan["xp_awarded"]:
+        return False
+
+    progress = get_or_create_study_plan_progress(lesson.id, user_id)
+    now = datetime.now(timezone.utc)
+    progress.completed_at = progress.completed_at or now
+    progress.xp_awarded_at = progress.xp_awarded_at or now
+    progress.xp_earned = progress.xp_earned or STUDY_PLAN_COMPLETION_XP
+    db.session.commit()
+    plan["xp_awarded"] = True
+    plan["completed_at"] = progress.completed_at
+    return True
+
+
+def get_study_planner_stats(user_id):
+    lessons = (
+        LearningHistory.query.options(
+            load_only(
+                LearningHistory.id,
+                LearningHistory.subject,
+                LearningHistory.topic,
+                LearningHistory.quiz_questions,
+            )
+        )
+        .filter_by(user_id=user_id)
+        .order_by(LearningHistory.created_at.desc(), LearningHistory.id.desc())
+        .all()
+    )
+    plans = [build_study_plan(lesson, user_id) for lesson in lessons]
+    completed_lessons = sum(1 for plan in plans if plan["completed"])
+    total_lessons = len(plans)
+    average_completion = (
+        round(sum(plan["completion_percentage"] for plan in plans) / total_lessons, 1)
+        if total_lessons
+        else 0
+    )
+    awarded_count = study_plan_completion_count(user_id)
+    return {
+        "total_lessons": total_lessons,
+        "completed_lessons": completed_lessons,
+        "in_progress_lessons": max(0, total_lessons - completed_lessons),
+        "average_completion": average_completion,
+        "xp_awarded": int(study_plan_xp_for_user(user_id) or 0),
+        "awarded_count": awarded_count,
+        "weekly_streak": get_weekly_study_streak(user_id),
+    }
+
+
+def get_today_study_goal(user_id):
+    lesson = (
+        LearningHistory.query.options(
+            load_only(
+                LearningHistory.id,
+                LearningHistory.subject,
+                LearningHistory.topic,
+                LearningHistory.quiz_questions,
+                LearningHistory.created_at,
+            )
+        )
+        .filter_by(user_id=user_id)
+        .order_by(LearningHistory.created_at.desc(), LearningHistory.id.desc())
+        .all()
+    )
+    for row in lesson:
+        plan = build_study_plan(row, user_id)
+        next_task = next((activity for activity in plan["activities"] if not activity["completed"]), None)
+        if next_task:
+            return {
+                "lesson": row,
+                "title": next_task["title"],
+                "description": f"{row.topic} needs {next_task['title'].lower()} next.",
+                "completion_percentage": plan["completion_percentage"],
+                "estimated_remaining_minutes": plan["estimated_remaining_minutes"],
+                "url": url_for("study_plan", lesson_id=row.id),
+                "cta": "Open Study Plan",
+                "weekly_streak": get_weekly_study_streak(user_id),
+            }
+
+    return {
+        "lesson": None,
+        "title": "Start a saved lesson plan",
+        "description": "Save a lesson to unlock a local study plan.",
+        "completion_percentage": 0,
+        "estimated_remaining_minutes": 0,
+        "url": url_for("home") + "#lesson-form",
+        "cta": "Create Lesson",
+        "weekly_streak": get_weekly_study_streak(user_id),
+    }
+
+
+def get_developer_study_planner_stats():
+    lessons = (
+        LearningHistory.query.options(
+            load_only(
+                LearningHistory.id,
+                LearningHistory.user_id,
+                LearningHistory.subject,
+                LearningHistory.topic,
+                LearningHistory.quiz_questions,
+            )
+        )
+        .all()
+    )
+    plans = [build_study_plan(lesson, lesson.user_id) for lesson in lessons]
+    total_lessons = len(plans)
+    average_completion = (
+        round(sum(plan["completion_percentage"] for plan in plans) / total_lessons, 1)
+        if total_lessons
+        else 0
+    )
+    awarded_completions = (
+        StudyPlanProgress.query.filter(StudyPlanProgress.xp_awarded_at.isnot(None)).count()
+    )
+    active_users = (
+        StudyPlanProgress.query.with_entities(StudyPlanProgress.user_id)
+        .filter(StudyPlanProgress.xp_awarded_at.isnot(None))
+        .distinct()
+        .count()
+    )
+    total_xp_awarded = (
+        StudyPlanProgress.query.with_entities(func.coalesce(func.sum(StudyPlanProgress.xp_earned), 0))
+        .filter(StudyPlanProgress.xp_awarded_at.isnot(None))
+        .scalar()
+        or 0
+    )
+    return {
+        "total_lessons": total_lessons,
+        "completed_lessons": sum(1 for plan in plans if plan["completed"]),
+        "average_completion": average_completion,
+        "awarded_completions": awarded_completions,
+        "active_users": active_users,
+        "total_xp_awarded": int(total_xp_awarded or 0),
+    }
+
+
 def get_gamification_counts(user_id):
     return {
         "notes": count_user_rows(LearningHistory, user_id),
@@ -2610,6 +2901,7 @@ def get_gamification_counts(user_id):
         "memory_match": count_user_rows(MemoryChallenge, user_id),
         "tutor": count_user_rows(TutorLesson, user_id),
         "quiz": count_user_rows(QuizHistory, user_id),
+        "study_plan": study_plan_completion_count(user_id),
     }
 
 
@@ -2666,6 +2958,15 @@ def get_gamification_activity_dates(user_id):
         row.completed_at
         for row in MemoryChallenge.query.with_entities(MemoryChallenge.completed_at)
         .filter_by(user_id=user_id)
+        .all()
+    )
+    activity_dates.extend(
+        row.xp_awarded_at
+        for row in StudyPlanProgress.query.with_entities(StudyPlanProgress.xp_awarded_at)
+        .filter(
+            StudyPlanProgress.user_id == user_id,
+            StudyPlanProgress.xp_awarded_at.isnot(None),
+        )
         .all()
     )
     return activity_dates
@@ -2772,6 +3073,12 @@ def build_gamification_badges(counts, total_xp, study_streak, memory_stats=None)
             "description": "Use every XP activity once.",
             "unlocked": all(counts.get(activity, 0) > 0 for activity in ALL_ROUND_LEARNER_ACTIVITIES),
         },
+        {
+            "icon": "&#128467;",
+            "title": "Study Planner",
+            "description": "Complete an AI Study Planner checklist.",
+            "unlocked": counts.get("study_plan", 0) >= 1,
+        },
     ]
 
 
@@ -2789,6 +3096,7 @@ def build_gamification_achievements(counts, total_xp, study_streak, memory_stats
         ("Streak Champion", "Reach a 5-card combo.", memory_stats.get("highest_combo", 0), 5),
         ("Tutor Time", "Start an AI Tutor lesson.", counts["tutor"], 1),
         ("Quiz Courage", "Complete a quiz.", counts["quiz"], 1),
+        ("Planner Complete", "Finish every task in one study plan.", counts.get("study_plan", 0), 1),
         ("XP 250", "Earn 250 XP.", total_xp, 250),
         ("7-Day Streak", "Study across seven days.", study_streak, 7),
     ]
@@ -2816,6 +3124,16 @@ def get_today_gamification_counts(user_id):
         "tutor": count_user_rows_between(TutorLesson, user_id, today_start, tomorrow_start),
         "tutor_messages": count_user_rows_between(TutorMessage, user_id, today_start, tomorrow_start),
         "quiz": count_user_rows_between(QuizHistory, user_id, today_start, tomorrow_start),
+        "study_plan": (
+            StudyPlanProgress.query.with_entities(func.count(StudyPlanProgress.id))
+            .filter(
+                StudyPlanProgress.user_id == user_id,
+                StudyPlanProgress.xp_awarded_at >= today_start,
+                StudyPlanProgress.xp_awarded_at < tomorrow_start,
+            )
+            .scalar()
+            or 0
+        ),
     }
 
 
@@ -2869,6 +3187,14 @@ def build_daily_challenges(user_id):
             "progress": max(today_counts["tutor"], today_counts["tutor_messages"]),
             "target": 1,
             "xp": GAMIFICATION_XP_VALUES["tutor"],
+        },
+        {
+            "key": "study_plan",
+            "title": "Complete a study plan",
+            "description": f"+{GAMIFICATION_XP_VALUES['study_plan']} XP for finishing every planner task.",
+            "progress": today_counts["study_plan"],
+            "target": 1,
+            "xp": GAMIFICATION_XP_VALUES["study_plan"],
         },
     ]
     start_index = datetime.now(timezone.utc).date().toordinal() % len(available_challenges)
@@ -2938,6 +3264,18 @@ def get_gamification_rollups(user_ids):
             if user_id in rollups:
                 rollups[user_id]["counts"][activity] = total
 
+    for user_id, total in (
+        StudyPlanProgress.query.with_entities(StudyPlanProgress.user_id, func.count(StudyPlanProgress.id))
+        .filter(
+            StudyPlanProgress.user_id.in_(user_ids),
+            StudyPlanProgress.xp_awarded_at.isnot(None),
+        )
+        .group_by(StudyPlanProgress.user_id)
+        .all()
+    ):
+        if user_id in rollups:
+            rollups[user_id]["counts"]["study_plan"] = total
+
     memory_xp_by_user = {
         user_id: int(total or 0)
         for user_id, total in (
@@ -2950,12 +3288,29 @@ def get_gamification_rollups(user_ids):
             .all()
         )
     }
+    study_plan_xp_by_user = {
+        user_id: int(total or 0)
+        for user_id, total in (
+            StudyPlanProgress.query.with_entities(
+                StudyPlanProgress.user_id,
+                func.coalesce(func.sum(StudyPlanProgress.xp_earned), 0),
+            )
+            .filter(
+                StudyPlanProgress.user_id.in_(user_ids),
+                StudyPlanProgress.xp_awarded_at.isnot(None),
+            )
+            .group_by(StudyPlanProgress.user_id)
+            .all()
+        )
+    }
 
     for user_id, rollup in rollups.items():
         total_xp = calculate_xp_from_counts(
             rollup["counts"],
             memory_xp=memory_xp_by_user.get(user_id),
         )
+        total_xp -= rollup["counts"].get("study_plan", 0) * GAMIFICATION_XP_VALUES["study_plan"]
+        total_xp += study_plan_xp_by_user.get(user_id, 0)
         study_streak = calculate_study_streak(get_gamification_activity_dates(user_id))
         rollup["total_xp"] = total_xp
         rollup["level"] = gamification_level(total_xp)["level"]
@@ -3364,6 +3719,7 @@ def get_developer_panel_stats():
         "flashcard_sets": FlashcardSet.query.count(),
         "memory_challenges": MemoryChallenge.query.count(),
         "tutor_lessons": TutorLesson.query.count(),
+        "study_plan_progress": StudyPlanProgress.query.count(),
     }
     active_user_ids = set()
     for model, timestamp_column in (
@@ -3376,11 +3732,15 @@ def get_developer_panel_stats():
         (TutorLesson, TutorLesson.created_at),
         (QuizHistory, QuizHistory.created_at),
         (DownloadedFile, DownloadedFile.created_at),
+        (StudyPlanProgress, StudyPlanProgress.xp_awarded_at),
     ):
         active_user_ids.update(
             user_id
             for (user_id,) in model.query.with_entities(model.user_id)
-            .filter(timestamp_column >= today_start, timestamp_column < tomorrow_start)
+            .filter(
+                timestamp_column >= today_start,
+                timestamp_column < tomorrow_start,
+            )
             .distinct()
             .all()
             if user_id
@@ -3424,6 +3784,7 @@ def get_developer_panel_stats():
         .limit(5)
         .all()
     )
+    study_planner_stats = get_developer_study_planner_stats()
 
     return {
         "total_users": table_counts["users"],
@@ -3456,6 +3817,7 @@ def get_developer_panel_stats():
             "most_played_subject": memory_subject.subject if memory_subject else "No games yet",
             "top_players": memory_top_players,
         },
+        "study_planner": study_planner_stats,
     }
 
 
@@ -3923,6 +4285,16 @@ def get_weekly_study_summary(user_id):
         "progress": progress,
         "summary": summary,
     }
+
+
+def get_weekly_study_streak(user_id):
+    week_start = datetime.now(timezone.utc).date() - timedelta(days=6)
+    weekly_dates = [
+        date_value
+        for date_value in get_gamification_activity_dates(user_id)
+        if date_value and (date_value.date() if isinstance(date_value, datetime) else datetime.fromisoformat(str(date_value)[:10]).date()) >= week_start
+    ]
+    return min(7, calculate_study_streak(weekly_dates))
 
 
 def dashboard_learning_progress(stats, weekly_summary):
@@ -6140,6 +6512,8 @@ def dashboard():
         account=account,
         stats=stats,
         gamification=gamification,
+        study_planner=get_study_planner_stats(account["id"]),
+        today_study_goal=get_today_study_goal(account["id"]),
         daily_quote=dashboard_daily_quote(),
         continue_lesson=continue_lesson,
         recent_tutor_conversation=get_recent_tutor_conversation(account["id"]),
@@ -6245,6 +6619,7 @@ def profile():
         account=account,
         gamification=get_gamification_summary(account["id"]),
         memory_profile=summarize_memory_profile(account["id"]),
+        study_planner=get_study_planner_stats(account["id"]),
     )
 
 
@@ -6288,6 +6663,7 @@ def view_learning_history(lesson_id):
     diagram_payload = decode_diagram_payload(lesson["diagram_data"], lesson["subject"], lesson["topic"])
     questions = decode_json_list(lesson["quiz_questions"])
     has_flashcards = bool(existing_flashcard_set(lesson.id, session["user_id"]))
+    current_page_url = url_for("view_learning_history", lesson_id=lesson.id)
     return render_template(
         "learning_history_detail.html",
         lesson=lesson,
@@ -6303,7 +6679,8 @@ def view_learning_history(lesson_id):
         has_revision=bool(existing_revision_sheet(lesson.id, session["user_id"])),
         has_mind_map=bool(existing_mind_map(lesson.id, session["user_id"])),
         has_important_questions=bool(existing_important_question_set(lesson.id, session["user_id"])),
-        current_page_url=url_for("view_learning_history", lesson_id=lesson.id),
+        study_plan=build_study_plan(lesson, session["user_id"], current_page_url=current_page_url),
+        current_page_url=current_page_url,
     )
 
 
@@ -6370,6 +6747,32 @@ def revision(lesson_id):
         has_flashcards=bool(existing_flashcard_set(lesson.id, session["user_id"])),
         has_mind_map=bool(existing_mind_map(lesson.id, session["user_id"])),
         has_important_questions=bool(existing_important_question_set(lesson.id, session["user_id"])),
+        **learning_tool_context(lesson.id),
+    )
+
+
+@app.route("/study-plan/<int:lesson_id>")
+@login_required
+def study_plan(lesson_id):
+    lesson = get_learning_history_entry(lesson_id, session["user_id"])
+    if not lesson:
+        abort(404)
+
+    plan = build_study_plan(
+        lesson,
+        session["user_id"],
+        current_page_url=url_for("study_plan", lesson_id=lesson.id),
+        include_questions=True,
+    )
+    awarded = award_study_plan_xp_if_completed(lesson, session["user_id"], plan)
+    if awarded:
+        flash(f"Study plan completed. +{STUDY_PLAN_COMPLETION_XP} XP awarded.", "success")
+
+    return render_template(
+        "study_plan.html",
+        lesson=lesson,
+        plan=plan,
+        current_user=current_user(),
         **learning_tool_context(lesson.id),
     )
 

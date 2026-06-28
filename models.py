@@ -51,6 +51,7 @@ class User(ModelMappingMixin, db.Model):
     revision_sheets = db.relationship("RevisionSheet", back_populates="user", lazy=True)
     mind_maps = db.relationship("MindMap", back_populates="user", lazy=True)
     important_question_sets = db.relationship("ImportantQuestionSet", back_populates="user", lazy=True)
+    study_plan_progress = db.relationship("StudyPlanProgress", back_populates="user", lazy=True)
 
 
 class QuizHistory(ModelMappingMixin, db.Model):
@@ -153,6 +154,36 @@ class LearningHistory(ModelMappingMixin, db.Model):
         cascade="all, delete-orphan",
         lazy=True,
     )
+    study_plan_progress = db.relationship(
+        "StudyPlanProgress",
+        back_populates="learning_history",
+        cascade="all, delete-orphan",
+        lazy=True,
+    )
+
+
+class StudyPlanProgress(ModelMappingMixin, db.Model):
+    __tablename__ = "study_plan_progress"
+    __table_args__ = (
+        db.UniqueConstraint("user_id", "learning_history_id", name="uq_study_plan_user_history"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    learning_history_id = db.Column(
+        db.Integer,
+        db.ForeignKey("learning_history.id"),
+        nullable=False,
+        index=True,
+    )
+    completed_at = db.Column(db.DateTime, index=True)
+    xp_awarded_at = db.Column(db.DateTime, index=True)
+    xp_earned = db.Column(db.Integer, nullable=False, default=40)
+    created_at = db.Column(db.DateTime, nullable=False, default=utc_now, index=True)
+    updated_at = db.Column(db.DateTime, nullable=False, default=utc_now, onupdate=utc_now, index=True)
+
+    user = db.relationship("User", back_populates="study_plan_progress")
+    learning_history = db.relationship("LearningHistory", back_populates="study_plan_progress")
 
 
 class MindMap(ModelMappingMixin, db.Model):

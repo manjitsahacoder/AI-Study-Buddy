@@ -219,6 +219,59 @@
         <section class="dashboard-panel">
             <div class="dashboard-section-heading">
                 <div>
+                    <span class="eyebrow">&#128467; AI Study Planner</span>
+                    <h2>Study Planner Analytics</h2>
+                </div>
+            </div>
+            <div class="dashboard-stat-grid">
+                <article class="dashboard-stat-card">
+                    <span aria-hidden="true">&#128218;</span>
+                    <div>
+                        <p>Planner-Ready Lessons</p>
+                        <strong>{{ stats.study_planner.total_lessons }}</strong>
+                    </div>
+                </article>
+                <article class="dashboard-stat-card">
+                    <span aria-hidden="true">&#9989;</span>
+                    <div>
+                        <p>Computed Complete Plans</p>
+                        <strong>{{ stats.study_planner.completed_lessons }}</strong>
+                    </div>
+                </article>
+                <article class="dashboard-stat-card">
+                    <span aria-hidden="true">&#127942;</span>
+                    <div>
+                        <p>Awarded Completions</p>
+                        <strong>{{ stats.study_planner.awarded_completions }}</strong>
+                    </div>
+                </article>
+                <article class="dashboard-stat-card">
+                    <span aria-hidden="true">&#9889;</span>
+                    <div>
+                        <p>Planner XP Awarded</p>
+                        <strong>{{ stats.study_planner.total_xp_awarded }}</strong>
+                    </div>
+                </article>
+                <article class="dashboard-stat-card">
+                    <span aria-hidden="true">&#128202;</span>
+                    <div>
+                        <p>Average Completion</p>
+                        <strong>{{ stats.study_planner.average_completion }}%</strong>
+                    </div>
+                </article>
+                <article class="dashboard-stat-card">
+                    <span aria-hidden="true">&#128101;</span>
+                    <div>
+                        <p>Planner Active Users</p>
+                        <strong>{{ stats.study_planner.active_users }}</strong>
+                    </div>
+                </article>
+            </div>
+        </section>
+
+        <section class="dashboard-panel">
+            <div class="dashboard-section-heading">
+                <div>
                     <span class="eyebrow">Recent Registrations</span>
                     <h2>Latest 10 Registered Users</h2>
                 </div>

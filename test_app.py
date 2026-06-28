@@ -23,6 +23,7 @@ from models import (
     MindMap,
     QuizHistory,
     RevisionSheet,
+    StudyPlanProgress,
     TutorLesson,
     TutorMessage,
     User,
@@ -1027,6 +1028,146 @@ Grade: A
         self.assertIn("Level 2 &middot; 105 XP", profile_page)
         self.assertIn("Badges Unlocked", profile_page)
 
+    def test_study_plan_computes_local_activity_status_without_gemini(self):
+        self.register_user()
+        self.login_user()
+
+        with app_module.app.app_context():
+            user = User.query.filter_by(username="asha").first()
+            lesson_id = app_module.save_learning_history(
+                user.id,
+                "Science",
+                "Biology",
+                "Plants",
+                "Plants make food.",
+                {},
+                ["What is photosynthesis?"],
+            )
+            db.session.add(
+                RevisionSheet(
+                    user_id=user.id,
+                    learning_history_id=lesson_id,
+                    content_markdown="# Quick Revision",
+                    source_model="local-test",
+                )
+            )
+            db.session.commit()
+
+        with patch("app.gemini_request") as gemini_request:
+            response = self.client.get(f"/study-plan/{lesson_id}")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(gemini_request.called)
+        page = response.get_data(as_text=True)
+        self.assertIn("AI Study Planner", page)
+        self.assertIn("28%", page)
+        self.assertIn("2/7", page)
+        self.assertIn("Notes", page)
+        self.assertIn("Quick Revision", page)
+        self.assertIn("Complete", page)
+        self.assertIn("Generate Mind Map", page)
+        self.assertIn("Generate Flashcards", page)
+        self.assertIn("Take Quiz", page)
+        self.assertIn("Completion XP", page)
+
+    def test_completed_study_plan_awards_xp_once_and_updates_stats(self):
+        self.register_user()
+        self.login_user()
+
+        with app_module.app.app_context():
+            user = User.query.filter_by(username="asha").first()
+            lesson_id = app_module.save_learning_history(
+                user.id,
+                "Science",
+                "Biology",
+                "Plants",
+                "Plants make food.",
+                {},
+                ["What is photosynthesis?"],
+            )
+            db.session.add_all(
+                [
+                    RevisionSheet(
+                        user_id=user.id,
+                        learning_history_id=lesson_id,
+                        content_markdown="# Quick Revision",
+                        source_model="local-test",
+                    ),
+                    MindMap(
+                        user_id=user.id,
+                        learning_history_id=lesson_id,
+                        map_json="{}",
+                        source_model="local-test",
+                    ),
+                    FlashcardSet(
+                        user_id=user.id,
+                        learning_history_id=lesson_id,
+                        source_model="local-test",
+                    ),
+                    MemoryChallenge(
+                        user_id=user.id,
+                        lesson_id=lesson_id,
+                        difficulty="easy",
+                        best_time=45,
+                        best_accuracy=100,
+                        best_moves=6,
+                        highest_combo=6,
+                        xp_earned=20,
+                    ),
+                    TutorLesson(
+                        user_id=user.id,
+                        learning_history_id=lesson_id,
+                        name="Asha Student",
+                        student_class="8",
+                        subject="Science",
+                        book_name="Biology",
+                        chapter="Plants",
+                    ),
+                ]
+            )
+            db.session.commit()
+            app_module.save_quiz_history(
+                "Asha Student",
+                "8",
+                "Science",
+                "Plants",
+                "9/10",
+                "A+",
+                ["Q1"],
+                ["A1"],
+                "{}",
+                user_id=user.id,
+            )
+
+        with patch("app.gemini_request") as gemini_request:
+            first_response = self.client.get(f"/study-plan/{lesson_id}")
+            second_response = self.client.get(f"/study-plan/{lesson_id}")
+
+        self.assertFalse(gemini_request.called)
+        self.assertEqual(first_response.status_code, 200)
+        self.assertEqual(second_response.status_code, 200)
+        first_page = first_response.get_data(as_text=True)
+        second_page = second_response.get_data(as_text=True)
+        self.assertIn("+40 XP awarded", first_page)
+        self.assertIn("Awarded", second_page)
+
+        with app_module.app.app_context():
+            summary = app_module.get_gamification_summary(1)
+            planner_stats = app_module.get_study_planner_stats(1)
+            self.assertEqual(StudyPlanProgress.query.count(), 1)
+
+        self.assertEqual(summary["counts"]["study_plan"], 1)
+        self.assertEqual(summary["total_xp"], 155)
+        self.assertEqual(planner_stats["completed_lessons"], 1)
+        self.assertEqual(planner_stats["xp_awarded"], 40)
+
+        dashboard_page = self.client.get("/dashboard").get_data(as_text=True)
+        profile_page = self.client.get("/profile").get_data(as_text=True)
+        self.assertIn("Today's Study Goal", dashboard_page)
+        self.assertIn("Study Plans Completed", dashboard_page)
+        self.assertIn("Planner statistics", profile_page)
+        self.assertIn("Planner XP", profile_page)
+
     def test_rbac_panels_require_login(self):
         for path in ["/developer", "/developer/users", "/developer/user/1", "/support", "/qa"]:
             with self.subTest(path=path):
@@ -1098,6 +1239,9 @@ Grade: A
         self.assertIn("Website Version", page)
         self.assertIn("Database Statistics", page)
         self.assertIn("Server Status", page)
+        self.assertIn("Study Planner Analytics", page)
+        self.assertIn("Planner-Ready Lessons", page)
+        self.assertIn("Planner XP Awarded", page)
         self.assertIn("role-developer", page)
         self.assertIn("Support Panel", page)
         self.assertIn("QA Panel", page)
@@ -2750,6 +2894,8 @@ Q5. What is question five?
         self.assertIn("data:image/svg+xml", detail_page)
         self.assertIn("Download Diagram", detail_page)
         self.assertIn("What is question one?", detail_page)
+        self.assertIn("Generate Study Plan", detail_page)
+        self.assertIn("Personalized study plan", detail_page)
 
         diagram_response = self.client.get("/learning-history/1/diagram/download")
         self.assertEqual(diagram_response.status_code, 200)

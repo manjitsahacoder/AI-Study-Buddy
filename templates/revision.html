@@ -45,6 +45,9 @@
         <a class="button-link secondary-link" href="{{ url_for('flashcards', lesson_id=lesson.id, next=current_page_url) }}">
             &#127183; Open Flashcards
         </a>
+        <a class="button-link secondary-link" href="{{ url_for('study_plan', lesson_id=lesson.id, next=current_page_url) }}">
+            &#128467; Generate Study Plan
+        </a>
         <form action="{{ url_for('start_ai_tutor', next=current_page_url) }}" method="POST">
             <input type="hidden" name="lesson_id" value="{{ lesson.id }}">
             <input type="hidden" name="next" value="{{ current_page_url }}">

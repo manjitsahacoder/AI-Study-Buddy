@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ lesson.topic }} Study Plan - AI Study Buddy</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body class="learn-page study-plan-page">
+<button id="theme-toggle" onclick="toggleTheme()">
+    &#127769; Dark Mode
+</button>
+
+<main class="learn-container study-plan-shell">
+    <div class="auth-header-row study-plan-header">
+        <div>
+            <span class="eyebrow">&#128467; AI Study Planner</span>
+            <h1>{{ lesson.topic }}</h1>
+            <p>Personalized from your saved lesson activity. No new AI generation is used here.</p>
+        </div>
+        <div class="auth-page-actions">
+            <a class="button-link secondary-link" href="{{ return_url }}">Back to Lesson</a>
+            {% include 'components/auth_nav.html' %}
+        </div>
+    </div>
+
+    {% include 'components/flash_messages.html' %}
+
+    <div class="lesson-info-strip">
+        <span><strong>Subject</strong> {{ lesson.subject }}</span>
+        <span><strong>Book</strong> {{ lesson.book_name or 'N/A' }}</span>
+        <span><strong>Chapter</strong> {{ lesson.topic }}</span>
+        <span><strong>Estimated</strong> {{ plan.estimated_total_minutes }} min</span>
+    </div>
+
+    <section class="study-plan-summary-grid" aria-label="Study plan summary">
+        <article class="study-plan-summary-card">
+            <span>Completion</span>
+            <strong>{{ plan.completion_percentage }}%</strong>
+            <div class="study-plan-progress-track">
+                <span style="width: {{ plan.completion_percentage }}%"></span>
+            </div>
+        </article>
+        <article class="study-plan-summary-card">
+            <span>Tasks Done</span>
+            <strong>{{ plan.completed_count }}/{{ plan.total_count }}</strong>
+        </article>
+        <article class="study-plan-summary-card">
+            <span>Time Left</span>
+            <strong>{{ plan.estimated_remaining_minutes }} min</strong>
+        </article>
+        <article class="study-plan-summary-card {% if plan.xp_awarded %}completed{% endif %}">
+            <span>Completion XP</span>
+            <strong>{% if plan.xp_awarded %}Awarded{% else %}+{{ plan.xp_value }} XP{% endif %}</strong>
+        </article>
+    </section>
+
+    <section class="study-plan-card">
+        <div class="dashboard-section-heading">
+            <div>
+                <span class="eyebrow">Local Plan</span>
+                <h2>Study checklist</h2>
+            </div>
+        </div>
+        <div class="study-plan-task-list">
+            {% for activity in plan.activities %}
+            <article class="study-plan-task {% if activity.completed %}completed{% endif %}">
+                <div class="study-plan-task-status" aria-hidden="true">
+                    {% if activity.completed %}&#10003;{% else %}{{ loop.index }}{% endif %}
+                </div>
+                <div class="study-plan-task-copy">
+                    <strong>{{ activity.title }}</strong>
+                    <span>{{ activity.description }} &middot; {{ activity.estimated_minutes }} min</span>
+                </div>
+                {% if activity.completed %}
+                <span class="study-plan-complete-label">Complete</span>
+                {% elif activity.action_method == 'post' %}
+                <form action="{{ activity.action_url }}" method="POST">
+                    <input type="hidden" name="name" value="{{ current_user.full_name if current_user else 'Student' }}">
+                    <input type="hidden" name="student_class" value="{{ current_user.student_class if current_user else '' }}">
+                    <input type="hidden" name="subject" value="{{ lesson.subject }}">
+                    <input type="hidden" name="topic" value="{{ lesson.topic }}">
+                    {% for question in plan.questions %}
+                    <input type="hidden" name="question{{ loop.index }}" value="{{ question }}">
+                    {% endfor %}
+                    <button type="submit" {% if activity.disabled %}disabled{% endif %}>{{ activity.action_label }}</button>
+                </form>
+                {% else %}
+                <a class="button-link secondary-link" href="{{ activity.action_url }}">{{ activity.action_label }}</a>
+                {% endif %}
+            </article>
+            {% endfor %}
+        </div>
+    </section>
+
+    {% include 'components/footer.html' %}
+</main>
+
+<script>
+function toggleTheme() {
+    document.body.classList.toggle("dark-mode");
+
+    let btn = document.getElementById("theme-toggle");
+    if (document.body.classList.contains("dark-mode")) {
+        btn.innerHTML = "&#9728;&#65039; Light Mode";
+    } else {
+        btn.innerHTML = "&#127769; Dark Mode";
+    }
+}
+</script>
+</body>
+</html>

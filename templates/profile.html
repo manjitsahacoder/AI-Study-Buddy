@@ -103,6 +103,34 @@
     <section class="profile-gamification-card">
         <div class="profile-card-header">
             <div>
+                <span class="eyebrow">&#128467; AI Study Planner</span>
+                <h2>Planner statistics</h2>
+                <p>Your local study-plan progress across saved lessons.</p>
+            </div>
+        </div>
+        <div class="profile-gamification-grid">
+            <article>
+                <span>Plans Completed</span>
+                <strong>{{ study_planner.completed_lessons }}</strong>
+            </article>
+            <article>
+                <span>Average Completion</span>
+                <strong>{{ study_planner.average_completion }}%</strong>
+            </article>
+            <article>
+                <span>Weekly Streak</span>
+                <strong>{{ study_planner.weekly_streak }}</strong>
+            </article>
+            <article>
+                <span>Planner XP</span>
+                <strong>{{ study_planner.xp_awarded }}</strong>
+            </article>
+        </div>
+    </section>
+
+    <section class="profile-gamification-card">
+        <div class="profile-card-header">
+            <div>
                 <span class="eyebrow">&#129504; AI Memory Challenge</span>
                 <h2>Memory profile</h2>
                 <p>Your best local flashcard matching results.</p>

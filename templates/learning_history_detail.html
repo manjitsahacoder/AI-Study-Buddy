@@ -113,6 +113,24 @@
         </div>
     </section>
 
+    <section class="study-plan-preview-section" aria-labelledby="study-plan-preview-title">
+        <div class="continue-learning-heading">
+            <span class="eyebrow">&#128467; AI Study Planner</span>
+            <h2 id="study-plan-preview-title">Personalized study plan</h2>
+            <p>Track this lesson locally across notes, revision, flashcards, memory practice, tutor work, and quiz completion.</p>
+        </div>
+        <article class="study-plan-preview-card">
+            <div>
+                <strong>{{ study_plan.completion_percentage }}% complete</strong>
+                <span>{{ study_plan.completed_count }}/{{ study_plan.total_count }} tasks done &middot; {{ study_plan.estimated_remaining_minutes }} min left</span>
+            </div>
+            <div class="study-plan-progress-track" aria-label="Study plan progress">
+                <span style="width: {{ study_plan.completion_percentage }}%"></span>
+            </div>
+            <a class="button-link" href="{{ url_for('study_plan', lesson_id=lesson.id, next=current_page_url) }}">Generate Study Plan</a>
+        </article>
+    </section>
+
     {% set topic = lesson.topic %}
     {% set download_url = url_for('download_diagram') %}
     {% include 'visualization.html' %}
@@ -135,6 +153,7 @@
         <a class="button-link" href="{{ url_for('mindmap', lesson_id=lesson.id, next=current_page_url) }}">&#129504; {% if has_mind_map %}Open Mind Map{% else %}Generate Mind Map{% endif %}</a>
         <a class="button-link" href="{{ url_for('important_questions', lesson_id=lesson.id, next=current_page_url) }}">&#11088; {% if has_important_questions %}Open Important Questions{% else %}Generate Questions{% endif %}</a>
         <a class="button-link" href="{{ url_for('flashcards', lesson_id=lesson.id, next=current_page_url) }}">&#127183; Open Flashcards</a>
+        <a class="button-link" href="{{ url_for('study_plan', lesson_id=lesson.id, next=current_page_url) }}">&#128467; Generate Study Plan</a>
         {% if has_flashcards %}
         <a class="button-link" href="{{ url_for('memory_match', lesson_id=lesson.id, next=current_page_url) }}">&#129504; Open Memory Challenge</a>
         {% endif %}
