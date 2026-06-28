@@ -51,6 +51,13 @@
     </div>
     <img class="diagram-image" data-visualization-fallback-image src="{{ diagram_image }}" alt="{{ topic }} diagram" hidden>
     {% else %}
-    <p class="visualization-unavailable">No diagram available for this topic.{% if diagram_payload.explanation %} {{ diagram_payload.explanation }}{% endif %}</p>
+    <div class="visualization-info-card" role="note" aria-label="AI Visualization decision">
+        <span class="visualization-info-icon" aria-hidden="true">&#10024;</span>
+        <div>
+            <h3>AI Visualization</h3>
+            <p>This lesson is primarily text-based and does not require a visual diagram.</p>
+            <p>AI Study Buddy has automatically focused on notes, revision, flashcards, quizzes, memory challenge, and AI Tutor instead.</p>
+        </div>
+    </div>
     {% endif %}
 </section>

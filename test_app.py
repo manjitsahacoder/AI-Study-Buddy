@@ -273,8 +273,150 @@ Q5. What is question five?
 
         self.assertEqual(response.status_code, 200)
         page = response.get_data(as_text=True)
-        self.assertIn("No diagram available for this topic.", page)
+        self.assertIn("AI Visualization", page)
+        self.assertIn("This lesson is primarily text-based and does not require a visual diagram.", page)
         self.assertNotIn("Download Diagram", page)
+
+    @patch.object(app_module.model, "generate_content")
+    def test_text_based_lessons_never_generate_visualizations(self, generate_content):
+        self.register_user()
+        self.login_user()
+        generate_content.return_value = MockResponse(
+            """# Essay Writing
+Essay writing is learned through structure, examples, and practice.
+
+## Quick Revision
+- Plan before writing.
+
+## Visualization Decision JSON
+{"visualization_required": false, "reason": "This lesson is primarily text based and is better learned through reading and examples."}
+
+## Diagram JSON
+{"type":"none","title":"Essay Writing","nodes":[],"connections":[]}
+
+## Questions
+Q1. What is question one?
+
+Q2. What is question two?
+
+Q3. What is question three?
+
+Q4. What is question four?
+
+Q5. What is question five?
+"""
+        )
+
+        response = self.client.post(
+            "/learn",
+            data={
+                "name": "Asha",
+                "student_class": "8",
+                "subject": "English",
+                "topic": "Essay Writing",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        self.assertIn("AI Visualization", page)
+        self.assertIn("This lesson is primarily text-based and does not require a visual diagram.", page)
+        self.assertNotIn("Download Diagram", page)
+        self.assertNotIn("data:image/svg+xml", page)
+        with app_module.app.app_context():
+            lesson = LearningHistory.query.first()
+            saved_diagram = json.loads(lesson.diagram_data)
+
+        self.assertFalse(lesson.visualization_required)
+        self.assertFalse(saved_diagram["visualization_required"])
+        self.assertFalse(saved_diagram["available"])
+
+    @patch.object(app_module.model, "generate_content")
+    def test_biology_lessons_still_generate_visualizations(self, generate_content):
+        generate_content.return_value = MockResponse(
+            """# Photosynthesis
+Plants make food using sunlight.
+
+## Quick Revision
+- Leaves use sunlight.
+
+## Visualization Decision JSON
+{"visualization_required": true, "visualization_type": "biology_process", "confidence": 0.96}
+
+## Diagram JSON
+{"type":"scientific_process","title":"Photosynthesis","nodes":[{"id":"1","label":"Sunlight"},{"id":"2","label":"Carbon Dioxide"},{"id":"3","label":"Water"},{"id":"4","label":"Glucose"},{"id":"5","label":"Oxygen"}],"connections":[["1","4"],["2","4"],["3","4"]],"reason":"This biological process is easier to understand visually.","confidence":0.96}
+
+## Questions
+Q1. What is question one?
+
+Q2. What is question two?
+
+Q3. What is question three?
+
+Q4. What is question four?
+
+Q5. What is question five?
+"""
+        )
+
+        response = self.client.post(
+            "/learn",
+            data={
+                "name": "Asha",
+                "student_class": "8",
+                "subject": "Biology",
+                "topic": "Photosynthesis",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        self.assertIn("Download Diagram", page)
+        self.assertIn("data:image/svg+xml", page)
+        self.assertIn("Scientific Process", page)
+
+    @patch.object(app_module.model, "generate_content")
+    def test_history_timelines_still_generate_visualizations(self, generate_content):
+        generate_content.return_value = MockResponse(
+            """# French Revolution
+The French Revolution had important events in sequence.
+
+## Quick Revision
+- Events happened over time.
+
+## Visualization Decision JSON
+{"visualization_required": true, "visualization_type": "timeline", "confidence": 0.95}
+
+## Diagram JSON
+{"type":"timeline","title":"French Revolution Timeline","nodes":[{"id":"1","label":"Estates-General"},{"id":"2","label":"Tennis Court Oath"},{"id":"3","label":"Bastille"},{"id":"4","label":"Republic"},{"id":"5","label":"Napoleon"}],"connections":[["1","2"],["2","3"],["3","4"],["4","5"]],"reason":"Historical events are best shown in chronological order.","confidence":0.95}
+
+## Questions
+Q1. What is question one?
+
+Q2. What is question two?
+
+Q3. What is question three?
+
+Q4. What is question four?
+
+Q5. What is question five?
+"""
+        )
+
+        response = self.client.post(
+            "/learn",
+            data={
+                "name": "Asha",
+                "student_class": "9",
+                "subject": "History",
+                "topic": "French Revolution",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        self.assertIn("Timeline", page)
+        self.assertIn("Download Diagram", page)
 
     @patch.object(app_module, "local_textbook_context_section")
     @patch.object(app_module.model, "generate_content")
@@ -2964,6 +3106,131 @@ Q5. What is question five?
         self.assertEqual(diagram_response.status_code, 200)
         self.assertEqual(diagram_response.mimetype, "image/svg+xml")
         self.assertIn("<svg", diagram_response.get_data(as_text=True))
+
+    def test_saved_lessons_hide_visualization_buttons_when_not_required(self):
+        self.register_user()
+        self.login_user()
+        with app_module.app.app_context():
+            lesson_id = app_module.save_learning_history(
+                1,
+                "English",
+                "Grammar",
+                "Essay Writing",
+                "# Essay Writing\nWrite with structure.",
+                {
+                    "available": False,
+                    "visualization_required": False,
+                    "visualization_type": "none",
+                    "type": "none",
+                    "diagram_type": "none",
+                    "title": "Essay Writing Visualization",
+                    "nodes": [],
+                    "connections": [],
+                    "labels": [],
+                    "reason": "This lesson is primarily text-based and is better learned through reading and examples.",
+                    "confidence": 0.96,
+                },
+                self.questions,
+            )
+
+        detail_response = self.client.get(f"/learning-history/{lesson_id}")
+        list_response = self.client.get("/learning-history")
+        download_response = self.client.get(f"/learning-history/{lesson_id}/diagram/download")
+
+        self.assertEqual(detail_response.status_code, 200)
+        detail_page = detail_response.get_data(as_text=True)
+        self.assertIn("AI Visualization", detail_page)
+        self.assertIn("This lesson is primarily text-based and does not require a visual diagram.", detail_page)
+        self.assertNotIn("Download Diagram", detail_page)
+        self.assertNotIn("Open Visualization", detail_page)
+        self.assertNotIn("Generate Visualization", detail_page)
+        self.assertNotIn("data:image/svg+xml", detail_page)
+        self.assertEqual(list_response.status_code, 200)
+        self.assertNotIn("Open Visualization", list_response.get_data(as_text=True))
+        self.assertEqual(download_response.status_code, 404)
+
+    @patch.object(app_module.model, "generate_content")
+    def test_existing_visualization_records_continue_working(self, generate_content):
+        self.register_user()
+        self.login_user()
+        with app_module.app.app_context():
+            lesson_id = app_module.save_learning_history(
+                1,
+                "Science",
+                "NCERT",
+                "Photosynthesis",
+                "# Photosynthesis\nPlants make food.",
+                {
+                    "type": "process",
+                    "title": "Photosynthesis",
+                    "nodes": [
+                        {"id": "1", "label": "Sunlight"},
+                        {"id": "2", "label": "Water"},
+                        {"id": "3", "label": "Glucose"},
+                    ],
+                    "connections": [["1", "3"], ["2", "3"]],
+                },
+                self.questions,
+            )
+
+        detail_response = self.client.get(f"/learning-history/{lesson_id}")
+        diagram_response = self.client.get(f"/learning-history/{lesson_id}/diagram/download")
+
+        self.assertEqual(detail_response.status_code, 200)
+        detail_page = detail_response.get_data(as_text=True)
+        self.assertIn("Download Diagram", detail_page)
+        self.assertIn("data:image/svg+xml", detail_page)
+        self.assertEqual(diagram_response.status_code, 200)
+        self.assertIn("<svg", diagram_response.get_data(as_text=True))
+        generate_content.assert_not_called()
+
+    @patch.object(app_module.model, "generate_content")
+    def test_saved_lesson_views_do_not_call_gemini_after_first_generation(self, generate_content):
+        self.register_user()
+        self.login_user()
+        generate_content.return_value = MockResponse(
+            """# Photosynthesis
+Plants make food using sunlight.
+
+## Quick Revision
+- Leaves use sunlight.
+
+## Visualization Decision JSON
+{"visualization_required": true, "visualization_type": "biology_process", "confidence": 0.96}
+
+## Diagram JSON
+{"type":"scientific_process","title":"Photosynthesis","nodes":[{"id":"1","label":"Sunlight"},{"id":"2","label":"Water"},{"id":"3","label":"Glucose"}],"connections":[["1","3"],["2","3"]],"reason":"This biological process is easier to understand visually.","confidence":0.96}
+
+## Questions
+Q1. What is question one?
+
+Q2. What is question two?
+
+Q3. What is question three?
+
+Q4. What is question four?
+
+Q5. What is question five?
+"""
+        )
+        self.client.post(
+            "/learn",
+            data={
+                "name": "Asha",
+                "student_class": "8",
+                "subject": "Biology",
+                "topic": "Photosynthesis",
+            },
+        )
+        self.assertEqual(generate_content.call_count, 1)
+        generate_content.reset_mock()
+
+        self.client.get("/learning-history")
+        self.client.get("/learning-history/1")
+        self.client.get("/notes/1")
+        self.client.get("/learning-history/1/diagram/download")
+
+        generate_content.assert_not_called()
 
     def test_learning_history_filters_and_sorts_saved_lessons(self):
         self.register_user()

@@ -28,6 +28,22 @@ SUPPORTED_VISUALIZATION_TYPES = {
 
 
 TYPE_ALIASES = {
+    "biology_process": "scientific_process",
+    "biology_structure": "anatomy",
+    "chemistry_process": "scientific_process",
+    "physics_process": "scientific_process",
+    "water_cycle": "cycle",
+    "food_chain": "chain",
+    "cell_diagram": "anatomy",
+    "human_body": "anatomy",
+    "plant_diagram": "anatomy",
+    "database": "er_diagram",
+    "electric_circuit": "circuit",
+    "solar_system": "orbit",
+    "grammar_tree": "tree",
+    "flow": "flowchart",
+    "network": "network_graph",
+    "graph": "network_graph",
     "chart": "hierarchy",
     "org_chart": "organization_chart",
     "organization": "organization_chart",
@@ -38,14 +54,11 @@ TYPE_ALIASES = {
     "relationship_map": "concept_map",
     "layers": "layer",
     "flow": "flowchart",
-    "network": "network_graph",
-    "graph": "network_graph",
     "cause_effect": "cause_and_effect",
     "cause-effect": "cause_and_effect",
     "fishbone": "cause_and_effect",
     "er": "er_diagram",
     "erd": "er_diagram",
-    "database": "er_diagram",
 }
 
 

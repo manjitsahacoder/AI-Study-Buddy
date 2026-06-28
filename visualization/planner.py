@@ -167,6 +167,7 @@ def normalize_diagram_payload(raw_diagram):
         raw_diagram = {}
 
     raw_type = raw_diagram.get("type") or raw_diagram.get("diagram_type") or raw_diagram.get("visualization_type")
+    visualization_required = raw_diagram.get("visualization_required")
     labels = _legacy_to_nodes(raw_diagram) if "labels" in raw_diagram else []
     nodes = normalize_nodes(raw_diagram.get("nodes"), labels=labels)
     node_ids = [node["id"] for node in nodes]
@@ -184,6 +185,8 @@ def normalize_diagram_payload(raw_diagram):
 
     return {
         "available": visualization_type != "none" and bool(nodes),
+        "visualization_required": visualization_required,
+        "decision_visualization_type": normalize_text(raw_diagram.get("decision_visualization_type") or ""),
         "type": visualization_type,
         "diagram_type": visualization_type,
         "title": normalize_text(raw_diagram.get("title", "")),
@@ -255,6 +258,7 @@ def _complete_payload(payload, subject="", topic=""):
     return {
         **payload,
         "available": bool(nodes),
+        "visualization_required": True,
         "type": visualization_type,
         "diagram_type": visualization_type,
         "visualization_label": display_type(visualization_type),
@@ -297,6 +301,26 @@ def reason_for_type(visualization_type):
 
 def build_diagram_payload(subject, topic, raw_diagram=None):
     payload = normalize_diagram_payload(raw_diagram)
+    if payload.get("visualization_required") is False:
+        reason = payload["reason"] or "This lesson is primarily text-based and is better learned through reading and examples."
+        return {
+            "available": False,
+            "visualization_required": False,
+            "visualization_type": payload.get("decision_visualization_type") or "none",
+            "template_key": "none",
+            "type": "none",
+            "diagram_type": "none",
+            "visualization_label": "No visualization",
+            "title": safe_title(topic, f"{topic} Visualization" if topic else "Visualization"),
+            "nodes": [],
+            "connections": [],
+            "labels": [],
+            "reason": reason,
+            "confidence": payload.get("confidence") or 0,
+            "confidence_percent": int(round(clamp_number(payload.get("confidence"), default=0) * 100)),
+            "explanation": payload.get("explanation") or reason,
+            "notes": payload.get("notes") or ["No visualization required for this lesson."],
+        }
     template = _template_for(subject, topic)
     if payload["available"]:
         if template and not payload.get("template_key"):
@@ -308,6 +332,8 @@ def build_diagram_payload(subject, topic, raw_diagram=None):
 
     return {
         "available": False,
+        "visualization_required": False,
+        "visualization_type": "none",
         "template_key": "none",
         "type": "none",
         "diagram_type": "none",

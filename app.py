@@ -124,6 +124,7 @@ def initialize_database():
         ensure_sqlite_schema_compatibility()
         ensure_user_preference_schema_compatibility()
         ensure_memory_challenge_schema_compatibility()
+        ensure_learning_history_schema_compatibility()
         ensure_user_roles()
         app.logger.info("Database tables are ready.")
 
@@ -475,6 +476,22 @@ MEMORY_CHALLENGE_COLUMNS = {
 }
 
 
+LEARNING_HISTORY_VISUALIZATION_COLUMNS = {
+    "visualization_required": {
+        "sqlite": "BOOLEAN",
+        "postgresql": "BOOLEAN",
+    },
+    "visualization_type": {
+        "sqlite": "TEXT",
+        "postgresql": "TEXT",
+    },
+    "visualization_reason": {
+        "sqlite": "TEXT",
+        "postgresql": "TEXT",
+    },
+}
+
+
 def ensure_memory_challenge_schema_compatibility():
     dialect_name = db.engine.dialect.name
     inspector = inspect(db.engine)
@@ -521,6 +538,36 @@ def ensure_memory_challenge_schema_compatibility():
         db.session.execute(
             text("UPDATE memory_challenges SET created_at = completed_at WHERE created_at IS NULL")
         )
+        db.session.commit()
+
+
+def ensure_learning_history_schema_compatibility():
+    dialect_name = db.engine.dialect.name
+    inspector = inspect(db.engine)
+    if "learning_history" not in inspector.get_table_names():
+        return
+
+    if dialect_name == "sqlite":
+        learning_history_columns = {
+            row[1]
+            for row in db.session.execute(text("PRAGMA table_info(learning_history)")).fetchall()
+        }
+        for column_name, definitions in LEARNING_HISTORY_VISUALIZATION_COLUMNS.items():
+            if column_name not in learning_history_columns:
+                db.session.execute(
+                    text(f"ALTER TABLE learning_history ADD COLUMN {column_name} {definitions['sqlite']}")
+                )
+        db.session.commit()
+        return
+
+    if dialect_name == "postgresql":
+        for column_name, definitions in LEARNING_HISTORY_VISUALIZATION_COLUMNS.items():
+            db.session.execute(
+                text(
+                    f"ALTER TABLE learning_history ADD COLUMN IF NOT EXISTS {column_name} "
+                    f"{definitions['postgresql']}"
+                )
+            )
         db.session.commit()
 
 
@@ -1099,6 +1146,16 @@ def save_learning_history(user_id, subject, book_name, topic, notes, diagram_dat
     if duplicate:
         return duplicate.id
 
+    visualization_required = None
+    visualization_type = None
+    visualization_reason = None
+    if isinstance(diagram_data, dict):
+        visualization_required = diagram_data.get("visualization_required")
+        if visualization_required is None:
+            visualization_required = diagram_data.get("available")
+        visualization_type = diagram_data.get("visualization_type") or diagram_data.get("decision_visualization_type")
+        visualization_reason = diagram_data.get("reason")
+
     lesson = LearningHistory(
         user_id=user_id,
         subject=subject,
@@ -1106,6 +1163,9 @@ def save_learning_history(user_id, subject, book_name, topic, notes, diagram_dat
         topic=topic,
         notes=notes,
         diagram_data=json.dumps(diagram_data),
+        visualization_required=visualization_required,
+        visualization_type=visualization_type,
+        visualization_reason=visualization_reason,
         quiz_questions=json.dumps(quiz_questions),
     )
     db.session.add(lesson)
@@ -1122,6 +1182,106 @@ LEARNING_HISTORY_FILTERS = [
     ("computer", "Computer"),
     ("others", "Others"),
 ]
+
+VISUALIZATION_DECISION_TYPES = {
+    "biology_process",
+    "biology_structure",
+    "chemistry_process",
+    "physics_process",
+    "water_cycle",
+    "food_chain",
+    "cell_diagram",
+    "human_body",
+    "plant_diagram",
+    "timeline",
+    "map",
+    "tree",
+    "hierarchy",
+    "network",
+    "database",
+    "flow",
+    "cycle",
+    "comparison",
+    "graph",
+    "solar_system",
+    "electric_circuit",
+    "grammar_tree",
+    "mind_map",
+}
+
+TEXT_BASED_VISUALIZATION_TOPICS = [
+    "essay writing",
+    "letter writing",
+    "notice writing",
+    "grammar exercises",
+    "character sketch",
+    "story",
+    "poem",
+    "reading comprehension",
+    "moral science",
+    "value education",
+    "paragraph writing",
+    "speech writing",
+    "dialogue writing",
+    "biography",
+    "autobiography",
+    "composition",
+]
+
+VISUALIZATION_TYPE_RULES = [
+    ("water_cycle", ["water cycle", "rain cycle"]),
+    ("food_chain", ["food chain"]),
+    ("cell_diagram", ["cell", "cells", "plant cell", "animal cell"]),
+    ("human_body", ["human body", "digestive system", "heart", "lungs", "eye", "ear"]),
+    ("plant_diagram", ["plant", "flower", "leaf", "root", "stem"]),
+    ("biology_process", ["photosynthesis", "respiration", "digestion", "transpiration", "mitosis"]),
+    ("chemistry_process", ["chemical reaction", "electrolysis", "distillation", "evaporation", "oxidation"]),
+    ("physics_process", ["force", "motion", "newton", "electricity", "magnetism", "light", "sound"]),
+    ("timeline", ["timeline", "history", "revolution", "war", "movement", "chronology", "events"]),
+    ("map", ["map", "geography", "river", "mountain", "continent", "country", "state"]),
+    ("tree", ["classification", "taxonomy", "grammar tree", "family tree"]),
+    ("hierarchy", ["hierarchy", "government", "democracy", "administration", "levels"]),
+    ("network", ["network", "internet", "connected devices"]),
+    ("database", ["database", "sql", "entity relationship", "foreign key"]),
+    ("flow", ["flowchart", "workflow", "algorithm"]),
+    ("cycle", ["cycle", "repeating"]),
+    ("comparison", [" vs ", " versus ", "compare", "comparison", "difference between"]),
+    ("graph", ["graph", "chart", "data", "statistics"]),
+    ("solar_system", ["solar system", "planet", "orbit"]),
+    ("electric_circuit", ["electric circuit", "circuit", "battery", "resistor"]),
+    ("grammar_tree", ["sentence structure", "parse tree", "parts of speech tree"]),
+    ("mind_map", ["mind map", "concept map"]),
+]
+
+VISUALIZATION_RENDER_TYPE_MAP = {
+    "biology_process": "scientific_process",
+    "biology_structure": "anatomy",
+    "chemistry_process": "scientific_process",
+    "physics_process": "scientific_process",
+    "water_cycle": "cycle",
+    "food_chain": "chain",
+    "cell_diagram": "anatomy",
+    "human_body": "anatomy",
+    "plant_diagram": "anatomy",
+    "timeline": "timeline",
+    "map": "concept_map",
+    "tree": "tree",
+    "hierarchy": "hierarchy",
+    "network": "network_graph",
+    "database": "er_diagram",
+    "flow": "flowchart",
+    "cycle": "cycle",
+    "comparison": "comparison",
+    "graph": "network_graph",
+    "solar_system": "orbit",
+    "electric_circuit": "circuit",
+    "grammar_tree": "tree",
+    "mind_map": "mind_map",
+}
+
+TEXT_BASED_VISUALIZATION_REASON = (
+    "This lesson is primarily text-based and is better learned through reading and examples."
+)
 
 
 def subject_filter_pattern(filter_value):
@@ -1141,6 +1301,10 @@ def get_learning_history_entries(user_id, search="", subject_filter="all", sort_
             LearningHistory.subject,
             LearningHistory.book_name,
             LearningHistory.topic,
+            LearningHistory.diagram_data,
+            LearningHistory.visualization_required,
+            LearningHistory.visualization_type,
+            LearningHistory.visualization_reason,
             LearningHistory.created_at,
         )
     ).filter(LearningHistory.user_id == user_id)
@@ -1191,6 +1355,7 @@ def get_learning_history_entries(user_id, search="", subject_filter="all", sort_
         lesson.has_revision = lesson.id in lesson_ids_with_revisions
         lesson.has_mind_map = lesson.id in lesson_ids_with_mind_maps
         lesson.has_important_questions = lesson.id in lesson_ids_with_important_questions
+        lesson.has_visualization = learning_history_lesson_has_visualization(lesson)
     return lessons
 
 
@@ -1382,6 +1547,15 @@ def decode_diagram_payload(value, subject="", topic=""):
     except json.JSONDecodeError:
         decoded_value = {}
     return build_diagram_payload(subject, topic, decoded_value)
+
+
+def learning_history_lesson_has_visualization(lesson):
+    if getattr(lesson, "visualization_required", None) is False:
+        return False
+    if getattr(lesson, "visualization_required", None) is True:
+        return True
+    payload = decode_diagram_payload(getattr(lesson, "diagram_data", "{}"), lesson.subject, lesson.topic)
+    return bool(payload.get("available"))
 
 
 def save_downloaded_file(user_id, file_type, subject, topic, score="", grade=""):
@@ -4914,12 +5088,213 @@ def extract_json_object(text):
     return decoded if isinstance(decoded, dict) else None
 
 
+def bool_from_ai_value(value, default=None):
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "yes", "required", "visualize", "visualise", "1"}:
+            return True
+        if normalized in {"false", "no", "none", "not_required", "not required", "0"}:
+            return False
+    return default
+
+
+def lesson_text_for_visualization(subject="", topic=""):
+    return f"{subject or ''} {topic or ''}".strip().lower()
+
+
+def is_text_based_visualization_topic(subject="", topic=""):
+    haystack = lesson_text_for_visualization(subject, topic)
+    if not haystack:
+        return False
+    return any(
+        re.search(rf"(?<![a-z0-9]){re.escape(term)}(?![a-z0-9])", haystack)
+        for term in TEXT_BASED_VISUALIZATION_TOPICS
+    )
+
+
+def normalize_visualization_decision_type(value):
+    normalized = re.sub(r"[^a-z0-9]+", "_", str(value or "").strip().lower()).strip("_")
+    aliases = {
+        "process": "flow",
+        "flowchart": "flow",
+        "concept_map": "mind_map",
+        "network_graph": "network",
+        "er_diagram": "database",
+        "scientific_process": "biology_process",
+        "anatomy": "biology_structure",
+        "chain": "food_chain",
+        "orbit": "solar_system",
+        "circuit": "electric_circuit",
+    }
+    normalized = aliases.get(normalized, normalized)
+    return normalized if normalized in VISUALIZATION_DECISION_TYPES else ""
+
+
+def infer_visualization_decision_type(subject="", topic=""):
+    haystack = f" {lesson_text_for_visualization(subject, topic)} "
+    for visualization_type, keywords in VISUALIZATION_TYPE_RULES:
+        if any(keyword in haystack or keyword in haystack.strip() for keyword in keywords):
+            return visualization_type
+    return ""
+
+
+def normalize_visualization_decision(subject, topic, raw_decision=None, raw_diagram=None):
+    if is_text_based_visualization_topic(subject, topic):
+        return {
+            "visualization_required": False,
+            "visualization_type": "none",
+            "reason": TEXT_BASED_VISUALIZATION_REASON,
+            "confidence": 0.96,
+        }
+
+    raw_decision = raw_decision if isinstance(raw_decision, dict) else {}
+    raw_diagram = raw_diagram if isinstance(raw_diagram, dict) else raw_diagram
+    required = bool_from_ai_value(raw_decision.get("visualization_required"))
+    reason = str(raw_decision.get("reason") or "").strip()
+    confidence = raw_decision.get("confidence")
+    visualization_type = normalize_visualization_decision_type(
+        raw_decision.get("visualization_type") or raw_decision.get("type")
+    )
+
+    if required is False:
+        return {
+            "visualization_required": False,
+            "visualization_type": "none",
+            "reason": reason or TEXT_BASED_VISUALIZATION_REASON,
+            "confidence": confidence if confidence is not None else 0.9,
+        }
+
+    if required is True:
+        visualization_type = visualization_type or infer_visualization_decision_type(subject, topic) or "mind_map"
+        return {
+            "visualization_required": True,
+            "visualization_type": visualization_type,
+            "reason": reason or "This lesson has parts, stages, relationships, or events that are easier to understand visually.",
+            "confidence": confidence if confidence is not None else 0.86,
+        }
+
+    if isinstance(raw_diagram, dict):
+        raw_type = raw_diagram.get("type") or raw_diagram.get("diagram_type") or raw_diagram.get("visualization_type")
+        if str(raw_type or "").strip().lower() in {"none", "unavailable", "no_diagram"}:
+            return {
+                "visualization_required": False,
+                "visualization_type": "none",
+                "reason": raw_diagram.get("reason") or raw_diagram.get("explanation") or TEXT_BASED_VISUALIZATION_REASON,
+                "confidence": raw_diagram.get("confidence", 0.82),
+            }
+        if raw_diagram.get("nodes") or raw_diagram.get("labels"):
+            visualization_type = (
+                normalize_visualization_decision_type(raw_type)
+                or infer_visualization_decision_type(subject, topic)
+                or "mind_map"
+            )
+            return {
+                "visualization_required": True,
+                "visualization_type": visualization_type,
+                "reason": raw_diagram.get("reason") or "The generated lesson includes structured visual data.",
+                "confidence": raw_diagram.get("confidence", 0.84),
+            }
+
+    if isinstance(raw_diagram, list) and raw_diagram:
+        visualization_type = infer_visualization_decision_type(subject, topic) or "flow"
+        return {
+            "visualization_required": True,
+            "visualization_type": visualization_type,
+            "reason": "The generated lesson includes ordered diagram labels.",
+            "confidence": 0.82,
+        }
+
+    inferred_type = infer_visualization_decision_type(subject, topic)
+    if inferred_type:
+        return {
+            "visualization_required": True,
+            "visualization_type": inferred_type,
+            "reason": "This topic has a structure that benefits from a visual representation.",
+            "confidence": 0.84,
+        }
+
+    return {
+        "visualization_required": False,
+        "visualization_type": "none",
+        "reason": TEXT_BASED_VISUALIZATION_REASON,
+        "confidence": 0.78,
+    }
+
+
+def build_visualization_payload(subject, topic, raw_decision=None, raw_diagram=None):
+    decision = normalize_visualization_decision(subject, topic, raw_decision, raw_diagram)
+    if not decision["visualization_required"]:
+        return build_diagram_payload(
+            subject,
+            topic,
+            {
+                "visualization_required": False,
+                "visualization_type": "none",
+                "decision_visualization_type": "none",
+                "type": "none",
+                "diagram_type": "none",
+                "title": f"{topic} Visualization" if topic else "Visualization",
+                "nodes": [],
+                "connections": [],
+                "labels": [],
+                "reason": decision["reason"],
+                "confidence": decision["confidence"],
+                "explanation": decision["reason"],
+            },
+        )
+
+    diagram_input = raw_diagram if isinstance(raw_diagram, (dict, list)) else {}
+    if isinstance(diagram_input, dict):
+        diagram_input = {
+            **diagram_input,
+            "visualization_required": True,
+            "visualization_type": VISUALIZATION_RENDER_TYPE_MAP.get(
+                decision["visualization_type"],
+                decision["visualization_type"],
+            ),
+            "decision_visualization_type": decision["visualization_type"],
+            "type": diagram_input.get("type")
+            or diagram_input.get("diagram_type")
+            or VISUALIZATION_RENDER_TYPE_MAP.get(decision["visualization_type"], "flowchart"),
+            "reason": diagram_input.get("reason") or decision["reason"],
+            "confidence": diagram_input.get("confidence", decision["confidence"]),
+        }
+
+    payload = build_diagram_payload(subject, topic, diagram_input)
+    payload["visualization_required"] = True
+    payload["visualization_type"] = decision["visualization_type"]
+    payload["decision_visualization_type"] = decision["visualization_type"]
+    payload["reason"] = payload.get("reason") or decision["reason"]
+    return payload
+
+
+def extract_heading_section(markdown_text, heading_pattern):
+    marker = re.search(heading_pattern, markdown_text)
+    if not marker:
+        return markdown_text, None
+    next_heading = re.search(r"(?m)^\s*#{1,6}\s+", markdown_text[marker.end():])
+    section_end = marker.end() + next_heading.start() if next_heading else len(markdown_text)
+    section_text = markdown_text[marker.end():section_end]
+    remaining_text = (markdown_text[:marker.start()] + markdown_text[section_end:]).strip()
+    return remaining_text, section_text
+
+
 def split_learning_content(response_text):
     marker = re.search(r"(?im)^\s*#{1,6}\s+Questions\s*$", response_text)
     if not marker:
         raise ValueError("The AI response did not include a Questions section.")
 
-    notes, diagram_steps = split_notes_and_diagram(response_text[:marker.start()])
+    pre_questions = response_text[:marker.start()]
+    pre_questions, decision_text = extract_heading_section(
+        pre_questions,
+        r"(?im)^\s*#{1,6}\s+Visualization\s+Decision(?:\s+JSON)?\s*$",
+    )
+    raw_decision = extract_json_object(decision_text or "") if decision_text else {}
+    notes, diagram_steps = split_notes_and_diagram(pre_questions)
     questions = []
 
     for line in response_text[marker.end():].strip().splitlines():
@@ -4936,7 +5311,7 @@ def split_learning_content(response_text):
     if [number for number, _ in questions] != list(range(1, 6)):
         raise ValueError("The AI response did not include exactly five numbered questions.")
 
-    return notes, diagram_steps, [question for _, question in questions]
+    return notes, raw_decision or {}, diagram_steps, [question for _, question in questions]
 
 
 def split_notes_and_diagram(notes_text):
@@ -6225,7 +6600,7 @@ Textbook Subject Instructions:
 - Never guess chapter content.
 - If the chapter is unknown, clearly state: "I do not have enough information about this chapter."
 - Stay focused on the chapter title and textbook.
-- Generate chapter notes, revision points, diagram labels, and questions only from the chapter.
+- Generate chapter notes, revision points, visualization decisions, diagram labels when required, and questions only from the chapter.
 - If the chapter is unknown, still return the required sections and create questions that ask the student to find details in the textbook, without adding any chapter facts.
 """
 
@@ -6261,6 +6636,9 @@ Rewrite the answer using this exact structure:
 - point 3
 - point 4
 - point 5
+
+## Visualization Decision JSON
+{"visualization_required": true, "visualization_type": "biology_process", "confidence": 0.9}
 
 ## Diagram JSON
 {"type":"process","title":"Topic Visualization","nodes":[{"id":"1","label":"First idea"},{"id":"2","label":"Second idea"}],"connections":[["1","2"]],"reason":"This topic is best shown as a sequence.","confidence":0.9,"explanation":"Optional one-line explanation."}
@@ -6688,6 +7066,7 @@ def view_learning_history(lesson_id):
         abort(404)
 
     diagram_payload = decode_diagram_payload(lesson["diagram_data"], lesson["subject"], lesson["topic"])
+    diagram_available = diagram_payload.get("available", False)
     questions = decode_json_list(lesson["quiz_questions"])
     has_flashcards = bool(existing_flashcard_set(lesson.id, session["user_id"]))
     current_page_url = url_for("view_learning_history", lesson_id=lesson.id)
@@ -6697,9 +7076,9 @@ def view_learning_history(lesson_id):
         notes_html=markdown.markdown(lesson["notes"]),
         diagram_payload=diagram_payload,
         diagram_steps=diagram_payload.get("labels", []),
-        diagram_image=create_diagram_image(lesson["topic"], diagram_payload),
-        diagram_svg=render_educational_diagram_svg(diagram_payload),
-        diagram_available=diagram_payload.get("available", False),
+        diagram_image=create_diagram_image(lesson["topic"], diagram_payload) if diagram_available else "",
+        diagram_svg=render_educational_diagram_svg(diagram_payload) if diagram_available else "",
+        diagram_available=diagram_available,
         diagram_json=json.dumps(diagram_payload),
         questions=questions,
         has_flashcards=has_flashcards,
@@ -6720,6 +7099,7 @@ def lesson_notes(lesson_id):
 
     account = current_user()
     diagram_payload = decode_diagram_payload(lesson.diagram_data, lesson.subject, lesson.topic)
+    diagram_available = diagram_payload.get("available", False)
     questions = decode_json_list(lesson.quiz_questions)
     return render_template(
         "learn.html",
@@ -6731,9 +7111,9 @@ def lesson_notes(lesson_id):
         explanation=markdown.markdown(lesson.notes),
         notes=lesson.notes,
         diagram_payload=diagram_payload,
-        diagram_image=create_diagram_image(lesson.topic, diagram_payload),
-        diagram_svg=render_educational_diagram_svg(diagram_payload),
-        diagram_available=diagram_payload.get("available", False),
+        diagram_image=create_diagram_image(lesson.topic, diagram_payload) if diagram_available else "",
+        diagram_svg=render_educational_diagram_svg(diagram_payload) if diagram_available else "",
+        diagram_available=diagram_available,
         diagram_json=json.dumps(diagram_payload),
         questions=questions,
         lesson_id=lesson.id,
@@ -7138,6 +7518,9 @@ def download_learning_history_diagram(lesson_id):
         abort(404)
 
     diagram_payload = decode_diagram_payload(lesson["diagram_data"], lesson["subject"], lesson["topic"])
+    if not diagram_payload.get("available"):
+        abort(404, description="No visualization is available for this lesson.")
+
     svg = render_educational_diagram_svg(diagram_payload)
     return send_file(
         BytesIO(svg.encode("utf-8")),
@@ -7432,8 +7815,28 @@ After the explanation create:
 ## Quick Revision
 Give 5 important revision points.
 
+## Visualization Decision JSON
+
+Return only one valid JSON object for the visualization decision.
+The JSON must be structured data only.
+Use exactly this structure when a visualization helps:
+{{
+  "visualization_required": true,
+  "visualization_type": "biology_process, biology_structure, chemistry_process, physics_process, water_cycle, food_chain, cell_diagram, human_body, plant_diagram, timeline, map, tree, hierarchy, network, database, flow, cycle, comparison, graph, solar_system, electric_circuit, grammar_tree, or mind_map",
+  "confidence": 0.0 to 1.0
+}}
+Use exactly this structure when the lesson is mainly textual:
+{{
+  "visualization_required": false,
+  "reason": "This lesson is primarily text based and is better learned through reading and examples."
+}}
+
+Do NOT require a visualization for mainly textual lessons such as Essay Writing, Letter Writing, Notice Writing, Grammar Exercises, Character Sketch, Story, Poem, Reading Comprehension, Moral Science, Value Education, Paragraph Writing, Speech Writing, Dialogue Writing, Biography, Autobiography, or Composition.
+Choose the single best visualization_type only when visualization_required is true.
+
 ## Diagram JSON
 
+Only include a diagram JSON object when visualization_required is true.
 Return only a valid JSON object describing the diagram.
 Do NOT create an image.
 Do NOT create a text diagram.
@@ -7454,7 +7857,7 @@ Use this structure:
   "explanation": "optional one short helpful explanation"
 }}
 Choose the best visualization type for the topic. Do not default to flowchart unless it is genuinely best.
-If the topic does not support a useful educational visualization, use "type": "none" and empty nodes.
+If visualization_required is false, use "type": "none" and empty nodes.
 
 ## Questions
 
@@ -7501,7 +7904,7 @@ Rules:
         return learn_busy_response(request_started_at, error)
 
     try:
-        notes, raw_diagram, questions = split_learning_content(response_text)
+        notes, raw_visualization_decision, raw_diagram, questions = split_learning_content(response_text)
     except ValueError as error:
         print("LEARN RESPONSE ERROR:", error)
         retry_prompt = build_learn_retry_prompt(prompt)
@@ -7526,15 +7929,16 @@ Rules:
                 estimated_characters=len(response_text),
                 estimated_tokens=estimate_tokens(response_text),
             )
-            notes, raw_diagram, questions = split_learning_content(response_text)
+            notes, raw_visualization_decision, raw_diagram, questions = split_learning_content(response_text)
         except GeminiRequestError as retry_error:
             return render_gemini_error(retry_error.error_info)
         except Exception as retry_error:
             print("LEARN RETRY ERROR:", retry_error)
             return learn_busy_response(request_started_at, retry_error)
 
-    diagram_payload = build_diagram_payload(subject, topic, raw_diagram)
-    diagram_image = create_diagram_image(topic, diagram_payload)
+    diagram_payload = build_visualization_payload(subject, topic, raw_visualization_decision, raw_diagram)
+    diagram_available = diagram_payload.get("available", False)
+    diagram_image = create_diagram_image(topic, diagram_payload) if diagram_available else ""
 
     lesson_id = None
     if session.get("user_id"):
@@ -7575,8 +7979,8 @@ Rules:
         notes=notes,
         diagram_payload=diagram_payload,
         diagram_image=diagram_image,
-        diagram_svg=render_educational_diagram_svg(diagram_payload),
-        diagram_available=diagram_payload.get("available", False),
+        diagram_svg=render_educational_diagram_svg(diagram_payload) if diagram_available else "",
+        diagram_available=diagram_available,
         diagram_json=json.dumps(diagram_payload),
         questions=questions,
         lesson_id=lesson_id,
@@ -7596,6 +8000,9 @@ def download_diagram():
         diagram_payload = json.loads(raw_json)
     except json.JSONDecodeError:
         abort(400, description="Diagram data is invalid.")
+
+    if not diagram_payload.get("available"):
+        abort(404, description="No visualization is available for this lesson.")
 
     svg = render_educational_diagram_svg(diagram_payload)
     return send_file(
