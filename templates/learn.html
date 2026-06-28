@@ -6,6 +6,7 @@
     <title>{{ topic }} - AI Study Buddy</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/visualization.css') }}">
+    {% include 'components/pwa_head.html' %}
 </head>
 
 <body class="learn-page {% if exhibition_mode %}exhibition-mode{% endif %}">

@@ -6,6 +6,7 @@
     <title>Performance Analytics - AI Study Buddy</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    {% include 'components/pwa_head.html' %}
 </head>
 
 <body class="dashboard-page {% if exhibition_mode %}exhibition-mode{% endif %}">

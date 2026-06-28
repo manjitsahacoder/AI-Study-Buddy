@@ -685,6 +685,69 @@ Grade: A
         self.assertIn("data-locked-feature", page)
         self.assertIn("Guest", page)
 
+    def test_home_includes_pwa_manifest_and_install_runtime(self):
+        response = self.client.get("/")
+
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        self.assertIn('rel="manifest" href="/manifest.json"', page)
+        self.assertIn('name="theme-color" content="#3157d5"', page)
+        self.assertIn('data-pwa-install-banner', page)
+        self.assertIn('/static/pwa.js', page)
+
+    def test_pwa_manifest_contains_install_metadata_and_icons(self):
+        response = self.client.get("/manifest.json")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.mimetype, "application/manifest+json")
+        manifest = json.loads(response.get_data(as_text=True))
+        self.assertEqual(manifest["name"], "AI Study Buddy")
+        self.assertEqual(manifest["short_name"], "Study Buddy")
+        self.assertEqual(manifest["display"], "standalone")
+        self.assertEqual(manifest["orientation"], "portrait-primary")
+        self.assertEqual(manifest["start_url"], "/")
+        self.assertEqual(manifest["theme_color"], "#3157d5")
+        self.assertEqual(manifest["background_color"], "#f7f4ee")
+        self.assertEqual(
+            {(icon["sizes"], icon["src"]) for icon in manifest["icons"]},
+            {
+                ("192x192", "/static/icons/icon-192.png"),
+                ("512x512", "/static/icons/icon-512.png"),
+            },
+        )
+        for icon in manifest["icons"]:
+            self.assertTrue(
+                os.path.exists(
+                    os.path.join(
+                        app_module.app.root_path,
+                        icon["src"].lstrip("/").replace("/", os.sep),
+                    )
+                )
+            )
+
+    def test_service_worker_is_root_scoped_and_avoids_dynamic_caching(self):
+        response = self.client.get("/service-worker.js")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["Service-Worker-Allowed"], "/")
+        self.assertEqual(response.headers["Cache-Control"], "no-cache")
+        script = response.get_data(as_text=True)
+        self.assertIn('const CACHE_VERSION = "ai-study-buddy-pwa-v1"', script)
+        self.assertIn('request.method !== "GET"', script)
+        self.assertIn('request.mode === "navigate"', script)
+        self.assertIn("networkOnlyNavigation(request)", script)
+        self.assertIn('url.pathname.startsWith("/static/")', script)
+        self.assertIn("cache.put(request, response.clone())", script)
+
+    def test_offline_page_displays_required_message(self):
+        response = self.client.get("/offline")
+
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        self.assertIn("AI Study Buddy is offline.", page)
+        self.assertIn("Previously loaded pages remain available.", page)
+        self.assertIn("AI features require an internet connection.", page)
+
     def test_logged_in_home_shows_verified_student_mode(self):
         self.register_user()
         self.login_user()

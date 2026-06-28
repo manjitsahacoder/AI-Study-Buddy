@@ -5,10 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>AI Study Buddy is busy</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    {% include 'components/pwa_head.html' %}
 </head>
 <body class="placeholder-page">
     {% set title = message %}
     {% set message = 'Your lesson is safe to request again in a moment.' %}
     {% include 'components/ai_error_card.html' %}
+    {% include 'components/pwa_runtime.html' %}
 </body>
 </html>

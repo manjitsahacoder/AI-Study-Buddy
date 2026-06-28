@@ -9,6 +9,7 @@ from flask import (
     render_template,
     request,
     send_file,
+    send_from_directory,
     session,
     url_for,
 )
@@ -6336,6 +6337,32 @@ def learning_subject_prompt_section(subject):
 @app.route("/")
 def home():
     return render_template("index.html")
+
+
+@app.route("/manifest.json")
+def manifest():
+    return send_from_directory(
+        app.static_folder,
+        "manifest.json",
+        mimetype="application/manifest+json",
+    )
+
+
+@app.route("/service-worker.js")
+def service_worker():
+    response = send_from_directory(
+        app.static_folder,
+        "service-worker.js",
+        mimetype="application/javascript",
+    )
+    response.headers["Cache-Control"] = "no-cache"
+    response.headers["Service-Worker-Allowed"] = "/"
+    return response
+
+
+@app.route("/offline")
+def offline():
+    return render_template("offline.html")
 
 
 @app.route("/register", methods=["GET", "POST"])

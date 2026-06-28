@@ -7612,6 +7612,67 @@ textarea:focus {
         rgba(21, 27, 41, 0.94);
 }
 
+.pwa-install-banner {
+    position: fixed;
+    right: 18px;
+    bottom: 18px;
+    z-index: 260;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 16px;
+    width: min(460px, calc(100vw - 36px));
+    padding: 16px;
+    border: 1px solid rgba(49, 87, 213, 0.2);
+    border-radius: 8px;
+    color: var(--ink);
+    background: rgba(255, 253, 248, 0.96);
+    box-shadow: 0 24px 55px rgba(30, 40, 58, 0.18);
+    backdrop-filter: blur(16px);
+}
+
+.pwa-install-banner[hidden] {
+    display: none;
+}
+
+.pwa-install-banner strong {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--ink);
+    font-size: 1rem;
+}
+
+.pwa-install-banner span {
+    display: block;
+    color: var(--muted);
+    font-size: 0.92rem;
+    font-weight: 700;
+    line-height: 1.45;
+}
+
+.pwa-install-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.pwa-install-actions button {
+    min-height: 42px;
+    padding: 9px 13px;
+    white-space: nowrap;
+}
+
+.dark-mode .pwa-install-banner {
+    border-color: rgba(134, 161, 255, 0.2);
+    background: rgba(21, 27, 41, 0.97);
+    box-shadow: 0 24px 55px rgba(0, 0, 0, 0.28);
+}
+
+.dark-mode .pwa-install-banner span {
+    color: var(--muted);
+}
+
 .dark-mode input:focus,
 .dark-mode select:focus,
 .dark-mode textarea:focus {
@@ -7911,6 +7972,19 @@ textarea:focus {
 }
 
 @media (max-width: 560px) {
+    .pwa-install-banner {
+        right: 10px;
+        bottom: 10px;
+        left: 10px;
+        grid-template-columns: 1fr;
+        width: auto;
+    }
+
+    .pwa-install-actions,
+    .pwa-install-actions button {
+        width: 100%;
+    }
+
     .dashboard-shell {
         width: min(100% - 20px, 1120px);
     }

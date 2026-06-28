@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ tutor_lesson.chapter }} AI Tutor - AI Study Buddy</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    {% include 'components/pwa_head.html' %}
 </head>
 
 <body class="tutor-page {% if exhibition_mode %}exhibition-mode{% endif %}">
@@ -164,6 +165,7 @@
 </template>
 
 {% include 'components/exhibition_toolbar.html' %}
+{% include 'components/pwa_runtime.html' %}
 <script src="{{ url_for('static', filename='tutor.js') }}"></script>
 <script src="{{ url_for('static', filename='motion.js') }}" defer></script>
 <script>

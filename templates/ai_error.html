@@ -5,10 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ error.title }} - AI Study Buddy</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    {% include 'components/pwa_head.html' %}
 </head>
 <body class="placeholder-page">
     {% set title = error.title %}
     {% set message = error.message %}
     {% include 'components/ai_error_card.html' %}
+    {% include 'components/pwa_runtime.html' %}
 </body>
 </html>

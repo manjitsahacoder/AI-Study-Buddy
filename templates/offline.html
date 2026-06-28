@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Offline - AI Study Buddy</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    {% include 'components/pwa_head.html' %}
+</head>
+
+<body class="placeholder-page">
+<main class="placeholder-card ai-error-card offline-card">
+    <span class="eyebrow">AI Study Buddy</span>
+    <h1>AI Study Buddy is offline.</h1>
+    <p>Previously loaded pages remain available.</p>
+    <p>AI features require an internet connection.</p>
+    <a class="button-link" href="{{ url_for('home') }}">Back to Study Buddy</a>
+</main>
+{% include 'components/pwa_runtime.html' %}
+</body>
+</html>
