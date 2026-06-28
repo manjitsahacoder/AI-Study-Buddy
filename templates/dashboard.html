@@ -263,7 +263,7 @@
                         <p>{{ recent_tutor_conversation.sender }}: {{ recent_tutor_conversation.snippet }}</p>
                         <small>{{ recent_tutor_conversation.created_at }}</small>
                     </div>
-                    <a class="button-link secondary-link" href="{{ url_for('ai_tutor', tutor_lesson_id=recent_tutor_conversation.tutor_lesson_id) }}">Open Tutor</a>
+                    <a class="button-link secondary-link" href="{{ url_for('ai_tutor', tutor_lesson_id=recent_tutor_conversation.tutor_lesson_id, next=current_page_url) }}">Open Tutor</a>
                 </article>
                 {% else %}
                 <div class="dashboard-empty-state beautiful-empty-state tutor-empty-state">

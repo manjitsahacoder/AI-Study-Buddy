@@ -81,20 +81,20 @@
             </div>
             <div class="lesson-card-actions">
                 <a class="button-link" href="{{ url_for('view_learning_history', lesson_id=lesson.id) }}">&#128065; View</a>
-                <a class="button-link secondary-link" href="{{ url_for('revision', lesson_id=lesson.id) }}">
+                <a class="button-link secondary-link" href="{{ url_for('revision', lesson_id=lesson.id, next=current_page_url) }}">
                     {% if lesson.has_revision %}&#128214; Open Revision{% else %}&#128214; Generate Revision{% endif %}
                 </a>
-                <a class="button-link secondary-link" href="{{ url_for('mindmap', lesson_id=lesson.id) }}">
+                <a class="button-link secondary-link" href="{{ url_for('mindmap', lesson_id=lesson.id, next=current_page_url) }}">
                     {% if lesson.has_mind_map %}&#129504; Open Mind Map{% else %}&#129504; Generate Mind Map{% endif %}
                 </a>
-                <a class="button-link secondary-link" href="{{ url_for('important_questions', lesson_id=lesson.id) }}">
+                <a class="button-link secondary-link" href="{{ url_for('important_questions', lesson_id=lesson.id, next=current_page_url) }}">
                     {% if lesson.has_important_questions %}&#11088; Open Important Questions{% else %}&#11088; Generate Questions{% endif %}
                 </a>
-                <a class="button-link secondary-link" href="{{ url_for('flashcards', lesson_id=lesson.id) }}">
+                <a class="button-link secondary-link" href="{{ url_for('flashcards', lesson_id=lesson.id, next=current_page_url) }}">
                     {% if lesson.has_flashcards %}&#127183; Open Flashcards{% else %}&#127183; Generate Flashcards{% endif %}
                 </a>
                 {% if lesson.has_flashcards %}
-                <a class="button-link secondary-link" href="{{ url_for('memory_match', lesson_id=lesson.id) }}">&#129504; Open Memory Challenge</a>
+                <a class="button-link secondary-link" href="{{ url_for('memory_match', lesson_id=lesson.id, next=current_page_url) }}">&#129504; Open Memory Challenge</a>
                 {% endif %}
                 <a class="button-link secondary-link" href="{{ url_for('download_learning_history_pdf', lesson_id=lesson.id) }}">&#128196; Download PDF</a>
                 <button class="button-link secondary-link favourite-placeholder" type="button" disabled title="Favourite notes will be added later">&#11088; Favourite</button>

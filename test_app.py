@@ -1545,16 +1545,26 @@ Grade: A
             )
         )
 
-    def create_saved_flashcards(self, user_id=1, count=12, topic="Photosynthesis"):
-        lesson_id = app_module.save_learning_history(
+    def create_saved_lesson(
+        self,
+        user_id=1,
+        subject="Science",
+        book_name="NCERT",
+        topic="Photosynthesis",
+        notes="Plants make food using sunlight.",
+    ):
+        return app_module.save_learning_history(
             user_id,
-            "Science",
-            "NCERT",
+            subject,
+            book_name,
             topic,
-            "Plant notes",
-            "{}",
-            ["Q1"],
+            notes,
+            {},
+            self.questions,
         )
+
+    def create_saved_flashcards(self, user_id=1, count=12, topic="Photosynthesis"):
+        lesson_id = self.create_saved_lesson(user_id=user_id, topic=topic, notes="Plant notes")
         flashcard_set = FlashcardSet(
             user_id=user_id,
             learning_history_id=lesson_id,
@@ -1993,6 +2003,136 @@ Photosynthesis helps plants prepare food and release oxygen.
         self.assertEqual(normalized["nodes"][0]["parent"], "")
         orphan = next(node for node in normalized["nodes"] if node["id"] == "orphan")
         self.assertEqual(orphan["parent"], "root")
+
+    @patch.object(app_module.model, "generate_content")
+    def test_learning_tool_opened_from_notes_returns_to_notes_hub(self, generate_content):
+        self.register_user()
+        self.login_user()
+        generate_content.return_value = MockResponse(
+            """# Plant Notes
+Plants use sunlight.
+
+## Quick Revision
+- Plants need light.
+
+## Questions
+Q1. What is question one?
+
+Q2. What is question two?
+
+Q3. What is question three?
+
+Q4. What is question four?
+
+Q5. What is question five?
+"""
+        )
+
+        notes_response = self.client.post(
+            "/learn",
+            data={
+                "name": "Asha",
+                "student_class": "8",
+                "subject": "Science",
+                "book_name": "NCERT",
+                "topic": "Plants",
+            },
+        )
+
+        self.assertEqual(notes_response.status_code, 200)
+        notes_page = notes_response.get_data(as_text=True)
+        self.assertIn('href="/mindmap/1?next=/notes/1"', notes_page)
+
+        with patch.object(app_module, "generate_content_with_fallback") as mind_map_generate:
+            mind_map_generate.return_value = self.mind_map_response()
+            mind_map_response = self.client.get("/mindmap/1?next=/notes/1")
+
+        self.assertEqual(mind_map_response.status_code, 200)
+        mind_map_page = mind_map_response.get_data(as_text=True)
+        self.assertIn('href="/notes/1"', mind_map_page)
+        self.assertNotIn('href="/learning-history/1">Back to Lesson</a>', mind_map_page)
+
+    @patch.object(app_module, "generate_content_with_fallback")
+    def test_learning_tool_opened_from_history_detail_returns_to_history_detail(self, generate_content):
+        self.register_user()
+        self.login_user()
+        generate_content.return_value = self.flashcard_response(10)
+        with app_module.app.app_context():
+            lesson_id = self.create_saved_lesson()
+
+        detail_response = self.client.get(f"/learning-history/{lesson_id}")
+        self.assertEqual(detail_response.status_code, 200)
+        detail_page = detail_response.get_data(as_text=True)
+        self.assertIn(
+            f'href="/flashcards/{lesson_id}?next=/learning-history/{lesson_id}"',
+            detail_page,
+        )
+
+        flashcard_response = self.client.get(
+            f"/flashcards/{lesson_id}?next=/learning-history/{lesson_id}"
+        )
+
+        self.assertEqual(flashcard_response.status_code, 200)
+        self.assertIn(
+            f'href="/learning-history/{lesson_id}"',
+            flashcard_response.get_data(as_text=True),
+        )
+
+    @patch.object(app_module, "generate_content_with_fallback")
+    def test_learning_tool_missing_next_uses_history_detail_fallback(self, generate_content):
+        self.register_user()
+        self.login_user()
+        generate_content.return_value = self.revision_response()
+        with app_module.app.app_context():
+            lesson_id = self.create_saved_lesson()
+
+        response = self.client.get(f"/revision/{lesson_id}")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(
+            f'href="/learning-history/{lesson_id}"',
+            response.get_data(as_text=True),
+        )
+
+    def test_learning_tool_rejects_external_next_url(self):
+        self.register_user()
+        self.login_user()
+        with app_module.app.app_context():
+            lesson_id = self.create_saved_flashcards(count=10)
+
+        response = self.client.get(f"/flashcards/{lesson_id}?next=https://evil.example/phish")
+
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        self.assertIn(f'href="/learning-history/{lesson_id}"', page)
+        self.assertNotIn("evil.example", page)
+
+    @patch.object(app_module.model, "generate_content")
+    def test_ai_tutor_preserves_return_url_through_start_redirect(self, generate_content):
+        self.register_user()
+        self.login_user()
+        with app_module.app.app_context():
+            lesson_id = self.create_saved_lesson()
+
+        start_response = self.client.post(
+            "/tutor/start",
+            data={
+                "lesson_id": lesson_id,
+                "name": "Asha",
+                "student_class": "8",
+                "next": f"/notes/{lesson_id}",
+            },
+        )
+
+        self.assertEqual(start_response.status_code, 302)
+        self.assertIn(f"/tutor/1?next=/notes/{lesson_id}", start_response.headers["Location"])
+
+        tutor_response = self.client.get(start_response.headers["Location"])
+
+        self.assertEqual(tutor_response.status_code, 200)
+        page = tutor_response.get_data(as_text=True)
+        self.assertIn(f'href="/notes/{lesson_id}"', page)
+        generate_content.assert_not_called()
 
     @patch.object(app_module, "generate_content_with_fallback")
     def test_flashcards_generate_and_render_responsive_controls(self, generate_content):

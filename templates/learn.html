@@ -55,7 +55,7 @@
                     <p>Generate a concise revision sheet for this lesson.</p>
                 </div>
                 {% if lesson_id %}
-                <a class="learning-card-button" href="{{ url_for('revision', lesson_id=lesson_id) }}">Generate Revision <span aria-hidden="true">&rarr;</span></a>
+                <a class="learning-card-button" href="{{ url_for('revision', lesson_id=lesson_id, next=current_page_url) }}">Generate Revision <span aria-hidden="true">&rarr;</span></a>
                 {% else %}
                 <a class="learning-card-button" href="{{ url_for('login', next=url_for('home')) }}">Generate Revision <span aria-hidden="true">&rarr;</span></a>
                 {% endif %}
@@ -68,7 +68,7 @@
                     <p>Visualize this lesson as a structured concept map.</p>
                 </div>
                 {% if lesson_id %}
-                <a class="learning-card-button" href="{{ url_for('mindmap', lesson_id=lesson_id) }}">Generate Mind Map <span aria-hidden="true">&rarr;</span></a>
+                <a class="learning-card-button" href="{{ url_for('mindmap', lesson_id=lesson_id, next=current_page_url) }}">Generate Mind Map <span aria-hidden="true">&rarr;</span></a>
                 {% else %}
                 <a class="learning-card-button" href="{{ url_for('login', next=url_for('home')) }}">Generate Mind Map <span aria-hidden="true">&rarr;</span></a>
                 {% endif %}
@@ -81,7 +81,7 @@
                     <p>Generate likely exam questions for this chapter.</p>
                 </div>
                 {% if lesson_id %}
-                <a class="learning-card-button" href="{{ url_for('important_questions', lesson_id=lesson_id) }}">Generate Questions <span aria-hidden="true">&rarr;</span></a>
+                <a class="learning-card-button" href="{{ url_for('important_questions', lesson_id=lesson_id, next=current_page_url) }}">Generate Questions <span aria-hidden="true">&rarr;</span></a>
                 {% else %}
                 <a class="learning-card-button" href="{{ url_for('login', next=url_for('home')) }}">Generate Questions <span aria-hidden="true">&rarr;</span></a>
                 {% endif %}
@@ -94,7 +94,7 @@
                     <p>Revise this lesson with interactive flashcards generated from your notes.</p>
                 </div>
                 {% if lesson_id %}
-                <a class="learning-card-button" href="{{ url_for('flashcards', lesson_id=lesson_id) }}">Generate Flashcards <span aria-hidden="true">&rarr;</span></a>
+                <a class="learning-card-button" href="{{ url_for('flashcards', lesson_id=lesson_id, next=current_page_url) }}">Generate Flashcards <span aria-hidden="true">&rarr;</span></a>
                 {% else %}
                 <a class="learning-card-button" href="{{ url_for('login', next=url_for('home')) }}">Generate Flashcards <span aria-hidden="true">&rarr;</span></a>
                 {% endif %}
@@ -123,10 +123,11 @@
                     <p>Ask doubts, request examples, and revise this exact lesson with a guided AI teacher.</p>
                 </div>
                 {% if lesson_id %}
-                <form action="{{ url_for('start_ai_tutor') }}" method="POST" class="learning-card-form">
+                <form action="{{ url_for('start_ai_tutor', next=current_page_url) }}" method="POST" class="learning-card-form">
                     <input type="hidden" name="lesson_id" value="{{ lesson_id }}">
                     <input type="hidden" name="name" value="{{ name }}">
                     <input type="hidden" name="student_class" value="{{ student_class }}">
+                    <input type="hidden" name="next" value="{{ current_page_url }}">
                     <button type="submit" class="learning-card-button">Start Tutor <span aria-hidden="true">&rarr;</span></button>
                 </form>
                 {% else %}

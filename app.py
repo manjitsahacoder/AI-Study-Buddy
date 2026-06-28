@@ -29,7 +29,7 @@ from datetime import datetime, timedelta, timezone
 from functools import lru_cache, wraps
 from difflib import SequenceMatcher
 from werkzeug.security import check_password_hash, generate_password_hash
-from urllib.parse import quote
+from urllib.parse import quote, urlencode, urlsplit
 from sqlalchemy import and_, func, inspect, or_, text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import load_only
@@ -206,6 +206,37 @@ def truncate_text(text, max_chars, suffix="\n\n[Content shortened to keep the re
     if max_chars <= len(suffix):
         return text[:max_chars]
     return f"{text[:max_chars - len(suffix)].rstrip()}{suffix}"
+
+
+def is_safe_internal_url(target):
+    target = (target or "").strip()
+    if not target or not target.startswith("/") or target.startswith("//"):
+        return False
+
+    parsed = urlsplit(target)
+    return not parsed.scheme and not parsed.netloc and parsed.path.startswith("/")
+
+
+def safe_internal_url(target):
+    target = (target or "").strip()
+    return target if is_safe_internal_url(target) else None
+
+
+def current_internal_url():
+    args = request.args.to_dict(flat=True)
+    if "next" in args and not safe_internal_url(args["next"]):
+        args.pop("next", None)
+
+    query = urlencode(args)
+    return f"{request.path}?{query}" if query else request.path
+
+
+def learning_tool_context(lesson_id):
+    fallback_url = url_for("view_learning_history", lesson_id=lesson_id)
+    return {
+        "return_url": safe_internal_url(request.args.get("next")) or fallback_url,
+        "current_page_url": current_internal_url(),
+    }
 
 
 def log_learn_metric(event, started_at=None, **fields):
@@ -4015,6 +4046,7 @@ def has_activity_today(user_id):
 
 
 def get_smart_recommendations(user_id, stats=None, continue_lesson=None, limit=4):
+    dashboard_return_url = url_for("dashboard")
     lessons = (
         LearningHistory.query.with_entities(
             LearningHistory.id,
@@ -4079,7 +4111,7 @@ def get_smart_recommendations(user_id, stats=None, continue_lesson=None, limit=4
                 "Complete today's revision",
                 f"Review the flashcards that still need attention from {lesson.topic}.",
                 "Open flashcards",
-                url_for("flashcards", lesson_id=lesson.id),
+                url_for("flashcards", lesson_id=lesson.id, next=dashboard_return_url),
                 "Revision due",
                 lesson.subject,
                 lesson.topic,
@@ -4134,7 +4166,7 @@ def get_smart_recommendations(user_id, stats=None, continue_lesson=None, limit=4
                 f"Study {lesson.topic} again",
                 "Turn this saved lesson into a short revision session before it fades.",
                 "Open revision",
-                url_for("revision", lesson_id=lesson.id),
+                url_for("revision", lesson_id=lesson.id, next=dashboard_return_url),
                 "Saved lesson",
                 lesson.subject,
                 lesson.topic,
@@ -6118,6 +6150,7 @@ def dashboard():
         achievements=gamification["badges"],
         achievement_progress=gamification["achievements"],
         recommendations=get_smart_recommendations(account["id"], stats, continue_lesson),
+        current_page_url=current_internal_url(),
     )
 
 
@@ -6241,6 +6274,7 @@ def learning_history():
         search=search,
         subject_filter=subject_filter,
         sort_order=sort_order,
+        current_page_url=current_internal_url(),
     )
 
 
@@ -6269,6 +6303,37 @@ def view_learning_history(lesson_id):
         has_revision=bool(existing_revision_sheet(lesson.id, session["user_id"])),
         has_mind_map=bool(existing_mind_map(lesson.id, session["user_id"])),
         has_important_questions=bool(existing_important_question_set(lesson.id, session["user_id"])),
+        current_page_url=url_for("view_learning_history", lesson_id=lesson.id),
+    )
+
+
+@app.route("/notes/<int:lesson_id>")
+@login_required
+def lesson_notes(lesson_id):
+    lesson = get_learning_history_entry(lesson_id, session["user_id"])
+    if not lesson:
+        abort(404)
+
+    account = current_user()
+    diagram_payload = decode_diagram_payload(lesson.diagram_data, lesson.subject, lesson.topic)
+    questions = decode_json_list(lesson.quiz_questions)
+    return render_template(
+        "learn.html",
+        name=account["full_name"] if account else "Student",
+        student_class=preferred_class_for_user(account),
+        subject=lesson.subject,
+        book_name=lesson.book_name,
+        topic=lesson.topic,
+        explanation=markdown.markdown(lesson.notes),
+        notes=lesson.notes,
+        diagram_payload=diagram_payload,
+        diagram_image=create_diagram_image(lesson.topic, diagram_payload),
+        diagram_svg=render_educational_diagram_svg(diagram_payload),
+        diagram_available=diagram_payload.get("available", False),
+        diagram_json=json.dumps(diagram_payload),
+        questions=questions,
+        lesson_id=lesson.id,
+        current_page_url=url_for("lesson_notes", lesson_id=lesson.id),
     )
 
 
@@ -6304,6 +6369,7 @@ def revision(lesson_id):
         has_flashcards=bool(existing_flashcard_set(lesson.id, session["user_id"])),
         has_mind_map=bool(existing_mind_map(lesson.id, session["user_id"])),
         has_important_questions=bool(existing_important_question_set(lesson.id, session["user_id"])),
+        **learning_tool_context(lesson.id),
     )
 
 
@@ -6362,6 +6428,7 @@ def important_questions(lesson_id):
         has_revision=bool(existing_revision_sheet(lesson.id, session["user_id"])),
         has_mind_map=bool(existing_mind_map(lesson.id, session["user_id"])),
         has_flashcards=bool(existing_flashcard_set(lesson.id, session["user_id"])),
+        **learning_tool_context(lesson.id),
     )
 
 
@@ -6420,6 +6487,7 @@ def mindmap(lesson_id):
         has_flashcards=bool(existing_flashcard_set(lesson.id, session["user_id"])),
         has_important_questions=bool(existing_important_question_set(lesson.id, session["user_id"])),
         questions=decode_json_list(lesson.quiz_questions),
+        **learning_tool_context(lesson.id),
     )
 
 
@@ -6462,6 +6530,7 @@ def flashcards(lesson_id):
             }
             for card in flashcards_for_lesson
         ],
+        **learning_tool_context(lesson.id),
     )
 
 
@@ -6495,6 +6564,7 @@ def memory_match(lesson_id):
         xp_value=MEMORY_CHALLENGE_BASE_XP[difficulty],
         base_xp_values=MEMORY_CHALLENGE_BASE_XP,
         questions=decode_json_list(lesson.quiz_questions),
+        **learning_tool_context(lesson.id),
     )
 
 
@@ -6653,10 +6723,10 @@ def delete_learning_history(lesson_id):
     return redirect(url_for("learning_history"))
 
 
-@app.route("/tutor/start", methods=["POST"])
+@app.route("/tutor/start", methods=["GET", "POST"])
 @login_required
 def start_ai_tutor():
-    lesson_id = request.form.get("lesson_id", type=int)
+    lesson_id = request.values.get("lesson_id", type=int)
     if not lesson_id:
         abort(400, description="A saved lesson is required to start the AI Tutor.")
 
@@ -6665,14 +6735,17 @@ def start_ai_tutor():
         abort(404)
 
     account = current_user()
-    name = request.form.get("name", "").strip() or account["full_name"]
-    student_class = request.form.get("student_class", "").strip() or preferred_class_for_user(account)
+    name = request.values.get("name", "").strip() or account["full_name"]
+    student_class = request.values.get("student_class", "").strip() or preferred_class_for_user(account)
+    next_url = safe_internal_url(request.values.get("next"))
     tutor_lesson = get_or_create_tutor_lesson(
         session["user_id"],
         lesson,
         name,
         student_class,
     )
+    if next_url:
+        return redirect(url_for("ai_tutor", tutor_lesson_id=tutor_lesson.id, next=next_url))
     return redirect(url_for("ai_tutor", tutor_lesson_id=tutor_lesson.id))
 
 
@@ -6708,6 +6781,7 @@ def ai_tutor(tutor_lesson_id):
         lesson=lesson,
         messages=messages,
         questions=questions,
+        **learning_tool_context(lesson.id),
     )
 
 
@@ -7074,6 +7148,7 @@ Rules:
         diagram_json=json.dumps(diagram_payload),
         questions=questions,
         lesson_id=lesson_id,
+        current_page_url=url_for("lesson_notes", lesson_id=lesson_id) if lesson_id else url_for("home"),
     )
 
 

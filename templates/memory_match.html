@@ -22,8 +22,8 @@
             <p>Match saved flashcard fronts with their backs. No new AI content is generated.</p>
         </div>
         <div class="flashcards-header-actions">
-            <a class="button-link secondary-link" href="{{ url_for('flashcards', lesson_id=lesson.id) }}">Open Flashcards</a>
-            <a class="button-link secondary-link" href="{{ url_for('view_learning_history', lesson_id=lesson.id) }}">Return to Lesson</a>
+            <a class="button-link secondary-link" href="{{ url_for('flashcards', lesson_id=lesson.id, next=current_page_url) }}">Open Flashcards</a>
+            <a class="button-link secondary-link" href="{{ return_url }}">Return to Lesson</a>
             {% include 'components/auth_nav.html' %}
         </div>
     </header>
@@ -34,7 +34,7 @@
     <section class="memory-command-panel" aria-label="AI Memory Challenge setup">
         <div class="memory-mode-switch" aria-label="Difficulty">
             {% for mode, limit in difficulties.items() %}
-            <a class="{% if difficulty == mode %}active{% endif %}" href="{{ url_for('memory_match', lesson_id=lesson.id, difficulty=mode) }}">
+            <a class="{% if difficulty == mode %}active{% endif %}" href="{{ url_for('memory_match', lesson_id=lesson.id, difficulty=mode, next=return_url) }}">
                 {{ mode|title }} <span>{{ [limit, available_flashcards]|min }} pairs</span>
             </a>
             {% endfor %}
@@ -65,7 +65,7 @@
     <section class="memory-empty-state">
         <h2>Flashcards are needed first.</h2>
         <p>Open this lesson's Flashcards page to create and save cards, then return for AI Memory Challenge.</p>
-        <a class="button-link" href="{{ url_for('flashcards', lesson_id=lesson.id) }}">Open Flashcards</a>
+        <a class="button-link" href="{{ url_for('flashcards', lesson_id=lesson.id, next=current_page_url) }}">Open Flashcards</a>
     </section>
     {% endif %}
 
@@ -94,7 +94,7 @@
         <div class="memory-unlocks" id="completion-unlocks"></div>
         <div class="locked-modal-actions memory-completion-actions">
             <button type="button" id="completion-play-again">Play Again</button>
-            <a class="button-link secondary-link" href="{{ url_for('view_learning_history', lesson_id=lesson.id) }}">Return to Lesson</a>
+            <a class="button-link secondary-link" href="{{ return_url }}">Return to Lesson</a>
             {% if questions %}
             <form action="{{ url_for('quiz') }}" method="POST">
                 <input type="hidden" name="name" value="{{ account.full_name }}">

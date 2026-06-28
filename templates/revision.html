@@ -20,7 +20,7 @@
             <p>Exam-ready revision distilled from your saved AI notes.</p>
         </div>
         <div class="auth-page-actions">
-            <a class="button-link secondary-link" href="{{ url_for('view_learning_history', lesson_id=lesson.id) }}">Back to Lesson</a>
+            <a class="button-link secondary-link" href="{{ return_url }}">Back to Lesson</a>
             {% include 'components/auth_nav.html' %}
         </div>
     </div>
@@ -36,17 +36,18 @@
 
     <section class="revision-command-bar" aria-label="Revision actions">
         <a class="button-link" href="{{ url_for('download_revision_pdf', lesson_id=lesson.id) }}">&#128196; Download PDF</a>
-        <a class="button-link secondary-link" href="{{ url_for('mindmap', lesson_id=lesson.id) }}">
+        <a class="button-link secondary-link" href="{{ url_for('mindmap', lesson_id=lesson.id, next=current_page_url) }}">
             &#129504; {% if has_mind_map %}Open Mind Map{% else %}Generate Mind Map{% endif %}
         </a>
-        <a class="button-link secondary-link" href="{{ url_for('important_questions', lesson_id=lesson.id) }}">
+        <a class="button-link secondary-link" href="{{ url_for('important_questions', lesson_id=lesson.id, next=current_page_url) }}">
             &#11088; {% if has_important_questions %}Open Important Questions{% else %}Generate Questions{% endif %}
         </a>
-        <a class="button-link secondary-link" href="{{ url_for('flashcards', lesson_id=lesson.id) }}">
+        <a class="button-link secondary-link" href="{{ url_for('flashcards', lesson_id=lesson.id, next=current_page_url) }}">
             &#127183; Open Flashcards
         </a>
-        <form action="{{ url_for('start_ai_tutor') }}" method="POST">
+        <form action="{{ url_for('start_ai_tutor', next=current_page_url) }}" method="POST">
             <input type="hidden" name="lesson_id" value="{{ lesson.id }}">
+            <input type="hidden" name="next" value="{{ current_page_url }}">
             <button type="submit">&#128104;&#8205;&#127979; Learn with AI Tutor</button>
         </form>
         {% if questions %}
