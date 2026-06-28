@@ -30,6 +30,18 @@
 
     {% include 'components/flash_messages.html' %}
 
+    {% if flashcards_generated %}
+    <section class="flashcard-success-banner" aria-label="Flashcards generated">
+        <div>
+            <span class="eyebrow">&#129504; Continue Learning</span>
+            <h2>Flashcards Ready!</h2>
+            <p>Your flashcards have been generated successfully.</p>
+            <p>Continue learning with the AI Memory Challenge.</p>
+        </div>
+        <a class="button-link" href="{{ url_for('memory_match', lesson_id=lesson.id, next=current_page_url) }}">Play Memory Challenge</a>
+    </section>
+    {% endif %}
+
     <section class="flashcard-study-panel" aria-label="Interactive flashcards">
         <div class="flashcard-progress-row">
             <strong id="flashcard-progress">Card 1 / {{ flashcards|length }}</strong>

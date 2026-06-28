@@ -1487,9 +1487,18 @@ Grade: A
         self.assertIn("Smart AI Recommendations", page)
         self.assertIn("Start with a focused lesson", page)
         self.assertIn("Complete today&#39;s revision", page)
+        self.assertIn("Memory Challenge", page)
+        self.assertIn("Not Started", page)
         self.assertIn("Back to Home", page)
         self.assertIn("sidebar-nav", page)
         self.assertIn('class="profile-menu-button"', page)
+
+        profile_response = self.client.get("/profile")
+        profile_page = profile_response.get_data(as_text=True)
+        self.assertIn("Best Combo", profile_page)
+        self.assertIn("Games Won", profile_page)
+        self.assertIn("<strong>--</strong>", profile_page)
+        self.assertIn("<strong>0</strong>", profile_page)
 
     def test_exhibition_mode_toggle_requires_developer(self):
         self.register_user()
@@ -2161,6 +2170,9 @@ Q5. What is question five?
         self.assertIn("Shuffle", page)
         self.assertIn("Mark as Mastered", page)
         self.assertIn("Need Revision", page)
+        self.assertIn("Flashcards Ready!", page)
+        self.assertIn("Continue learning with the AI Memory Challenge.", page)
+        self.assertIn(f'href="/memory-challenge/{lesson_id}?next=/flashcards/{lesson_id}"', page)
         generate_content.assert_called_once()
         with app_module.app.app_context():
             flashcard_set = FlashcardSet.query.first()
@@ -2192,6 +2204,8 @@ Q5. What is question five?
         self.assertEqual(first_response.status_code, 200)
         self.assertEqual(second_response.status_code, 200)
         generate_content.assert_called_once()
+        self.assertIn("Flashcards Ready!", first_response.get_data(as_text=True))
+        self.assertNotIn("Flashcards Ready!", second_response.get_data(as_text=True))
         with app_module.app.app_context():
             self.assertEqual(FlashcardSet.query.count(), 1)
             self.assertEqual(Flashcard.query.count(), 10)
@@ -2326,6 +2340,21 @@ Q5. What is question five?
         self.assertNotIn("Concept 7", page)
         generate_content.assert_not_called()
 
+    def test_notes_page_memory_challenge_card_uses_existing_flashcards(self):
+        self.register_user()
+        self.login_user()
+        with app_module.app.app_context():
+            lesson_id = self.create_saved_flashcards(count=8)
+
+        response = self.client.get(f"/notes/{lesson_id}")
+
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        self.assertIn("AI Memory Challenge", page)
+        self.assertIn("Play Memory Challenge", page)
+        self.assertIn(f'href="/memory-challenge/{lesson_id}?next=/notes/{lesson_id}"', page)
+        self.assertIn("Play Challenge", page)
+
     def test_memory_match_pair_generation_shuffles_and_limits_cards(self):
         self.register_user()
         with app_module.app.app_context():
@@ -2405,8 +2434,8 @@ Q5. What is question five?
 
         dashboard_response = self.client.get("/dashboard")
         dashboard_page = dashboard_response.get_data(as_text=True)
-        self.assertIn("Memory Match", dashboard_page)
-        self.assertIn("AI Memory Challenge", dashboard_page)
+        self.assertIn("Memory Challenge", dashboard_page)
+        self.assertIn("Completed 1 time", dashboard_page)
         self.assertIn("Best 0:42", dashboard_page)
         self.assertIn("Avg 83.3%", dashboard_page)
         self.assertIn("33 XP", dashboard_page)
@@ -2414,7 +2443,7 @@ Q5. What is question five?
         profile_response = self.client.get("/profile")
         profile_page = profile_response.get_data(as_text=True)
         self.assertIn("Best Difficulty", profile_page)
-        self.assertIn("Highest Combo", profile_page)
+        self.assertIn("Best Combo", profile_page)
         self.assertIn("Games Won", profile_page)
 
     def test_memory_challenge_alias_and_js_module_are_available(self):
@@ -2491,6 +2520,10 @@ Q5. What is question five?
         )
 
         self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        self.assertIn("AI Memory Challenge", page)
+        self.assertIn("Flashcards required first.", page)
+        self.assertIn("Generate Flashcards", page)
         with app_module.app.app_context():
             row = LearningSession.query.first()
 
@@ -2506,6 +2539,7 @@ Q5. What is question five?
         with app_module.app.app_context():
             self.assertEqual(FlashcardSet.query.count(), 0)
         self.assertIn("Plant Notes", history_row.notes)
+        self.assertIn(f'href="/flashcards/{history_row.id}?next=/notes/{history_row.id}"', page)
         saved_diagram = json.loads(history_row.diagram_data)
         self.assertEqual(saved_diagram["template_key"], "flower")
         self.assertTrue(saved_diagram["available"])

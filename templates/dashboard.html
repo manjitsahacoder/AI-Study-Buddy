@@ -167,9 +167,13 @@
             <article class="dashboard-stat-card memory-match-dashboard-card">
                 <span aria-hidden="true">&#129504;</span>
                 <div>
-                    <p>Memory Match / AI Memory Challenge</p>
-                    <strong>{{ stats.memory_match.games_played }}</strong>
+                    <p>Memory Challenge</p>
+                    {% if stats.memory_match.games_played %}
+                    <strong>Completed {{ stats.memory_match.games_played }} time{% if stats.memory_match.games_played != 1 %}s{% endif %}</strong>
                     <small>Best {{ stats.memory_match.best_time }} &middot; Avg {{ stats.memory_match.average_accuracy }} &middot; {{ stats.memory_match.total_xp_earned }} XP &middot; {{ stats.memory_match.completion_percentage }}% complete</small>
+                    {% else %}
+                    <strong>Not Started</strong>
+                    {% endif %}
                 </div>
             </article>
         </section>

@@ -20,16 +20,20 @@
         <span>5</span>
         <strong>Flashcards</strong>
     </a>
-    <a class="{% if exhibition_step == 'tutor' %}active{% endif %}" href="{{ url_for('learning_history') if user else url_for('home') }}#lesson-form">
+    <a class="{% if exhibition_step == 'memory_challenge' %}active{% endif %}" href="{{ url_for('learning_history') if user else url_for('home') }}#lesson-form">
         <span>6</span>
+        <strong>Memory Challenge</strong>
+    </a>
+    <a class="{% if exhibition_step == 'tutor' %}active{% endif %}" href="{{ url_for('learning_history') if user else url_for('home') }}#lesson-form">
+        <span>7</span>
         <strong>AI Tutor</strong>
     </a>
     <a class="{% if exhibition_step == 'quiz' %}active{% endif %}" href="{{ url_for('home') }}#lesson-form">
-        <span>7</span>
+        <span>8</span>
         <strong>Quiz</strong>
     </a>
     <a class="{% if exhibition_step == 'performance' %}active{% endif %}" href="{{ url_for('performance') if user else url_for('home') }}#lesson-form">
-        <span>8</span>
+        <span>9</span>
         <strong>Performance</strong>
     </a>
 </nav>

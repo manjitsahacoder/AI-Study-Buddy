@@ -2339,9 +2339,9 @@ def summarize_memory_profile(user_id):
     )
     memory_stats = get_memory_achievement_stats(user_id)
     return {
-        "best_difficulty": best_row.difficulty.title() if best_row else "Not played yet",
-        "highest_combo": memory_stats["highest_combo"],
-        "favorite_subject": favorite_subject.subject if favorite_subject else "Not enough data yet",
+        "best_difficulty": best_row.difficulty.title() if best_row else "--",
+        "highest_combo": memory_stats["highest_combo"] if best_row else "--",
+        "favorite_subject": favorite_subject.subject if favorite_subject else "--",
         "games_won": memory_stats["games_played"],
     }
 
@@ -6333,6 +6333,7 @@ def lesson_notes(lesson_id):
         diagram_json=json.dumps(diagram_payload),
         questions=questions,
         lesson_id=lesson.id,
+        has_flashcards=bool(existing_flashcard_set(lesson.id, session["user_id"])),
         current_page_url=url_for("lesson_notes", lesson_id=lesson.id),
     )
 
@@ -6520,6 +6521,7 @@ def flashcards(lesson_id):
         lesson=lesson,
         flashcard_set=flashcard_set,
         flashcards=flashcards_for_lesson,
+        flashcards_generated=created,
         flashcard_payload=[
             {
                 "id": card.id,
@@ -7148,6 +7150,7 @@ Rules:
         diagram_json=json.dumps(diagram_payload),
         questions=questions,
         lesson_id=lesson_id,
+        has_flashcards=False,
         current_page_url=url_for("lesson_notes", lesson_id=lesson_id) if lesson_id else url_for("home"),
     )
 

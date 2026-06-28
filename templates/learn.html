@@ -100,6 +100,23 @@
                 {% endif %}
             </article>
 
+            <article class="learning-action-card learning-card-memory">
+                <span class="learning-card-icon" aria-hidden="true">&#129504;</span>
+                <div class="learning-card-copy">
+                    <h3>AI Memory Challenge</h3>
+                    <p>Practice your memory by matching flashcards with their correct answers. Earn XP, build combos, unlock achievements, and strengthen long-term retention.</p>
+                </div>
+                {% if lesson_id and has_flashcards %}
+                <a class="learning-card-button" href="{{ url_for('memory_match', lesson_id=lesson_id, next=current_page_url) }}">Play Memory Challenge <span aria-hidden="true">&rarr;</span></a>
+                {% elif lesson_id %}
+                <p class="learning-card-note">Flashcards required first.</p>
+                <a class="learning-card-button" href="{{ url_for('flashcards', lesson_id=lesson_id, next=current_page_url) }}">Generate Flashcards <span aria-hidden="true">&rarr;</span></a>
+                {% else %}
+                <p class="learning-card-note">Flashcards required first.</p>
+                <a class="learning-card-button" href="{{ url_for('login', next=url_for('home')) }}">Generate Flashcards <span aria-hidden="true">&rarr;</span></a>
+                {% endif %}
+            </article>
+
         </div>
     </section>
 
@@ -170,6 +187,21 @@
                     <span class="learning-card-arrow" aria-hidden="true">&rarr;</span>
                 </button>
             </form>
+
+            <article class="learning-action-card learning-card-memory">
+                <span class="learning-card-icon" aria-hidden="true">&#129504;</span>
+                <div class="learning-card-copy">
+                    <h3>AI Memory Challenge</h3>
+                    <p>Improve memory through an interactive matching game using your own AI-generated flashcards.</p>
+                </div>
+                {% if lesson_id and has_flashcards %}
+                <a class="learning-card-button" href="{{ url_for('memory_match', lesson_id=lesson_id, next=current_page_url) }}">Play Challenge <span aria-hidden="true">&rarr;</span></a>
+                {% elif lesson_id %}
+                <a class="learning-card-button" href="{{ url_for('flashcards', lesson_id=lesson_id, next=current_page_url) }}">Generate Flashcards <span aria-hidden="true">&rarr;</span></a>
+                {% else %}
+                <a class="learning-card-button" href="{{ url_for('login', next=url_for('home')) }}">Generate Flashcards <span aria-hidden="true">&rarr;</span></a>
+                {% endif %}
+            </article>
 
         </div>
     </section>
