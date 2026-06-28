@@ -19,6 +19,7 @@ from models import (
     LearningHistory,
     LearningSession,
     MemoryChallenge,
+    MemoryChallengeSession,
     MindMap,
     QuizHistory,
     RevisionSheet,
@@ -2206,7 +2207,10 @@ Photosynthesis helps plants prepare food and release oxygen.
     def test_memory_match_statistics_calculation(self):
         self.assertEqual(app_module.calculate_memory_accuracy(6, 8), 75.0)
         self.assertEqual(app_module.calculate_memory_accuracy(0, 0), 0.0)
-        self.assertEqual(app_module.calculate_memory_xp("hard", 75.0), 20)
+        self.assertEqual(app_module.calculate_memory_xp("easy", 75.0), 15)
+        self.assertEqual(app_module.calculate_memory_xp("medium", 75.0), 25)
+        self.assertEqual(app_module.calculate_memory_xp("hard", 75.0), 40)
+        self.assertEqual(app_module.calculate_memory_xp("hard", 100.0, highest_combo=6, pair_count=6), 60)
         self.assertEqual(app_module.format_duration(75), "1:15")
 
     @patch.object(app_module, "generate_content_with_fallback")
@@ -2223,6 +2227,7 @@ Photosynthesis helps plants prepare food and release oxygen.
                 "elapsed_seconds": 42,
                 "moves": 12,
                 "matched_pairs": 10,
+                "highest_combo": 5,
             },
         )
 
@@ -2231,29 +2236,60 @@ Photosynthesis helps plants prepare food and release oxygen.
         self.assertEqual(payload["time"], "0:42")
         self.assertEqual(payload["accuracy"], 83.3)
         self.assertEqual(payload["moves"], 12)
-        self.assertEqual(payload["xp_earned"], 20)
+        self.assertEqual(payload["best_combo"], 5)
+        self.assertEqual(payload["xp_earned"], 33)
         self.assertIn("Memory Matcher", payload["newly_unlocked_badges"])
         self.assertIn("Memory Master", payload["newly_unlocked_badges"])
+        self.assertIn("Memory Beginner", payload["newly_unlocked_badges"])
+        self.assertIn("Speed Solver", payload["newly_unlocked_badges"])
+        self.assertIn("Streak Champion", payload["newly_unlocked_badges"])
         generate_content.assert_not_called()
         with app_module.app.app_context():
             challenge = MemoryChallenge.query.one()
+            self.assertIsInstance(challenge, MemoryChallengeSession)
             self.assertEqual(challenge.user_id, 1)
             self.assertEqual(challenge.lesson_id, lesson_id)
             self.assertEqual(challenge.difficulty, "medium")
+            self.assertEqual(challenge.games_played, 1)
             self.assertEqual(challenge.best_time, 42)
             self.assertEqual(challenge.moves, 12)
+            self.assertEqual(challenge.best_moves, 12)
             self.assertEqual(challenge.accuracy, 83.3)
-            self.assertEqual(challenge.xp_earned, 20)
+            self.assertEqual(challenge.best_accuracy, 83.3)
+            self.assertEqual(challenge.highest_combo, 5)
+            self.assertEqual(challenge.xp_earned, 33)
             summary = app_module.get_gamification_summary(1)
             self.assertEqual(summary["counts"]["memory_match"], 1)
-            self.assertEqual(summary["total_xp"], 45)
+            self.assertEqual(summary["memory_xp"], 33)
+            self.assertEqual(summary["total_xp"], 58)
 
         dashboard_response = self.client.get("/dashboard")
         dashboard_page = dashboard_response.get_data(as_text=True)
         self.assertIn("Memory Match", dashboard_page)
+        self.assertIn("AI Memory Challenge", dashboard_page)
         self.assertIn("Best 0:42", dashboard_page)
         self.assertIn("Avg 83.3%", dashboard_page)
-        self.assertIn("20 XP", dashboard_page)
+        self.assertIn("33 XP", dashboard_page)
+
+        profile_response = self.client.get("/profile")
+        profile_page = profile_response.get_data(as_text=True)
+        self.assertIn("Best Difficulty", profile_page)
+        self.assertIn("Highest Combo", profile_page)
+        self.assertIn("Games Won", profile_page)
+
+    def test_memory_challenge_alias_and_js_module_are_available(self):
+        self.register_user()
+        self.login_user()
+        with app_module.app.app_context():
+            lesson_id = self.create_saved_flashcards(count=6)
+
+        response = self.client.get(f"/memory-challenge/{lesson_id}")
+        page = response.get_data(as_text=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("AI Memory Challenge", page)
+        self.assertIn("js/memory_challenge.js", page)
+        self.assertIn("/api/memory-challenge/", page)
 
     def test_memory_match_completion_is_user_isolated(self):
         self.register_user()

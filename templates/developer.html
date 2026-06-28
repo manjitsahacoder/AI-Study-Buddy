@@ -161,6 +161,64 @@
         <section class="dashboard-panel">
             <div class="dashboard-section-heading">
                 <div>
+                    <span class="eyebrow">&#129504; AI Memory Challenge</span>
+                    <h2>Memory Challenge Analytics</h2>
+                </div>
+            </div>
+            <div class="dashboard-stat-grid">
+                <article class="dashboard-stat-card">
+                    <span aria-hidden="true">&#127918;</span>
+                    <div>
+                        <p>Total Games</p>
+                        <strong>{{ stats.memory_challenge.total_games }}</strong>
+                    </div>
+                </article>
+                <article class="dashboard-stat-card">
+                    <span aria-hidden="true">&#9201;</span>
+                    <div>
+                        <p>Average Completion Time</p>
+                        <strong>{{ stats.memory_challenge.average_completion_time }}</strong>
+                    </div>
+                </article>
+                <article class="dashboard-stat-card">
+                    <span aria-hidden="true">&#127919;</span>
+                    <div>
+                        <p>Average Accuracy</p>
+                        <strong>{{ stats.memory_challenge.average_accuracy }}</strong>
+                    </div>
+                </article>
+                <article class="dashboard-stat-card">
+                    <span aria-hidden="true">&#128218;</span>
+                    <div>
+                        <p>Most Played Subject</p>
+                        <strong>{{ stats.memory_challenge.most_played_subject }}</strong>
+                    </div>
+                </article>
+            </div>
+            <div class="activity-list">
+                {% for player in stats.memory_challenge.top_players %}
+                <article class="activity-card">
+                    <div>
+                        <strong>{{ player.full_name }}</strong>
+                        <span>Top Player</span>
+                    </div>
+                    <div>
+                        <span>{{ player.games }} games</span>
+                        <strong>{{ player.xp }} XP</strong>
+                    </div>
+                </article>
+                {% else %}
+                <div class="dashboard-empty-state">
+                    <h3>No Memory Challenge games yet.</h3>
+                    <p>Completed games will appear here automatically.</p>
+                </div>
+                {% endfor %}
+            </div>
+        </section>
+
+        <section class="dashboard-panel">
+            <div class="dashboard-section-heading">
+                <div>
                     <span class="eyebrow">Recent Registrations</span>
                     <h2>Latest 10 Registered Users</h2>
                 </div>

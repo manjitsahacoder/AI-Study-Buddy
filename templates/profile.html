@@ -94,8 +94,36 @@
                 <strong>{{ gamification.achievements_unlocked }}</strong>
             </article>
             <article>
-                <span>Memory Match</span>
+                <span>Memory Challenge</span>
                 <strong>{{ gamification.counts.memory_match }}</strong>
+            </article>
+        </div>
+    </section>
+
+    <section class="profile-gamification-card">
+        <div class="profile-card-header">
+            <div>
+                <span class="eyebrow">&#129504; AI Memory Challenge</span>
+                <h2>Memory profile</h2>
+                <p>Your best local flashcard matching results.</p>
+            </div>
+        </div>
+        <div class="profile-gamification-grid">
+            <article>
+                <span>Best Difficulty</span>
+                <strong>{{ memory_profile.best_difficulty }}</strong>
+            </article>
+            <article>
+                <span>Highest Combo</span>
+                <strong>{{ memory_profile.highest_combo }}</strong>
+            </article>
+            <article>
+                <span>Favorite Subject</span>
+                <strong>{{ memory_profile.favorite_subject }}</strong>
+            </article>
+            <article>
+                <span>Games Won</span>
+                <strong>{{ memory_profile.games_won }}</strong>
             </article>
         </div>
     </section>

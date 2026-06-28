@@ -47,7 +47,7 @@ class User(ModelMappingMixin, db.Model):
     downloaded_files = db.relationship("DownloadedFile", back_populates="user", lazy=True)
     tutor_lessons = db.relationship("TutorLesson", back_populates="user", lazy=True)
     flashcard_sets = db.relationship("FlashcardSet", back_populates="user", lazy=True)
-    memory_challenges = db.relationship("MemoryChallenge", back_populates="user", lazy=True)
+    memory_challenges = db.relationship("MemoryChallengeSession", back_populates="user", lazy=True)
     revision_sheets = db.relationship("RevisionSheet", back_populates="user", lazy=True)
     mind_maps = db.relationship("MindMap", back_populates="user", lazy=True)
     important_question_sets = db.relationship("ImportantQuestionSet", back_populates="user", lazy=True)
@@ -136,7 +136,7 @@ class LearningHistory(ModelMappingMixin, db.Model):
         lazy=True,
     )
     memory_challenges = db.relationship(
-        "MemoryChallenge",
+        "MemoryChallengeSession",
         back_populates="learning_history",
         cascade="all, delete-orphan",
         lazy=True,
@@ -287,7 +287,7 @@ class Flashcard(ModelMappingMixin, db.Model):
     flashcard_set = db.relationship("FlashcardSet", back_populates="flashcards")
 
 
-class MemoryChallenge(ModelMappingMixin, db.Model):
+class MemoryChallengeSession(ModelMappingMixin, db.Model):
     __tablename__ = "memory_challenges"
 
     id = db.Column(db.Integer, primary_key=True)
@@ -299,14 +299,36 @@ class MemoryChallenge(ModelMappingMixin, db.Model):
         index=True,
     )
     difficulty = db.Column(db.Text, nullable=False, default="easy", index=True)
+    games_played = db.Column(db.Integer, nullable=False, default=1)
     best_time = db.Column(db.Integer, nullable=False, default=0)
-    moves = db.Column(db.Integer, nullable=False, default=0)
-    accuracy = db.Column(db.Float, nullable=False, default=0.0)
+    best_accuracy = db.Column(db.Float, nullable=False, default=0.0)
+    best_moves = db.Column(db.Integer, nullable=False, default=0)
+    highest_combo = db.Column(db.Integer, nullable=False, default=0)
     xp_earned = db.Column(db.Integer, nullable=False, default=0)
     completed_at = db.Column(db.DateTime, nullable=False, default=utc_now, index=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=utc_now, index=True)
 
     user = db.relationship("User", back_populates="memory_challenges")
     learning_history = db.relationship("LearningHistory", back_populates="memory_challenges")
+
+    @property
+    def moves(self):
+        return self.best_moves
+
+    @moves.setter
+    def moves(self, value):
+        self.best_moves = value
+
+    @property
+    def accuracy(self):
+        return self.best_accuracy
+
+    @accuracy.setter
+    def accuracy(self, value):
+        self.best_accuracy = value
+
+
+MemoryChallenge = MemoryChallengeSession
 
 
 class TutorLesson(ModelMappingMixin, db.Model):

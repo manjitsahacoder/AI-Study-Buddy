@@ -30,7 +30,7 @@ from functools import lru_cache, wraps
 from difflib import SequenceMatcher
 from werkzeug.security import check_password_hash, generate_password_hash
 from urllib.parse import quote
-from sqlalchemy import and_, func, or_, text
+from sqlalchemy import and_, func, inspect, or_, text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import load_only
 import json
@@ -120,6 +120,7 @@ def initialize_database():
         create_database_tables()
         ensure_sqlite_schema_compatibility()
         ensure_user_preference_schema_compatibility()
+        ensure_memory_challenge_schema_compatibility()
         ensure_user_roles()
         app.logger.info("Database tables are ready.")
 
@@ -169,6 +170,11 @@ GAMIFICATION_XP_VALUES = {
     "memory_match": 20,
     "tutor": 10,
     "quiz": 25,
+}
+MEMORY_CHALLENGE_BASE_XP = {
+    "easy": 15,
+    "medium": 25,
+    "hard": 40,
 }
 MEMORY_MATCH_DIFFICULTIES = {
     "easy": 6,
@@ -397,6 +403,79 @@ def ensure_user_preference_schema_compatibility():
                     f"{definitions['postgresql']}"
                 )
             )
+        db.session.commit()
+
+
+MEMORY_CHALLENGE_COLUMNS = {
+    "games_played": {
+        "sqlite": "INTEGER NOT NULL DEFAULT 1",
+        "postgresql": "INTEGER NOT NULL DEFAULT 1",
+    },
+    "best_accuracy": {
+        "sqlite": "FLOAT NOT NULL DEFAULT 0",
+        "postgresql": "DOUBLE PRECISION NOT NULL DEFAULT 0",
+    },
+    "best_moves": {
+        "sqlite": "INTEGER NOT NULL DEFAULT 0",
+        "postgresql": "INTEGER NOT NULL DEFAULT 0",
+    },
+    "highest_combo": {
+        "sqlite": "INTEGER NOT NULL DEFAULT 0",
+        "postgresql": "INTEGER NOT NULL DEFAULT 0",
+    },
+    "created_at": {
+        "sqlite": "DATETIME",
+        "postgresql": "TIMESTAMP",
+    },
+}
+
+
+def ensure_memory_challenge_schema_compatibility():
+    dialect_name = db.engine.dialect.name
+    inspector = inspect(db.engine)
+    if "memory_challenges" not in inspector.get_table_names():
+        return
+    inspected_columns = {column["name"] for column in inspector.get_columns("memory_challenges")}
+
+    if dialect_name == "sqlite":
+        memory_columns = {
+            row[1]
+            for row in db.session.execute(text("PRAGMA table_info(memory_challenges)")).fetchall()
+        }
+        for column_name, definitions in MEMORY_CHALLENGE_COLUMNS.items():
+            if column_name not in memory_columns:
+                db.session.execute(
+                    text(f"ALTER TABLE memory_challenges ADD COLUMN {column_name} {definitions['sqlite']}")
+                )
+        if "moves" in memory_columns:
+            db.session.execute(text("UPDATE memory_challenges SET best_moves = moves WHERE best_moves = 0"))
+        if "accuracy" in memory_columns:
+            db.session.execute(text("UPDATE memory_challenges SET best_accuracy = accuracy WHERE best_accuracy = 0"))
+        db.session.execute(
+            text("UPDATE memory_challenges SET created_at = completed_at WHERE created_at IS NULL")
+        )
+        db.session.commit()
+        return
+
+    if dialect_name == "postgresql":
+        for column_name, definitions in MEMORY_CHALLENGE_COLUMNS.items():
+            db.session.execute(
+                text(
+                    f"ALTER TABLE memory_challenges ADD COLUMN IF NOT EXISTS {column_name} "
+                    f"{definitions['postgresql']}"
+                )
+            )
+        if "moves" in inspected_columns:
+            db.session.execute(
+                text("UPDATE memory_challenges SET best_moves = moves WHERE best_moves = 0")
+            )
+        if "accuracy" in inspected_columns:
+            db.session.execute(
+                text("UPDATE memory_challenges SET best_accuracy = accuracy WHERE best_accuracy = 0")
+            )
+        db.session.execute(
+            text("UPDATE memory_challenges SET created_at = completed_at WHERE created_at IS NULL")
+        )
         db.session.commit()
 
 
@@ -2062,8 +2141,13 @@ def calculate_memory_accuracy(matched_pairs, moves):
     return round((max(0, matched_pairs) / moves) * 100, 1)
 
 
-def calculate_memory_xp(difficulty, accuracy):
-    return GAMIFICATION_XP_VALUES["memory_match"] if accuracy > 0 else 0
+def calculate_memory_xp(difficulty, accuracy, highest_combo=0, pair_count=0):
+    if accuracy <= 0:
+        return 0
+    base_xp = MEMORY_CHALLENGE_BASE_XP[normalize_memory_difficulty(difficulty)]
+    combo_bonus = max(0, int(highest_combo or 0) - 1) * 2
+    perfect_bonus = 10 if pair_count and accuracy >= 100 else 0
+    return base_xp + combo_bonus + perfect_bonus
 
 
 def format_duration(total_seconds):
@@ -2117,23 +2201,117 @@ def memory_best_time_for_user(user_id, lesson_id, difficulty, elapsed_seconds):
     return elapsed_seconds
 
 
+def memory_best_moves_for_user(user_id, lesson_id, difficulty, moves):
+    previous_best = (
+        MemoryChallenge.query.with_entities(func.min(MemoryChallenge.best_moves))
+        .filter(
+            MemoryChallenge.user_id == user_id,
+            MemoryChallenge.lesson_id == lesson_id,
+            MemoryChallenge.difficulty == normalize_memory_difficulty(difficulty),
+            MemoryChallenge.best_moves > 0,
+        )
+        .scalar()
+    )
+    if previous_best:
+        return min(previous_best, moves)
+    return moves
+
+
+def memory_best_accuracy_for_user(user_id, lesson_id, difficulty, accuracy):
+    previous_best = (
+        MemoryChallenge.query.with_entities(func.max(MemoryChallenge.best_accuracy))
+        .filter_by(
+            user_id=user_id,
+            lesson_id=lesson_id,
+            difficulty=normalize_memory_difficulty(difficulty),
+        )
+        .scalar()
+    )
+    return max(float(previous_best or 0), float(accuracy or 0))
+
+
+def memory_highest_combo_for_user(user_id, lesson_id, difficulty, highest_combo):
+    previous_best = (
+        MemoryChallenge.query.with_entities(func.max(MemoryChallenge.highest_combo))
+        .filter_by(
+            user_id=user_id,
+            lesson_id=lesson_id,
+            difficulty=normalize_memory_difficulty(difficulty),
+        )
+        .scalar()
+    )
+    return max(int(previous_best or 0), int(highest_combo or 0))
+
+
 def summarize_memory_match_dashboard(user_id):
     rows = (
         MemoryChallenge.query.with_entities(
-            func.count(MemoryChallenge.id),
+            func.coalesce(func.sum(MemoryChallenge.games_played), 0),
             func.min(MemoryChallenge.best_time),
-            func.avg(MemoryChallenge.accuracy),
+            func.avg(MemoryChallenge.best_accuracy),
             func.coalesce(func.sum(MemoryChallenge.xp_earned), 0),
+            func.count(MemoryChallenge.id),
         )
         .filter(MemoryChallenge.user_id == user_id)
         .first()
     )
-    games_played, best_time, average_accuracy, total_xp = rows if rows else (0, None, None, 0)
+    games_played, best_time, average_accuracy, total_xp, session_count = rows if rows else (0, None, None, 0, 0)
+    total_lessons_with_flashcards = (
+        FlashcardSet.query.with_entities(func.count(FlashcardSet.id))
+        .filter_by(user_id=user_id)
+        .scalar()
+        or 0
+    )
+    completed_lessons = (
+        MemoryChallenge.query.with_entities(func.count(func.distinct(MemoryChallenge.lesson_id)))
+        .filter_by(user_id=user_id)
+        .scalar()
+        or 0
+    )
+    completion_percentage = (
+        int((completed_lessons / total_lessons_with_flashcards) * 100)
+        if total_lessons_with_flashcards
+        else 0
+    )
     return {
         "games_played": games_played or 0,
         "best_time": format_duration(best_time) if best_time else "No games yet",
         "average_accuracy": f"{round(average_accuracy or 0, 1)}%",
         "total_xp_earned": int(total_xp or 0),
+        "completion_percentage": min(100, completion_percentage),
+        "sessions_saved": session_count or 0,
+    }
+
+
+def summarize_memory_profile(user_id):
+    best_row = (
+        MemoryChallenge.query.with_entities(
+            MemoryChallenge.difficulty,
+            MemoryChallenge.best_accuracy,
+            MemoryChallenge.best_time,
+        )
+        .filter_by(user_id=user_id)
+        .order_by(
+            MemoryChallenge.best_accuracy.desc(),
+            MemoryChallenge.best_time.asc(),
+            MemoryChallenge.id.desc(),
+        )
+        .first()
+    )
+    favorite_subject = (
+        db.session.query(LearningHistory.subject, func.count(MemoryChallenge.id).label("games"))
+        .join(MemoryChallenge, MemoryChallenge.lesson_id == LearningHistory.id)
+        .filter(MemoryChallenge.user_id == user_id, LearningHistory.user_id == user_id)
+        .group_by(LearningHistory.subject)
+        .order_by(func.count(MemoryChallenge.id).desc(), LearningHistory.subject.asc())
+        .first()
+    )
+    memory_stats = get_memory_achievement_stats(user_id)
+    return {
+        "best_difficulty": best_row.difficulty.title() if best_row else "Not played yet",
+        "highest_combo": memory_stats["highest_combo"],
+        "favorite_subject": favorite_subject.subject if favorite_subject else "Not enough data yet",
+        "games_won": memory_stats["games_played"],
     }
 
 
@@ -2404,11 +2582,28 @@ def get_gamification_counts(user_id):
     }
 
 
-def calculate_xp_from_counts(counts):
-    return sum(
+def memory_challenge_xp_for_user(user_id):
+    total = (
+        MemoryChallenge.query.with_entities(func.coalesce(func.sum(MemoryChallenge.xp_earned), 0))
+        .filter_by(user_id=user_id)
+        .scalar()
+        or 0
+    )
+    if total:
+        return int(total)
+    legacy_count = count_user_rows(MemoryChallenge, user_id)
+    return legacy_count * GAMIFICATION_XP_VALUES["memory_match"] if legacy_count else 0
+
+
+def calculate_xp_from_counts(counts, memory_xp=None):
+    base_xp = sum(
         counts.get(activity, 0) * xp
         for activity, xp in GAMIFICATION_XP_VALUES.items()
+        if activity != "memory_match"
     )
+    if memory_xp is None:
+        memory_xp = counts.get("memory_match", 0) * GAMIFICATION_XP_VALUES["memory_match"]
+    return base_xp + int(memory_xp or 0)
 
 
 def gamification_level(total_xp):
@@ -2445,7 +2640,28 @@ def get_gamification_activity_dates(user_id):
     return activity_dates
 
 
-def build_gamification_badges(counts, total_xp, study_streak):
+def get_memory_achievement_stats(user_id):
+    row = (
+        MemoryChallenge.query.with_entities(
+            func.count(MemoryChallenge.id),
+            func.max(MemoryChallenge.best_accuracy),
+            func.min(MemoryChallenge.best_time),
+            func.max(MemoryChallenge.highest_combo),
+        )
+        .filter_by(user_id=user_id)
+        .first()
+    )
+    games_played, best_accuracy, best_time, highest_combo = row if row else (0, 0, None, 0)
+    return {
+        "games_played": games_played or 0,
+        "best_accuracy": float(best_accuracy or 0),
+        "best_time": int(best_time or 0) if best_time else 0,
+        "highest_combo": int(highest_combo or 0),
+    }
+
+
+def build_gamification_badges(counts, total_xp, study_streak, memory_stats=None):
+    memory_stats = memory_stats or {}
     return [
         {
             "icon": "&#127775;",
@@ -2484,6 +2700,30 @@ def build_gamification_badges(counts, total_xp, study_streak):
             "unlocked": counts["memory_match"] >= 1,
         },
         {
+            "icon": "&#129504;",
+            "title": "Memory Beginner",
+            "description": "Complete your first AI Memory Challenge.",
+            "unlocked": counts["memory_match"] >= 1,
+        },
+        {
+            "icon": "&#127942;",
+            "title": "Perfect Memory",
+            "description": "Finish a Memory Challenge with 100% accuracy.",
+            "unlocked": memory_stats.get("best_accuracy", 0) >= 100,
+        },
+        {
+            "icon": "&#9889;",
+            "title": "Speed Solver",
+            "description": "Finish a Memory Challenge in under one minute.",
+            "unlocked": 0 < memory_stats.get("best_time", 0) <= 60,
+        },
+        {
+            "icon": "&#128293;",
+            "title": "Streak Champion",
+            "description": "Reach a 5-card Memory Challenge combo.",
+            "unlocked": memory_stats.get("highest_combo", 0) >= 5,
+        },
+        {
             "icon": "&#128293;",
             "title": "Streak Spark",
             "description": "Reach a 3-day study streak.",
@@ -2504,13 +2744,18 @@ def build_gamification_badges(counts, total_xp, study_streak):
     ]
 
 
-def build_gamification_achievements(counts, total_xp, study_streak):
+def build_gamification_achievements(counts, total_xp, study_streak, memory_stats=None):
+    memory_stats = memory_stats or {}
     achievements = [
         ("First Notes", "Save a lesson note.", counts["notes"], 1),
         ("Revision Ready", "Generate a quick revision sheet.", counts["revision"], 1),
         ("Visual Thinker", "Create a mind map.", counts["mind_map"], 1),
         ("Card Collector", "Generate flashcards.", counts["flashcards"], 1),
         ("Memory Master", "Complete a Memory Match game.", counts["memory_match"], 1),
+        ("Memory Beginner", "Complete your first AI Memory Challenge.", counts["memory_match"], 1),
+        ("Perfect Memory", "Solve a Memory Challenge with 100% accuracy.", memory_stats.get("best_accuracy", 0), 100),
+        ("Speed Solver", "Finish a Memory Challenge within 60 seconds.", 1 if 0 < memory_stats.get("best_time", 0) <= 60 else 0, 1),
+        ("Streak Champion", "Reach a 5-card combo.", memory_stats.get("highest_combo", 0), 5),
         ("Tutor Time", "Start an AI Tutor lesson.", counts["tutor"], 1),
         ("Quiz Courage", "Complete a quiz.", counts["quiz"], 1),
         ("XP 250", "Earn 250 XP.", total_xp, 250),
@@ -2608,14 +2853,18 @@ def build_daily_challenges(user_id):
 
 def get_gamification_summary(user_id):
     counts = get_gamification_counts(user_id)
-    total_xp = calculate_xp_from_counts(counts)
+    memory_xp = memory_challenge_xp_for_user(user_id)
+    total_xp = calculate_xp_from_counts(counts, memory_xp=memory_xp)
     study_streak = calculate_study_streak(get_gamification_activity_dates(user_id))
-    badges = build_gamification_badges(counts, total_xp, study_streak)
-    achievements = build_gamification_achievements(counts, total_xp, study_streak)
+    memory_stats = get_memory_achievement_stats(user_id)
+    badges = build_gamification_badges(counts, total_xp, study_streak, memory_stats)
+    achievements = build_gamification_achievements(counts, total_xp, study_streak, memory_stats)
     return {
         "counts": counts,
         "xp_values": GAMIFICATION_XP_VALUES,
         "total_xp": total_xp,
+        "memory_xp": memory_xp,
+        "memory_stats": memory_stats,
         "level": gamification_level(total_xp),
         "study_streak": study_streak,
         "badges": badges,
@@ -2658,14 +2907,35 @@ def get_gamification_rollups(user_ids):
             if user_id in rollups:
                 rollups[user_id]["counts"][activity] = total
 
+    memory_xp_by_user = {
+        user_id: int(total or 0)
+        for user_id, total in (
+            MemoryChallenge.query.with_entities(
+                MemoryChallenge.user_id,
+                func.coalesce(func.sum(MemoryChallenge.xp_earned), 0),
+            )
+            .filter(MemoryChallenge.user_id.in_(user_ids))
+            .group_by(MemoryChallenge.user_id)
+            .all()
+        )
+    }
+
     for user_id, rollup in rollups.items():
-        total_xp = calculate_xp_from_counts(rollup["counts"])
+        total_xp = calculate_xp_from_counts(
+            rollup["counts"],
+            memory_xp=memory_xp_by_user.get(user_id),
+        )
         study_streak = calculate_study_streak(get_gamification_activity_dates(user_id))
         rollup["total_xp"] = total_xp
         rollup["level"] = gamification_level(total_xp)["level"]
         rollup["badges_unlocked"] = sum(
             1
-            for badge in build_gamification_badges(rollup["counts"], total_xp, study_streak)
+            for badge in build_gamification_badges(
+                rollup["counts"],
+                total_xp,
+                study_streak,
+                get_memory_achievement_stats(user_id),
+            )
             if badge["unlocked"]
         )
     return rollups
@@ -3098,6 +3368,31 @@ def get_developer_panel_stats():
     total_xp_awarded = sum(rollup["total_xp"] for rollup in gamification_rollups.values())
     highest_level = max((rollup["level"] for rollup in gamification_rollups.values()), default=1)
     average_xp = round(total_xp_awarded / len(user_ids), 1) if user_ids else 0
+    memory_games = (
+        MemoryChallenge.query.with_entities(func.coalesce(func.sum(MemoryChallenge.games_played), 0)).scalar()
+        or 0
+    )
+    memory_avg_time = MemoryChallenge.query.with_entities(func.avg(MemoryChallenge.best_time)).scalar()
+    memory_avg_accuracy = MemoryChallenge.query.with_entities(func.avg(MemoryChallenge.best_accuracy)).scalar()
+    memory_subject = (
+        db.session.query(LearningHistory.subject, func.count(MemoryChallenge.id).label("games"))
+        .join(MemoryChallenge, MemoryChallenge.lesson_id == LearningHistory.id)
+        .group_by(LearningHistory.subject)
+        .order_by(func.count(MemoryChallenge.id).desc(), LearningHistory.subject.asc())
+        .first()
+    )
+    memory_top_players = (
+        db.session.query(
+            User.full_name,
+            func.count(MemoryChallenge.id).label("games"),
+            func.coalesce(func.sum(MemoryChallenge.xp_earned), 0).label("xp"),
+        )
+        .join(MemoryChallenge, MemoryChallenge.user_id == User.id)
+        .group_by(User.id, User.full_name)
+        .order_by(func.coalesce(func.sum(MemoryChallenge.xp_earned), 0).desc(), func.count(MemoryChallenge.id).desc())
+        .limit(5)
+        .all()
+    )
 
     return {
         "total_users": table_counts["users"],
@@ -3123,6 +3418,13 @@ def get_developer_panel_stats():
         "website_version": WEBSITE_VERSION,
         "database_statistics": table_counts,
         "server_status": "Online placeholder",
+        "memory_challenge": {
+            "total_games": int(memory_games or 0),
+            "average_completion_time": format_duration(memory_avg_time) if memory_avg_time else "No games yet",
+            "average_accuracy": f"{round(memory_avg_accuracy or 0, 1)}%",
+            "most_played_subject": memory_subject.subject if memory_subject else "No games yet",
+            "top_players": memory_top_players,
+        },
     }
 
 
@@ -5909,6 +6211,7 @@ def profile():
         "profile.html",
         account=account,
         gamification=get_gamification_summary(account["id"]),
+        memory_profile=summarize_memory_profile(account["id"]),
     )
 
 
@@ -6163,6 +6466,7 @@ def flashcards(lesson_id):
 
 
 @app.route("/memory-match/<int:lesson_id>")
+@app.route("/memory-challenge/<int:lesson_id>")
 @login_required
 def memory_match(lesson_id):
     lesson = get_flashcard_lesson(lesson_id, session["user_id"])
@@ -6181,17 +6485,21 @@ def memory_match(lesson_id):
 
     return render_template(
         "memory_match.html",
+        account=current_user(),
         lesson=lesson,
         difficulty=difficulty,
         difficulties=MEMORY_MATCH_DIFFICULTIES,
         available_flashcards=len(flashcards_for_lesson),
         pair_count=pair_count,
         memory_cards=memory_cards,
-        xp_value=GAMIFICATION_XP_VALUES["memory_match"],
+        xp_value=MEMORY_CHALLENGE_BASE_XP[difficulty],
+        base_xp_values=MEMORY_CHALLENGE_BASE_XP,
+        questions=decode_json_list(lesson.quiz_questions),
     )
 
 
 @app.route("/api/memory-match/<int:lesson_id>/complete", methods=["POST"])
+@app.route("/api/memory-challenge/<int:lesson_id>/complete", methods=["POST"])
 @login_required
 def complete_memory_match(lesson_id):
     lesson = get_flashcard_lesson(lesson_id, session["user_id"])
@@ -6210,6 +6518,7 @@ def complete_memory_match(lesson_id):
         elapsed_seconds = max(1, int(payload.get("elapsed_seconds", 0)))
         moves = max(1, int(payload.get("moves", 0)))
         matched_pairs = max(0, int(payload.get("matched_pairs", 0)))
+        highest_combo = max(0, int(payload.get("highest_combo", payload.get("best_combo", 0))))
     except (TypeError, ValueError):
         abort(400, description="Valid game statistics are required.")
 
@@ -6218,20 +6527,30 @@ def complete_memory_match(lesson_id):
 
     before_summary = get_gamification_summary(session["user_id"])
     accuracy = calculate_memory_accuracy(pair_count, moves)
-    xp_earned = calculate_memory_xp(difficulty, accuracy)
+    xp_earned = calculate_memory_xp(difficulty, accuracy, highest_combo, pair_count)
     best_time = memory_best_time_for_user(
         session["user_id"],
         lesson.id,
         difficulty,
         elapsed_seconds,
     )
+    best_moves = memory_best_moves_for_user(session["user_id"], lesson.id, difficulty, moves)
+    best_accuracy = memory_best_accuracy_for_user(session["user_id"], lesson.id, difficulty, accuracy)
+    session_best_combo = memory_highest_combo_for_user(
+        session["user_id"],
+        lesson.id,
+        difficulty,
+        highest_combo,
+    )
     challenge = MemoryChallenge(
         user_id=session["user_id"],
         lesson_id=lesson.id,
         difficulty=difficulty,
+        games_played=1,
         best_time=best_time,
-        moves=moves,
-        accuracy=accuracy,
+        best_moves=best_moves,
+        best_accuracy=best_accuracy,
+        highest_combo=session_best_combo,
         xp_earned=xp_earned,
     )
     db.session.add(challenge)
@@ -6243,6 +6562,7 @@ def complete_memory_match(lesson_id):
             "time": format_duration(elapsed_seconds),
             "accuracy": accuracy,
             "moves": moves,
+            "best_combo": highest_combo,
             "xp_earned": xp_earned,
             "level": after_summary["level"],
             "newly_unlocked_badges": newly_unlocked_gamification(before_summary, after_summary),

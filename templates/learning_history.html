@@ -94,7 +94,7 @@
                     {% if lesson.has_flashcards %}&#127183; Open Flashcards{% else %}&#127183; Generate Flashcards{% endif %}
                 </a>
                 {% if lesson.has_flashcards %}
-                <a class="button-link secondary-link" href="{{ url_for('memory_match', lesson_id=lesson.id) }}">&#129504; Open Memory Match</a>
+                <a class="button-link secondary-link" href="{{ url_for('memory_match', lesson_id=lesson.id) }}">&#129504; Open Memory Challenge</a>
                 {% endif %}
                 <a class="button-link secondary-link" href="{{ url_for('download_learning_history_pdf', lesson_id=lesson.id) }}">&#128196; Download PDF</a>
                 <button class="button-link secondary-link favourite-placeholder" type="button" disabled title="Favourite notes will be added later">&#11088; Favourite</button>
