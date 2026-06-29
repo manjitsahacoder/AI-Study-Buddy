@@ -33,6 +33,7 @@ from models import (
 )
 from diagram_library.metadata import DiagramCandidate, reusable_license
 from diagram_library.service import get_or_create_diagram
+from diagram_library.storage import download_and_store, repair_cached_image_extension, valid_cached_image
 
 
 class MockResponse:
@@ -52,6 +53,7 @@ class RouteTests(unittest.TestCase):
     TEST_PNG = base64.b64decode(
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
     )
+    TEST_SVG = b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10"/></svg>'
 
     def setUp(self):
         app_module.app.config.update(TESTING=True)
@@ -94,9 +96,18 @@ class RouteTests(unittest.TestCase):
         os.makedirs(cache_dir, exist_ok=True)
         path = os.path.join(cache_dir, filename)
         with open(path, "wb") as image_file:
-            image_file.write(self.TEST_PNG)
+            image_file.write(self.make_image_bytes("PNG"))
         self.addCleanup(lambda: os.path.exists(path) and os.remove(path))
         return f"diagram_cache/{filename}"
+
+    def make_image_bytes(self, image_format):
+        from io import BytesIO
+        from PIL import Image
+
+        buffer = BytesIO()
+        image = Image.new("RGB", (2, 2), color=(80, 120, 200))
+        image.save(buffer, format=image_format)
+        return buffer.getvalue()
 
     def seed_cached_diagram(
         self,
@@ -370,6 +381,71 @@ Q5. What is question five?
         self.assertEqual(author, "Commons Author")
         self.assertEqual(license_text, "CC BY 4.0")
         self.assertIn("Commons Author", attribution)
+
+    def test_wikimedia_svg_thumbnail_is_saved_with_actual_png_extension(self):
+        class FakeDownloadResponse:
+            headers = {"Content-Type": "image/png"}
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self, size=-1):
+                return self.data
+
+        fake_response = FakeDownloadResponse()
+        fake_response.data = self.make_image_bytes("PNG")
+        candidate = DiagramCandidate(
+            provider="Wikimedia Commons",
+            title="Plant cell.svg",
+            image_url="https://upload.wikimedia.org/wikipedia/commons/thumb/0/00/Plant_cell.svg/1400px-Plant_cell.svg.png",
+            source_url="https://commons.wikimedia.org/wiki/File:Plant_cell.svg",
+            author="Commons Author",
+            license="CC BY-SA 4.0",
+            attribution="Plant cell by Commons Author, CC BY-SA 4.0",
+            mime_type="image/svg+xml",
+        )
+
+        with patch("diagram_library.storage.urlopen", return_value=fake_response):
+            stored_path = download_and_store(
+                candidate,
+                Path(app_module.app.static_folder) / "diagram_cache",
+                "Plant Cell",
+            )
+
+        self.addCleanup(lambda: stored_path and stored_path.exists() and stored_path.unlink())
+        self.assertIsNotNone(stored_path)
+        self.assertEqual(stored_path.suffix, ".png")
+        self.assertTrue(valid_cached_image(stored_path))
+
+    def test_cached_mismatched_extension_repairs_to_renderable_file(self):
+        relative_path = self.write_test_diagram("mismatched.svg")
+        repaired = repair_cached_image_extension(app_module.app.static_folder, relative_path)
+        repaired_path = Path(app_module.app.static_folder) / repaired
+        self.addCleanup(lambda: repaired_path.exists() and repaired_path.unlink())
+
+        self.assertEqual(Path(repaired).suffix, ".png")
+        self.assertTrue(valid_cached_image(repaired_path))
+
+    def test_supported_cached_image_formats_validate(self):
+        cache_dir = Path(app_module.app.static_folder) / "diagram_cache"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        samples = {
+            "format-test.png": self.make_image_bytes("PNG"),
+            "format-test.jpg": self.make_image_bytes("JPEG"),
+            "format-test.jpeg": self.make_image_bytes("JPEG"),
+            "format-test.svg": self.TEST_SVG,
+            "format-test.webp": self.make_image_bytes("WEBP"),
+        }
+
+        for filename, data in samples.items():
+            with self.subTest(filename=filename):
+                path = cache_dir / filename
+                path.write_bytes(data)
+                self.addCleanup(lambda p=path: p.exists() and p.unlink())
+                self.assertTrue(valid_cached_image(path))
 
     def test_visualization_assets_support_image_zoom_mobile_and_dark_mode(self):
         css_path = os.path.join(app_module.app.root_path, "static", "css", "visualization.css")

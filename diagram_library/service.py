@@ -8,7 +8,7 @@ from models import DiagramLibrary
 from .cache import cache_file_exists, utc_now
 from .lookup import acceptable_candidate_title, build_search_queries
 from .providers import ProviderRegistry
-from .storage import download_and_store
+from .storage import download_and_store, repair_cached_image_extension
 from .wikimedia import WikimediaCommonsProvider
 
 
@@ -30,6 +30,15 @@ def find_cached_diagram(static_folder, subject, topic):
         diagram.last_used = utc_now()
         db.session.commit()
         return diagram
+    if diagram:
+        repaired_path = repair_cached_image_extension(static_folder, diagram.image_path)
+        if repaired_path and cache_file_exists(static_folder, repaired_path):
+            diagram.image_path = repaired_path
+            diagram.last_used = utc_now()
+            db.session.commit()
+            return diagram
+        diagram.verified = False
+        db.session.commit()
     return None
 
 
@@ -61,30 +70,35 @@ def get_or_create_diagram(
         visualization_type=visualization_type,
     )
     cache_dir = Path(static_folder) / "diagram_cache"
-    for candidate in registry.search(queries, limit_per_query=8):
-        if not acceptable_candidate_title(candidate.title):
-            continue
-        stored_path = download_and_store(candidate, cache_dir, topic)
-        if not stored_path:
-            continue
-        image_path = stored_path.relative_to(static_folder).as_posix()
-        diagram = DiagramLibrary(
-            lesson_id=lesson_id,
-            topic=topic,
-            subject=subject,
-            image_path=image_path,
-            provider=candidate.provider,
-            source_url=candidate.source_url,
-            author=candidate.author,
-            license=candidate.license,
-            attribution=candidate.attribution,
-            verified=True,
-            cached_at=utc_now(),
-            last_used=utc_now(),
-        )
-        db.session.add(diagram)
-        db.session.commit()
-        return diagram
+    try:
+        candidates = registry.search(queries, limit_per_query=8)
+        for candidate in candidates:
+            if not acceptable_candidate_title(candidate.title):
+                continue
+            stored_path = download_and_store(candidate, cache_dir, topic)
+            if not stored_path:
+                continue
+            image_path = stored_path.relative_to(static_folder).as_posix()
+            diagram = DiagramLibrary(
+                lesson_id=lesson_id,
+                topic=topic,
+                subject=subject,
+                image_path=image_path,
+                provider=candidate.provider,
+                source_url=candidate.source_url,
+                author=candidate.author,
+                license=candidate.license,
+                attribution=candidate.attribution,
+                verified=True,
+                cached_at=utc_now(),
+                last_used=utc_now(),
+            )
+            db.session.add(diagram)
+            db.session.commit()
+            return diagram
+    except Exception:
+        db.session.rollback()
+        return None
     return None
 
 

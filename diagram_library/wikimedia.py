@@ -1,5 +1,5 @@
 import json
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
 
 from .metadata import DiagramCandidate, attribution_text, reusable_license
@@ -47,7 +47,7 @@ class WikimediaCommonsProvider:
                 continue
             mime_type = imageinfo.get("mime") or ""
             image_url = imageinfo.get("thumburl") or imageinfo.get("url") or ""
-            if not image_url or not mime_type.startswith("image/"):
+            if not image_url or not _is_direct_image_url(image_url) or not mime_type.startswith("image/"):
                 continue
             author = (metadata.get("Artist") or {}).get("value") or "Wikimedia Commons contributor"
             author = _strip_html(author)
@@ -69,3 +69,18 @@ def _strip_html(value):
     import re
 
     return re.sub(r"<[^>]+>", "", str(value or "")).strip()
+
+
+def _is_direct_image_url(value):
+    parsed = urlsplit(str(value or ""))
+    host = parsed.netloc.lower()
+    path = parsed.path.lower()
+    if not parsed.scheme.startswith("http"):
+        return False
+    if "commons.wikimedia.org/wiki/file:" in str(value or "").lower():
+        return False
+    return (
+        host.endswith("wikimedia.org")
+        and "/wikipedia/commons/" in path
+        and bool(path.rsplit("/", 1)[-1])
+    )

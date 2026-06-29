@@ -37,6 +37,8 @@ def build_search_queries(subject="", topic="", student_class="", book_name="", v
         f"{topic} {subject} {domain}".strip(),
         f"{topic} {domain}".strip(),
         f"{topic} {visualization_type} diagram".strip(),
+        f"{topic} diagram".strip(),
+        f"{topic} overview diagram".strip(),
     ]
     if context:
         queries.append(f"{topic} {context} educational diagram")
