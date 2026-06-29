@@ -53,6 +53,7 @@ from gemini_service import (
     log_gemini_request,
 )
 from models import (
+    DiagramLibrary,
     DownloadedFile,
     Flashcard,
     FlashcardSet,
@@ -68,6 +69,7 @@ from models import (
     TutorMessage,
     User,
 )
+from diagram_library import diagram_record_to_view, get_or_create_diagram
 from tutor_repository import (
     get_or_create_tutor_lesson,
     get_recent_tutor_messages,
@@ -1547,6 +1549,40 @@ def decode_diagram_payload(value, subject="", topic=""):
     except json.JSONDecodeError:
         decoded_value = {}
     return build_diagram_payload(subject, topic, decoded_value)
+
+
+def diagram_static_url(image_path):
+    return url_for("static", filename=image_path) if image_path else ""
+
+
+def lesson_diagram_view(lesson, diagram_payload, student_class=""):
+    if not diagram_payload.get("available"):
+        return None
+    try:
+        diagram = get_or_create_diagram(
+            lesson_id=getattr(lesson, "id", None) or lesson.get("id"),
+            subject=getattr(lesson, "subject", None) or lesson.get("subject", ""),
+            topic=getattr(lesson, "topic", None) or lesson.get("topic", ""),
+            student_class=student_class,
+            book_name=getattr(lesson, "book_name", None) or lesson.get("book_name", ""),
+            visualization_type=diagram_payload.get("visualization_type") or diagram_payload.get("type", ""),
+            static_folder=app.static_folder,
+            testing=app.config.get("TESTING") and not app.config.get("DIAGRAM_LIBRARY_ENABLE_NETWORK_TESTS"),
+        )
+    except Exception as error:
+        app.logger.warning("diagram_library_lookup_failed topic=%s error=%s", getattr(lesson, "topic", ""), error)
+        return None
+    return diagram_record_to_view(diagram, diagram_static_url)
+
+
+def diagram_view_image_path(diagram_view):
+    if not diagram_view:
+        return None
+    image_path = diagram_view.get("image_path")
+    if not image_path:
+        return None
+    path = Path(app.static_folder) / image_path
+    return path if path.exists() else None
 
 
 def learning_history_lesson_has_visualization(lesson):
@@ -6127,7 +6163,7 @@ def create_performance_pdf(name, subject, topic, score, grade, report_text, eval
     return buffer
 
 
-def create_learning_history_pdf(entry, diagram_payload, questions):
+def create_learning_history_pdf(entry, diagram_payload, questions, diagram_view=None):
     buffer = BytesIO()
     doc = SimpleDocTemplate(
         buffer,
@@ -6203,17 +6239,27 @@ def create_learning_history_pdf(entry, diagram_payload, questions):
     ]
     story.extend(report_text_to_flowables(entry["notes"], styles))
 
-    if diagram_payload.get("available"):
+    if diagram_payload.get("available") and diagram_view:
         story.append(Spacer(1, 12))
-        story.append(Paragraph(f"Diagram: {escape(diagram_payload.get('title', 'Diagram'))}", styles["SectionHeading"]))
-        story.extend(
-            Paragraph(f"&bull; {escape(label)}", styles["BulletLine"])
-            for label in diagram_payload.get("labels", [])
-        )
+        story.append(Paragraph("Educational Diagram", styles["SectionHeading"]))
+        image_path = diagram_view_image_path(diagram_view)
+        if image_path and image_path.suffix.lower() != ".svg":
+            try:
+                story.append(RLImage(str(image_path), width=5.7 * inch, height=3.2 * inch, kind="proportional"))
+                story.append(Spacer(1, 6))
+            except Exception:
+                story.append(Paragraph("Diagram image could not be embedded in this PDF.", styles["ReportBody"]))
+        story.append(Paragraph(f"Source: {escape(diagram_view.get('source_url', 'Wikimedia Commons'))}", styles["ReportBody"]))
+        story.append(Paragraph(f"Author: {escape(diagram_view.get('author') or 'Unknown')}", styles["ReportBody"]))
+        story.append(Paragraph(f"License: {escape(diagram_view.get('license') or 'Reusable license')}", styles["ReportBody"]))
+    elif diagram_payload.get("available"):
+        story.append(Spacer(1, 12))
+        story.append(Paragraph("Educational Diagram", styles["SectionHeading"]))
+        story.append(Paragraph("No suitable educational diagram is currently available for this lesson.", styles["ReportBody"]))
     else:
         story.append(Spacer(1, 12))
-        story.append(Paragraph("Diagram", styles["SectionHeading"]))
-        story.append(Paragraph("No diagram available for this topic.", styles["ReportBody"]))
+        story.append(Paragraph("Educational Diagram", styles["SectionHeading"]))
+        story.append(Paragraph("No diagram is required for this text-based lesson.", styles["ReportBody"]))
 
     if questions:
         story.append(Spacer(1, 12))
@@ -7067,6 +7113,7 @@ def view_learning_history(lesson_id):
 
     diagram_payload = decode_diagram_payload(lesson["diagram_data"], lesson["subject"], lesson["topic"])
     diagram_available = diagram_payload.get("available", False)
+    diagram_view = lesson_diagram_view(lesson, diagram_payload)
     questions = decode_json_list(lesson["quiz_questions"])
     has_flashcards = bool(existing_flashcard_set(lesson.id, session["user_id"]))
     current_page_url = url_for("view_learning_history", lesson_id=lesson.id)
@@ -7076,9 +7123,10 @@ def view_learning_history(lesson_id):
         notes_html=markdown.markdown(lesson["notes"]),
         diagram_payload=diagram_payload,
         diagram_steps=diagram_payload.get("labels", []),
-        diagram_image=create_diagram_image(lesson["topic"], diagram_payload) if diagram_available else "",
-        diagram_svg=render_educational_diagram_svg(diagram_payload) if diagram_available else "",
+        diagram_image=diagram_view["image_url"] if diagram_view else "",
+        diagram_svg="",
         diagram_available=diagram_available,
+        diagram_view=diagram_view,
         diagram_json=json.dumps(diagram_payload),
         questions=questions,
         has_flashcards=has_flashcards,
@@ -7100,6 +7148,7 @@ def lesson_notes(lesson_id):
     account = current_user()
     diagram_payload = decode_diagram_payload(lesson.diagram_data, lesson.subject, lesson.topic)
     diagram_available = diagram_payload.get("available", False)
+    diagram_view = lesson_diagram_view(lesson, diagram_payload, preferred_class_for_user(account))
     questions = decode_json_list(lesson.quiz_questions)
     return render_template(
         "learn.html",
@@ -7111,9 +7160,10 @@ def lesson_notes(lesson_id):
         explanation=markdown.markdown(lesson.notes),
         notes=lesson.notes,
         diagram_payload=diagram_payload,
-        diagram_image=create_diagram_image(lesson.topic, diagram_payload) if diagram_available else "",
-        diagram_svg=render_educational_diagram_svg(diagram_payload) if diagram_available else "",
+        diagram_image=diagram_view["image_url"] if diagram_view else "",
+        diagram_svg="",
         diagram_available=diagram_available,
+        diagram_view=diagram_view,
         diagram_json=json.dumps(diagram_payload),
         questions=questions,
         lesson_id=lesson.id,
@@ -7491,10 +7541,12 @@ def download_learning_history_pdf(lesson_id):
         abort(404)
 
     diagram_payload = decode_diagram_payload(lesson["diagram_data"], lesson["subject"], lesson["topic"])
+    diagram_view = lesson_diagram_view(lesson, diagram_payload)
     pdf_file = create_learning_history_pdf(
         lesson,
         diagram_payload,
         decode_json_list(lesson["quiz_questions"]),
+        diagram_view=diagram_view,
     )
     save_downloaded_file(
         session["user_id"],
@@ -7521,12 +7573,15 @@ def download_learning_history_diagram(lesson_id):
     if not diagram_payload.get("available"):
         abort(404, description="No visualization is available for this lesson.")
 
-    svg = render_educational_diagram_svg(diagram_payload)
+    diagram_view = lesson_diagram_view(lesson, diagram_payload)
+    image_path = diagram_view_image_path(diagram_view)
+    if not image_path:
+        abort(404, description="No cached educational diagram is available for this lesson.")
+
     return send_file(
-        BytesIO(svg.encode("utf-8")),
-        mimetype="image/svg+xml",
+        image_path,
         as_attachment=True,
-        download_name=safe_notes_filename(lesson["topic"], extension="svg"),
+        download_name=safe_notes_filename(lesson["topic"], extension=image_path.suffix.lstrip(".") or "png"),
     )
 
 
@@ -7842,7 +7897,7 @@ Do NOT create an image.
 Do NOT create a text diagram.
 Do NOT create HTML.
 Do NOT create SVG.
-The JSON must be structured data only. The app will render the SVG.
+The JSON must be structured data only. The app will use it to choose a cached educational diagram.
 Use this structure:
 {{
   "template": "photosynthesis, plant_cell, animal_cell, water_cycle, food_chain, solar_system, timeline, tree, database, network, electric_circuit, human_heart, digestive_system, atom, map, or generic",
@@ -7944,7 +7999,7 @@ Rules:
 
     diagram_payload = build_visualization_payload(subject, topic, raw_visualization_decision, raw_diagram)
     diagram_available = diagram_payload.get("available", False)
-    diagram_image = create_diagram_image(topic, diagram_payload) if diagram_available else ""
+    diagram_view = None
 
     lesson_id = None
     if session.get("user_id"):
@@ -7966,6 +8021,12 @@ Rules:
             topic,
             notes,
         )
+        saved_lesson = get_learning_history_entry(lesson_id, session["user_id"])
+        if saved_lesson:
+            diagram_view = lesson_diagram_view(saved_lesson, diagram_payload, student_class)
+    elif diagram_available:
+        diagram_view = None
+    diagram_image = diagram_view["image_url"] if diagram_view else ""
 
     log_learn_metric(
         "complete",
@@ -7985,8 +8046,9 @@ Rules:
         notes=notes,
         diagram_payload=diagram_payload,
         diagram_image=diagram_image,
-        diagram_svg=render_educational_diagram_svg(diagram_payload) if diagram_available else "",
+        diagram_svg="",
         diagram_available=diagram_available,
+        diagram_view=diagram_view,
         diagram_json=json.dumps(diagram_payload),
         questions=questions,
         lesson_id=lesson_id,
@@ -7997,26 +8059,7 @@ Rules:
 
 @app.route("/download_diagram", methods=["POST"])
 def download_diagram():
-    topic = request.form.get("topic", "").strip()
-    raw_json = request.form.get("diagram_json", "").strip()
-    if not raw_json:
-        abort(400, description="Diagram data is required.")
-
-    try:
-        diagram_payload = json.loads(raw_json)
-    except json.JSONDecodeError:
-        abort(400, description="Diagram data is invalid.")
-
-    if not diagram_payload.get("available"):
-        abort(404, description="No visualization is available for this lesson.")
-
-    svg = render_educational_diagram_svg(diagram_payload)
-    return send_file(
-        BytesIO(svg.encode("utf-8")),
-        mimetype="image/svg+xml",
-        as_attachment=True,
-        download_name=safe_notes_filename(topic or diagram_payload.get("title", "diagram"), extension="svg"),
-    )
+    abort(410, description="SVG diagram downloads have been replaced by the Diagram Library image download.")
 
 
 @app.route("/download_notes", methods=["POST"])

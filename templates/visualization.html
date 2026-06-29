@@ -1,18 +1,18 @@
-<section class="visualization-card" data-visualization-card data-topic="{{ topic }}">
+<section class="visualization-card" data-diagram-library-card data-topic="{{ topic }}">
     <div class="visualization-header">
         <div>
-            <span class="eyebrow">AI Visualization Engine</span>
-            <h2>Visualization</h2>
+            <span class="eyebrow">AI Visualization</span>
+            <h2>{% if diagram_available %}Educational Diagram{% else %}AI Visualization{% endif %}</h2>
         </div>
-        {% if diagram_available %}
+        {% if diagram_available and diagram_payload %}
         <div class="visualization-type-pill">
             {{ diagram_payload.visualization_label or diagram_payload.type|replace('_', ' ')|title }}
         </div>
         {% endif %}
     </div>
 
-    {% if diagram_available %}
-    <div class="visualization-insights" aria-label="Visualization selection details">
+    {% if diagram_available and diagram_view %}
+    <div class="visualization-insights" aria-label="Diagram selection details">
         <div>
             <span>Selected Type</span>
             <strong>{{ diagram_payload.visualization_label or diagram_payload.type|replace('_', ' ')|title }}</strong>
@@ -22,36 +22,51 @@
             <strong>{{ diagram_payload.confidence_percent or 0 }}%</strong>
         </div>
         <div class="visualization-reason">
-            <span>Reason</span>
-            <strong>{{ diagram_payload.reason }}</strong>
+            <span>Source</span>
+            <strong>{{ diagram_view.provider or 'Wikimedia Commons' }}</strong>
         </div>
-        {% if diagram_payload.explanation %}
-        <p>{{ diagram_payload.explanation }}</p>
+    </div>
+
+    <div class="diagram-library-toolbar" aria-label="Educational diagram controls">
+        <button type="button" class="button-link secondary-link" data-diagram-zoom>Zoom</button>
+        <button type="button" class="button-link secondary-link" data-diagram-fullscreen>Fullscreen</button>
+        {% if lesson_id %}
+        <a class="button-link secondary-link" href="{{ url_for('download_learning_history_diagram', lesson_id=lesson_id) }}">Download PNG</a>
+        {% elif lesson and lesson.id %}
+        <a class="button-link secondary-link" href="{{ url_for('download_learning_history_diagram', lesson_id=lesson.id) }}">Download PNG</a>
         {% endif %}
     </div>
 
-    <div class="visualization-toolbar" aria-label="Visualization controls">
-        <button type="button" class="button-link secondary-link" data-viz-zoom-in title="Zoom in">Zoom In</button>
-        <button type="button" class="button-link secondary-link" data-viz-zoom-out title="Zoom out">Zoom Out</button>
-        <button type="button" class="button-link secondary-link" data-viz-reset title="Reset view">Reset</button>
-        <button type="button" class="button-link secondary-link" data-viz-fullscreen>Full Screen</button>
-        <form action="{{ download_url }}" method="POST">
-            <input type="hidden" name="topic" value="{{ topic }}">
-            <textarea name="diagram_json" hidden>{{ diagram_json }}</textarea>
-            <button type="submit" class="button-link secondary-link" data-viz-download-svg>Download Diagram</button>
-        </form>
-        <button type="button" class="button-link secondary-link" data-viz-download-png>Download PNG</button>
-        <button type="button" class="button-link secondary-link" data-viz-download-pdf>Download PDF</button>
-    </div>
-
-    <div class="visualization-stage" data-viz-stage>
-        <div class="visualization-pan-layer" data-viz-pan-layer>
-            {{ diagram_svg|safe }}
+    <figure class="diagram-library-figure" data-diagram-figure>
+        <div class="diagram-library-image-shell">
+            <img class="diagram-library-image" src="{{ diagram_view.image_url }}" alt="{{ topic }} educational diagram" loading="lazy" data-diagram-image>
+        </div>
+        <figcaption class="diagram-library-attribution">
+            <span><strong>Diagram Source</strong> <a href="{{ diagram_view.source_url }}" target="_blank" rel="noopener noreferrer">{{ diagram_view.provider or 'Wikimedia Commons' }}</a></span>
+            <span><strong>Author</strong> {{ diagram_view.author or 'Unknown' }}</span>
+            <span><strong>License</strong> {{ diagram_view.license or 'Reusable license' }}</span>
+        </figcaption>
+    </figure>
+    {% elif diagram_available %}
+    <div class="visualization-info-card diagram-unavailable-card" role="note" aria-label="Educational diagram unavailable">
+        <span class="visualization-info-icon" aria-hidden="true">&#9432;</span>
+        <div>
+            <h3>Educational Diagram</h3>
+            <p>No suitable educational diagram is currently available for this lesson.</p>
+            <p>Continue learning using:</p>
+            <ul class="diagram-learning-list">
+                <li>Notes</li>
+                <li>Revision</li>
+                <li>Flashcards</li>
+                <li>Memory Challenge</li>
+                <li>AI Tutor</li>
+                <li>Quiz</li>
+            </ul>
         </div>
     </div>
     {% else %}
     <div class="visualization-info-card" role="note" aria-label="AI Visualization decision">
-        <span class="visualization-info-icon" aria-hidden="true">&#10024;</span>
+        <span class="visualization-info-icon" aria-hidden="true">&#9432;</span>
         <div>
             <h3>AI Visualization</h3>
             <p>This lesson is primarily text-based and does not require a visual diagram.</p>

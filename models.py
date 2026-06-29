@@ -165,6 +165,24 @@ class LearningHistory(ModelMappingMixin, db.Model):
     )
 
 
+class DiagramLibrary(ModelMappingMixin, db.Model):
+    __tablename__ = "diagram_library"
+
+    id = db.Column(db.Integer, primary_key=True)
+    lesson_id = db.Column(db.Integer, db.ForeignKey("learning_history.id"), nullable=True, index=True)
+    topic = db.Column(db.Text, nullable=False, index=True)
+    subject = db.Column(db.Text, nullable=False, index=True)
+    image_path = db.Column(db.Text, nullable=False)
+    provider = db.Column(db.Text, nullable=False)
+    source_url = db.Column(db.Text, nullable=False)
+    author = db.Column(db.Text)
+    license = db.Column(db.Text)
+    attribution = db.Column(db.Text)
+    cached_at = db.Column(db.DateTime, nullable=False, default=utc_now, index=True)
+    verified = db.Column(db.Boolean, nullable=False, default=False)
+    last_used = db.Column(db.DateTime, nullable=False, default=utc_now, index=True)
+
+
 class StudyPlanProgress(ModelMappingMixin, db.Model):
     __tablename__ = "study_plan_progress"
     __table_args__ = (

@@ -1,7 +1,9 @@
 import os
 import json
+import base64
 import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 TEST_DB_FD, TEST_DB_PATH = tempfile.mkstemp(suffix=".db")
@@ -13,6 +15,7 @@ from database import db
 from gemini_service import classify_gemini_exception
 from models import (
     DownloadedFile,
+    DiagramLibrary,
     Flashcard,
     FlashcardSet,
     ImportantQuestionSet,
@@ -28,6 +31,8 @@ from models import (
     TutorMessage,
     User,
 )
+from diagram_library.metadata import DiagramCandidate, reusable_license
+from diagram_library.service import get_or_create_diagram
 
 
 class MockResponse:
@@ -44,6 +49,10 @@ class MockModel:
 
 
 class RouteTests(unittest.TestCase):
+    TEST_PNG = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
+    )
+
     def setUp(self):
         app_module.app.config.update(TESTING=True)
         with app_module.app.app_context():
@@ -79,6 +88,42 @@ class RouteTests(unittest.TestCase):
         with app_module.app.app_context():
             db.session.remove()
             db.drop_all()
+
+    def write_test_diagram(self, filename="test-diagram.png"):
+        cache_dir = os.path.join(app_module.app.static_folder, "diagram_cache")
+        os.makedirs(cache_dir, exist_ok=True)
+        path = os.path.join(cache_dir, filename)
+        with open(path, "wb") as image_file:
+            image_file.write(self.TEST_PNG)
+        self.addCleanup(lambda: os.path.exists(path) and os.remove(path))
+        return f"diagram_cache/{filename}"
+
+    def seed_cached_diagram(
+        self,
+        lesson_id=None,
+        subject="Biology",
+        topic="Photosynthesis",
+        filename="test-diagram.png",
+        author="Diagram Author",
+        license_text="CC BY-SA 4.0",
+    ):
+        image_path = self.write_test_diagram(filename)
+        with app_module.app.app_context():
+            diagram = DiagramLibrary(
+                lesson_id=lesson_id,
+                subject=subject,
+                topic=topic,
+                image_path=image_path,
+                provider="Wikimedia Commons",
+                source_url="https://commons.wikimedia.org/wiki/File:Test_diagram.png",
+                author=author,
+                license=license_text,
+                attribution=f"{topic} by {author}, {license_text}",
+                verified=True,
+            )
+            db.session.add(diagram)
+            db.session.commit()
+            return diagram.id
 
     def answer_payload(self):
         payload = self.quiz_payload()
@@ -167,13 +212,15 @@ Q5. What is question five?
         page = response.get_data(as_text=True)
         self.assertIn("Plant Notes", page)
         self.assertIn("<strong>Subject</strong> Biology", page)
-        self.assertIn("ai-visualization-svg", page)
-        self.assertNotIn('<img class="diagram-image"', page)
+        self.assertIn("Educational Diagram", page)
+        self.assertIn("No suitable educational diagram is currently available for this lesson.", page)
+        self.assertNotIn("ai-visualization-svg", page)
+        self.assertNotIn('<img class="diagram-library-image"', page)
         self.assertNotIn("D1: Seed", page)
-        self.assertIn('action="/download_diagram"', page)
-        self.assertIn('name="diagram_json"', page)
-        self.assertIn("Download Diagram", page)
-        self.assertIn("Full Screen", page)
+        self.assertNotIn('action="/download_diagram"', page)
+        self.assertNotIn('name="diagram_json"', page)
+        self.assertNotIn("Download Diagram", page)
+        self.assertNotIn("Full Screen", page)
         self.assertIn('action="/download_notes"', page)
         self.assertIn('name="notes"', page)
         self.assertIn('name="diagram_image"', page)
@@ -212,7 +259,7 @@ Q5. What is question five?
         self.assertIn("<h2>Diagram</h2>", notes)
         self.assertIn('src="data:image/png;base64,abc"', notes)
 
-    def test_download_diagram_returns_svg_attachment(self):
+    def test_legacy_download_diagram_route_is_removed(self):
         diagram_payload = app_module.build_diagram_payload(
             "Science",
             "Photosynthesis",
@@ -231,13 +278,112 @@ Q5. What is question five?
             },
         )
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.mimetype, "image/svg+xml")
-        self.assertIn(
-            "attachment; filename=Photosynthesis_notes.svg",
-            response.headers["Content-Disposition"],
-        )
-        self.assertIn("<svg", response.get_data(as_text=True))
+        self.assertEqual(response.status_code, 410)
+        self.assertIn("Diagram Library image download", response.get_data(as_text=True))
+
+    def test_diagram_library_license_filter_accepts_only_reusable_licenses(self):
+        self.assertTrue(reusable_license("CC BY-SA 4.0"))
+        self.assertTrue(reusable_license("Public domain"))
+        self.assertFalse(reusable_license("Fair use"))
+        self.assertFalse(reusable_license("CC BY-NC 4.0 non-commercial"))
+
+    def test_diagram_library_uses_cache_without_provider_call(self):
+        self.seed_cached_diagram(subject="Biology", topic="Photosynthesis", filename="cached-only.png")
+
+        class FailingRegistry:
+            def search(self, queries, limit_per_query=8):
+                raise AssertionError("Provider should not be called when cache exists.")
+
+        with app_module.app.app_context():
+            diagram = get_or_create_diagram(
+                lesson_id=1,
+                subject="Biology",
+                topic="Photosynthesis",
+                static_folder=app_module.app.static_folder,
+                provider_registry=FailingRegistry(),
+            )
+            provider = diagram.provider if diagram else ""
+
+        self.assertIsNotNone(diagram)
+        self.assertEqual(provider, "Wikimedia Commons")
+
+    def test_diagram_library_downloads_once_and_stores_metadata(self):
+        stored_relative = self.write_test_diagram("provider-download.png")
+        stored_path = Path(app_module.app.static_folder) / stored_relative
+
+        class FakeRegistry:
+            def __init__(self):
+                self.calls = 0
+
+            def search(self, queries, limit_per_query=8):
+                self.calls += 1
+                return [
+                    DiagramCandidate(
+                        provider="Wikimedia Commons",
+                        title="Photosynthesis educational diagram",
+                        image_url="https://upload.wikimedia.org/test.png",
+                        source_url="https://commons.wikimedia.org/wiki/File:Photosynthesis_test.png",
+                        author="Commons Author",
+                        license="CC BY 4.0",
+                        attribution="Photosynthesis educational diagram by Commons Author, CC BY 4.0",
+                        mime_type="image/png",
+                    )
+                ]
+
+        registry = FakeRegistry()
+        with patch("diagram_library.service.download_and_store", return_value=stored_path):
+            with app_module.app.app_context():
+                first = get_or_create_diagram(
+                    lesson_id=1,
+                    subject="Biology",
+                    topic="Photosynthesis",
+                    static_folder=app_module.app.static_folder,
+                    provider_registry=registry,
+                )
+                self.assertTrue((Path(app_module.app.static_folder) / first.image_path).exists())
+                second_registry = type(
+                    "FailingRegistry",
+                    (),
+                    {
+                        "search": lambda self, queries, limit_per_query=8: (_ for _ in ()).throw(
+                            AssertionError("Provider should not be called after the first download.")
+                        )
+                    },
+                )()
+                second = get_or_create_diagram(
+                    lesson_id=1,
+                    subject="Biology",
+                    topic="Photosynthesis",
+                    static_folder=app_module.app.static_folder,
+                    provider_registry=second_registry,
+                )
+                count = DiagramLibrary.query.count()
+                first_id = first.id
+                second_id = second.id
+                author = first.author
+                license_text = first.license
+                attribution = first.attribution
+
+        self.assertEqual(registry.calls, 1)
+        self.assertEqual(count, 1)
+        self.assertEqual(first_id, second_id)
+        self.assertEqual(author, "Commons Author")
+        self.assertEqual(license_text, "CC BY 4.0")
+        self.assertIn("Commons Author", attribution)
+
+    def test_visualization_assets_support_image_zoom_mobile_and_dark_mode(self):
+        css_path = os.path.join(app_module.app.root_path, "static", "css", "visualization.css")
+        js_path = os.path.join(app_module.app.root_path, "static", "js", "visualization.js")
+        with open(css_path, encoding="utf-8") as css_file:
+            css = css_file.read()
+        with open(js_path, encoding="utf-8") as js_file:
+            script = js_file.read()
+
+        self.assertIn(".diagram-library-image", css)
+        self.assertIn("@media (max-width: 760px)", css)
+        self.assertIn(".dark-mode .diagram-library-image-shell", css)
+        self.assertIn("data-diagram-zoom", script)
+        self.assertIn("is-fullscreen", script)
 
     @patch.object(app_module.model, "generate_content")
     def test_learn_shows_no_diagram_when_no_template_matches(self, generate_content):
@@ -333,6 +479,13 @@ Q5. What is question five?
 
     @patch.object(app_module.model, "generate_content")
     def test_biology_lessons_still_generate_visualizations(self, generate_content):
+        self.register_user()
+        self.login_user()
+        self.seed_cached_diagram(
+            subject="Biology",
+            topic="Photosynthesis",
+            filename="biology-photosynthesis.png",
+        )
         generate_content.return_value = MockResponse(
             """# Photosynthesis
 Plants make food using sunlight.
@@ -371,12 +524,22 @@ Q5. What is question five?
 
         self.assertEqual(response.status_code, 200)
         page = response.get_data(as_text=True)
-        self.assertIn("Download Diagram", page)
-        self.assertIn("ai-visualization-svg", page)
+        self.assertIn("Educational Diagram", page)
+        self.assertIn('class="diagram-library-image"', page)
+        self.assertIn("Download PNG", page)
+        self.assertIn("Diagram Source", page)
+        self.assertNotIn("ai-visualization-svg", page)
         self.assertIn("Scientific Process", page)
 
     @patch.object(app_module.model, "generate_content")
     def test_history_timelines_still_generate_visualizations(self, generate_content):
+        self.register_user()
+        self.login_user()
+        self.seed_cached_diagram(
+            subject="History",
+            topic="French Revolution",
+            filename="history-french-revolution.png",
+        )
         generate_content.return_value = MockResponse(
             """# French Revolution
 The French Revolution had important events in sequence.
@@ -416,7 +579,8 @@ Q5. What is question five?
         self.assertEqual(response.status_code, 200)
         page = response.get_data(as_text=True)
         self.assertIn("Timeline", page)
-        self.assertIn("Download Diagram", page)
+        self.assertIn("Educational Diagram", page)
+        self.assertIn("Download PNG", page)
 
     @patch.object(app_module, "local_textbook_context_section")
     @patch.object(app_module.model, "generate_content")
@@ -3094,18 +3258,16 @@ Q5. What is question five?
         detail_page = detail_response.get_data(as_text=True)
         self.assertIn("Plant Notes", detail_page)
         self.assertIn("Quick Revision", detail_page)
-        self.assertIn("Seed", detail_page)
-        self.assertIn("Roots", detail_page)
-        self.assertIn("ai-visualization-svg", detail_page)
-        self.assertIn("Download Diagram", detail_page)
+        self.assertIn("Educational Diagram", detail_page)
+        self.assertIn("No suitable educational diagram is currently available for this lesson.", detail_page)
+        self.assertNotIn("ai-visualization-svg", detail_page)
+        self.assertNotIn("Download Diagram", detail_page)
         self.assertIn("What is question one?", detail_page)
         self.assertIn("Generate Study Plan", detail_page)
         self.assertIn("Personalized study plan", detail_page)
 
         diagram_response = self.client.get("/learning-history/1/diagram/download")
-        self.assertEqual(diagram_response.status_code, 200)
-        self.assertEqual(diagram_response.mimetype, "image/svg+xml")
-        self.assertIn("<svg", diagram_response.get_data(as_text=True))
+        self.assertEqual(diagram_response.status_code, 404)
 
     def test_saved_lessons_hide_visualization_buttons_when_not_required(self):
         self.register_user()
@@ -3149,6 +3311,59 @@ Q5. What is question five?
         self.assertNotIn("Open Visualization", list_response.get_data(as_text=True))
         self.assertEqual(download_response.status_code, 404)
 
+    def test_saved_lesson_renders_cached_diagram_attribution_download_and_pdf(self):
+        self.register_user()
+        self.login_user()
+        with app_module.app.app_context():
+            lesson_id = app_module.save_learning_history(
+                1,
+                "Biology",
+                "NCERT",
+                "Photosynthesis",
+                "# Photosynthesis\nPlants make food.",
+                {
+                    "available": True,
+                    "visualization_required": True,
+                    "visualization_type": "biology_process",
+                    "type": "scientific_process",
+                    "title": "Photosynthesis",
+                    "nodes": [{"id": "1", "label": "Sunlight"}],
+                    "connections": [],
+                    "labels": ["Sunlight"],
+                    "reason": "This biological process is easier to understand visually.",
+                    "confidence": 0.96,
+                },
+                self.questions,
+            )
+        self.seed_cached_diagram(
+            lesson_id=lesson_id,
+            subject="Biology",
+            topic="Photosynthesis",
+            filename="saved-lesson-diagram.png",
+            author="Diagram Author",
+            license_text="CC BY-SA 4.0",
+        )
+
+        detail_response = self.client.get(f"/learning-history/{lesson_id}")
+        download_response = self.client.get(f"/learning-history/{lesson_id}/diagram/download")
+        pdf_response = self.client.get(f"/learning-history/{lesson_id}/download")
+
+        self.assertEqual(detail_response.status_code, 200)
+        detail_page = detail_response.get_data(as_text=True)
+        self.assertIn("Educational Diagram", detail_page)
+        self.assertIn('class="diagram-library-image"', detail_page)
+        self.assertIn("Diagram Source", detail_page)
+        self.assertIn("Diagram Author", detail_page)
+        self.assertIn("CC BY-SA 4.0", detail_page)
+        self.assertNotIn("ai-visualization-svg", detail_page)
+        self.assertEqual(download_response.status_code, 200)
+        self.assertEqual(download_response.mimetype, "image/png")
+        self.assertEqual(pdf_response.status_code, 200)
+        self.assertEqual(pdf_response.mimetype, "application/pdf")
+        self.assertTrue(pdf_response.data.startswith(b"%PDF"))
+        self.assertIn(b"Diagram Author", pdf_response.data)
+        self.assertIn(b"CC BY-SA 4.0", pdf_response.data)
+
     @patch.object(app_module.model, "generate_content")
     def test_existing_visualization_records_continue_working(self, generate_content):
         self.register_user()
@@ -3172,16 +3387,24 @@ Q5. What is question five?
                 },
                 self.questions,
             )
+        self.seed_cached_diagram(
+            lesson_id=lesson_id,
+            subject="Science",
+            topic="Photosynthesis",
+            filename="existing-visualization.png",
+        )
 
         detail_response = self.client.get(f"/learning-history/{lesson_id}")
         diagram_response = self.client.get(f"/learning-history/{lesson_id}/diagram/download")
 
         self.assertEqual(detail_response.status_code, 200)
         detail_page = detail_response.get_data(as_text=True)
-        self.assertIn("Download Diagram", detail_page)
-        self.assertIn("ai-visualization-svg", detail_page)
+        self.assertIn("Educational Diagram", detail_page)
+        self.assertIn("Download PNG", detail_page)
+        self.assertIn('class="diagram-library-image"', detail_page)
+        self.assertNotIn("ai-visualization-svg", detail_page)
         self.assertEqual(diagram_response.status_code, 200)
-        self.assertIn("<svg", diagram_response.get_data(as_text=True))
+        self.assertEqual(diagram_response.mimetype, "image/png")
         generate_content.assert_not_called()
 
     @patch.object(app_module.model, "generate_content")
