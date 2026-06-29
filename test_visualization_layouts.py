@@ -194,6 +194,8 @@ class EducationalIllustrationRendererTests(unittest.TestCase):
         self.assertIn('preserveAspectRatio="xMidYMid meet"', svg)
         self.assertIn("@media (prefers-color-scheme: dark)", svg)
         self.assertIn("@media (max-width: 640px)", svg)
+        self.assertIn("edu-legend", svg)
+        self.assertIn("edu-label-box", svg)
         self.assertNotIn("viz-node-shape", svg)
         self.assertNotRegex(svg, r'="[^"]*NaN')
 
@@ -272,8 +274,9 @@ class EducationalIllustrationRendererTests(unittest.TestCase):
         )
 
         self.assert_educational_svg(svg, "timeline")
-        self.assertIn("Chronological event illustration", svg)
+        self.assertIn("Chronological sequence of key events", svg)
         self.assertIn("Bastille", svg)
+        self.assertNotIn("Event 1", svg)
 
     def test_solar_system_renderer_draws_orbits(self):
         svg = render_educational_diagram_svg(
@@ -287,7 +290,7 @@ class EducationalIllustrationRendererTests(unittest.TestCase):
         )
 
         self.assert_educational_svg(svg, "solar_system")
-        self.assertIn("Orbit-based planetary illustration", svg)
+        self.assertIn("Planet positions along orbital paths", svg)
         self.assertIn("<ellipse", svg)
         self.assertIn("Jupiter", svg)
 

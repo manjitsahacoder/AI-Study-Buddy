@@ -2,11 +2,15 @@ from html import escape
 import re
 
 
+WIDTH = 980
+HEIGHT = 640
+
+
 def _slug(value):
     return re.sub(r"[^a-z0-9]+", "_", str(value or "").strip().lower()).strip("_")
 
 
-def _labels(payload, fallback=None, limit=10):
+def _labels(payload, fallback=None, limit=12):
     fallback = fallback or []
     raw_labels = payload.get("labels") or []
     labels = [str(label).strip() for label in raw_labels if str(label).strip()]
@@ -15,7 +19,7 @@ def _labels(payload, fallback=None, limit=10):
         labels = [str(node.get("label", "")).strip() for node in nodes if str(node.get("label", "")).strip()]
     combined = labels[:]
     for item in fallback:
-        if len(combined) >= max(limit, len(fallback)):
+        if len(combined) >= min(limit, len(fallback)):
             break
         if item not in combined:
             combined.append(item)
@@ -26,7 +30,7 @@ def _text(x, y, text, css_class="edu-label", anchor="middle"):
     return f'<text class="{css_class}" x="{x}" y="{y}" text-anchor="{anchor}">{escape(str(text))}</text>'
 
 
-def _wrapped_text(x, y, text, width=18, css_class="edu-label", anchor="middle", line_height=16):
+def _wrapped_lines(text, width=18, max_lines=3):
     words = str(text or "").split()
     lines = []
     current = ""
@@ -34,33 +38,86 @@ def _wrapped_text(x, y, text, width=18, css_class="edu-label", anchor="middle", 
         candidate = f"{current} {word}".strip()
         if len(candidate) <= width:
             current = candidate
-        else:
-            if current:
-                lines.append(current)
-            current = word[:width]
-        if len(lines) == 3:
+            continue
+        if current:
+            lines.append(current)
+        current = word[:width]
+        if len(lines) >= max_lines:
             break
-    if current and len(lines) < 3:
+    if current and len(lines) < max_lines:
         lines.append(current)
+    return lines or [""]
+
+
+def _wrapped_text(x, y, text, width=18, css_class="edu-label", anchor="middle", line_height=17, max_lines=3):
+    lines = _wrapped_lines(text, width=width, max_lines=max_lines)
     tspans = []
     offset = -((len(lines) - 1) * line_height) / 2
-    for index, line in enumerate(lines or [""]):
+    for index, line in enumerate(lines):
         dy = offset if index == 0 else line_height
         tspans.append(f'<tspan x="{x}" dy="{dy}">{escape(line)}</tspan>')
     return f'<text class="{css_class}" text-anchor="{anchor}" dominant-baseline="middle">{"".join(tspans)}</text>'
 
 
-def _callout(x1, y1, x2, y2, label, anchor="start"):
-    text_x = x2 + (8 if anchor == "start" else -8)
+def _label_box(x, y, text, width=148, height=42, theme="white", anchor="middle"):
+    lines = _wrapped_lines(text, width=max(12, int(width / 8.5)), max_lines=2)
+    if len(lines) > 1:
+        height = max(height, 56)
+    if anchor == "start":
+        rect_x = x
+        text_x = x + width / 2
+    elif anchor == "end":
+        rect_x = x - width
+        text_x = x - width / 2
+    else:
+        rect_x = x - width / 2
+        text_x = x
+    rect_y = y - height / 2
     return f"""
-    <path class="edu-callout-line" d="M{x1} {y1} C{(x1 + x2) / 2} {y1}, {(x1 + x2) / 2} {y2}, {x2} {y2}"/>
-    <circle class="edu-callout-dot" cx="{x1}" cy="{y1}" r="4"/>
-    {_wrapped_text(text_x, y2, label, width=20, css_class="edu-callout-text", anchor=anchor)}
+    <g class="edu-label-box edu-label-{escape(theme)}">
+        <rect x="{rect_x:.1f}" y="{rect_y:.1f}" width="{width}" height="{height}" rx="13"/>
+        {_wrapped_text(text_x, y, text, width=max(12, int(width / 8.5)), css_class="edu-box-text", max_lines=2)}
+    </g>
+    """
+
+
+def _callout(x1, y1, x2, y2, label, width=150, anchor="start", theme="white"):
+    text_x = x2 + (10 if anchor == "start" else -10 if anchor == "end" else 0)
+    return f"""
+    <path class="edu-callout-line" d="M{x1} {y1} C{(x1 + x2) / 2:.1f} {y1}, {(x1 + x2) / 2:.1f} {y2}, {x2} {y2}"/>
+    <circle class="edu-callout-dot" cx="{x1}" cy="{y1}" r="4.5"/>
+    {_label_box(text_x, y2, label, width=width, anchor=anchor, theme=theme)}
     """
 
 
 def _arrow_path(path, css_class="edu-arrow", marker="eduArrow"):
     return f'<path class="{css_class}" marker-end="url(#{marker})" d="{path}"/>'
+
+
+def _legend(items, x=704, y=500, width=206):
+    rows = []
+    for index, (color, label) in enumerate(items[:5]):
+        row_y = y + 36 + index * 24
+        rows.append(
+            f'<circle cx="{x + 18}" cy="{row_y}" r="6" fill="{color}"/>'
+            f'<text class="edu-legend-text" x="{x + 34}" y="{row_y + 4}">{escape(label)}</text>'
+        )
+    height = 52 + len(rows) * 24
+    return f"""
+    <g class="edu-legend">
+        <rect x="{x}" y="{y}" width="{width}" height="{height}" rx="16"/>
+        <text class="edu-legend-title" x="{x + 18}" y="{y + 24}">Legend</text>
+        {"".join(rows)}
+    </g>
+    """
+
+
+def _cloud(x, y, scale=1):
+    return f"""
+    <g class="edu-cloud" transform="translate({x} {y}) scale({scale})">
+        <path d="M-72 20 C-72 -8 -44 -22 -20 -10 C-8 -38 42 -38 56 -8 C82 -10 104 8 104 34 C104 62 78 76 44 76 L-42 76 C-76 76 -104 60 -104 34 C-104 10 -90 0 -72 20 Z"/>
+    </g>
+    """
 
 
 def _defs():
@@ -74,6 +131,10 @@ def _defs():
             <stop offset="0%" stop-color="#fde68a"/>
             <stop offset="100%" stop-color="#f59e0b"/>
         </linearGradient>
+        <radialGradient id="eduSunGlow" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#fef3c7" stop-opacity="0.9"/>
+            <stop offset="100%" stop-color="#fde68a" stop-opacity="0"/>
+        </radialGradient>
         <linearGradient id="eduLeaf" x1="0%" y1="0%" x2="100%" y2="100%">
             <stop offset="0%" stop-color="#bbf7d0"/>
             <stop offset="100%" stop-color="#16a34a"/>
@@ -87,7 +148,7 @@ def _defs():
             <stop offset="100%" stop-color="#f0fdf4"/>
         </linearGradient>
         <linearGradient id="eduAnimalCell" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stop-color="#fae8ff"/>
+            <stop offset="0%" stop-color="#ede9fe"/>
             <stop offset="100%" stop-color="#fdf2f8"/>
         </linearGradient>
         <linearGradient id="eduOcean" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -95,10 +156,20 @@ def _defs():
             <stop offset="100%" stop-color="#0ea5e9"/>
         </linearGradient>
         <filter id="eduShadow" x="-20%" y="-20%" width="140%" height="160%">
-            <feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#0f172a" flood-opacity="0.14"/>
+            <feDropShadow dx="0" dy="9" stdDeviation="8" flood-color="#0f172a" flood-opacity="0.16"/>
         </filter>
-        <marker id="eduArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto">
+        <filter id="eduGlow" x="-60%" y="-60%" width="220%" height="220%">
+            <feGaussianBlur stdDeviation="12" result="blur"/>
+            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+        <marker id="eduArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto">
             <path d="M0 0 L10 5 L0 10 z" fill="var(--edu-arrow)"/>
+        </marker>
+        <marker id="eduInputArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto">
+            <path d="M0 0 L10 5 L0 10 z" fill="#0284c7"/>
+        </marker>
+        <marker id="eduOutputArrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto">
+            <path d="M0 0 L10 5 L0 10 z" fill="#16a34a"/>
         </marker>
         <style>
             .ai-visualization-svg {
@@ -113,21 +184,35 @@ def _defs():
             }
             .edu-bg { fill: url(#eduPaper); }
             .edu-panel { fill: var(--edu-panel); stroke: var(--edu-line); }
-            .edu-title { fill: var(--edu-ink); font-size: 30px; font-weight: 850; }
-            .edu-subtitle { fill: var(--edu-muted); font-size: 13px; font-weight: 750; }
-            .edu-label { fill: var(--edu-ink); font-size: 14px; font-weight: 820; }
-            .edu-small { fill: var(--edu-muted); font-size: 12px; font-weight: 780; }
-            .edu-callout-line { fill: none; stroke: var(--edu-arrow); stroke-width: 2.2; stroke-linecap: round; opacity: 0.72; }
+            .edu-title { fill: var(--edu-ink); font-size: 34px; font-weight: 880; }
+            .edu-subtitle { fill: var(--edu-muted); font-size: 15px; font-weight: 780; letter-spacing: 0; }
+            .edu-label { fill: var(--edu-ink); font-size: 16px; font-weight: 840; }
+            .edu-small { fill: var(--edu-muted); font-size: 13px; font-weight: 780; }
+            .edu-box-text { fill: var(--edu-ink); font-size: 14px; font-weight: 850; }
+            .edu-label-box rect { fill: rgba(255,255,255,0.96); stroke: rgba(49,87,213,0.24); stroke-width: 1.5; filter: url(#eduShadow); }
+            .edu-label-green rect { fill: #ecfdf5; stroke: rgba(22,163,74,0.32); }
+            .edu-label-blue rect { fill: #eff6ff; stroke: rgba(2,132,199,0.32); }
+            .edu-label-yellow rect { fill: #fffbeb; stroke: rgba(217,119,6,0.32); }
+            .edu-label-purple rect { fill: #faf5ff; stroke: rgba(124,58,237,0.32); }
+            .edu-callout-line { fill: none; stroke: var(--edu-arrow); stroke-width: 2.4; stroke-linecap: round; opacity: 0.8; }
             .edu-callout-dot { fill: var(--edu-arrow); stroke: #ffffff; stroke-width: 2; }
-            .edu-callout-text { fill: var(--edu-ink); font-size: 12px; font-weight: 820; }
-            .edu-arrow { fill: none; stroke: var(--edu-arrow); stroke-width: 3.2; stroke-linecap: round; stroke-linejoin: round; }
-            .edu-soft-line { fill: none; stroke: var(--edu-line); stroke-width: 2; stroke-linecap: round; }
+            .edu-arrow { fill: none; stroke: var(--edu-arrow); stroke-width: 3.5; stroke-linecap: round; stroke-linejoin: round; }
+            .edu-arrow-input { fill: none; stroke: #0284c7; stroke-width: 3.5; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#eduInputArrow); }
+            .edu-arrow-output { fill: none; stroke: #16a34a; stroke-width: 3.5; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#eduOutputArrow); }
+            .edu-arrow-energy { fill: none; stroke: #f59e0b; stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#eduArrow); }
+            .edu-soft-line { fill: none; stroke: var(--edu-line); stroke-width: 2.2; stroke-linecap: round; }
             .edu-shadow { filter: url(#eduShadow); }
+            .edu-cloud path { fill: #ffffff; stroke: #cbd5e1; stroke-width: 2; filter: url(#eduShadow); }
+            .edu-legend rect { fill: rgba(255,255,255,0.94); stroke: rgba(100,116,139,0.22); filter: url(#eduShadow); }
+            .edu-legend-title { fill: var(--edu-ink); font-size: 14px; font-weight: 880; }
+            .edu-legend-text { fill: var(--edu-muted); font-size: 12px; font-weight: 780; }
             .edu-illustration { transform-origin: center; }
             @media (max-width: 640px) {
-                .edu-title { font-size: 26px; }
-                .edu-label { font-size: 13px; }
-                .edu-callout-text { font-size: 11px; }
+                .edu-title { font-size: 28px; }
+                .edu-subtitle { font-size: 13px; }
+                .edu-label { font-size: 14px; }
+                .edu-box-text { font-size: 12px; }
+                .edu-legend-text { font-size: 11px; }
             }
             @media (prefers-color-scheme: dark) {
                 .ai-visualization-svg {
@@ -139,22 +224,24 @@ def _defs():
                 }
                 .edu-bg { fill: #0f172a; }
                 .edu-panel { fill: #111827; stroke: rgba(134, 161, 255, 0.24); }
+                .edu-label-box rect, .edu-legend rect { fill: rgba(15,23,42,0.96); stroke: rgba(134,161,255,0.24); }
                 .edu-callout-dot { stroke: #111827; }
+                .edu-cloud path { fill: #1f2937; stroke: rgba(148,163,184,0.42); }
             }
         </style>
     </defs>
     """
 
 
-def _wrap_svg(title, subtitle, body, width=900, height=560, template="illustration"):
+def _wrap_svg(title, subtitle, body, width=WIDTH, height=HEIGHT, template="illustration"):
     title = escape(title or "AI Visualization")
     subtitle = escape(subtitle or "Educational illustration")
     return f"""<svg xmlns="http://www.w3.org/2000/svg" class="ai-visualization-svg edu-template-{escape(template)}" viewBox="0 0 {width} {height}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="{title}">
     {_defs()}
     <rect class="edu-bg" width="{width}" height="{height}" rx="28"/>
-    <rect class="edu-panel" x="28" y="28" width="{width - 56}" height="{height - 56}" rx="24"/>
+    <rect class="edu-panel" x="26" y="26" width="{width - 52}" height="{height - 52}" rx="24"/>
     <text class="edu-title" x="{width / 2}" y="60" text-anchor="middle">{title}</text>
-    <text class="edu-subtitle" x="{width / 2}" y="84" text-anchor="middle">{subtitle}</text>
+    <text class="edu-subtitle" x="{width / 2}" y="86" text-anchor="middle">{subtitle}</text>
     <g class="edu-illustration" data-edu-template="{escape(template)}">
         {body}
     </g>
@@ -164,230 +251,256 @@ def _wrap_svg(title, subtitle, body, width=900, height=560, template="illustrati
 def render_photosynthesis(payload):
     labels = _labels(payload, ["Sunlight", "Water", "Carbon dioxide", "Oxygen", "Glucose", "Leaf"])
     body = f"""
+    <circle cx="158" cy="166" r="92" fill="url(#eduSunGlow)" filter="url(#eduGlow)"/>
     <g class="edu-shadow">
-        <circle cx="155" cy="145" r="52" fill="url(#eduSun)"/>
-        <g stroke="#f59e0b" stroke-width="6" stroke-linecap="round">
-            <path d="M155 62 L155 36"/><path d="M155 254 L155 226"/>
-            <path d="M72 145 L44 145"/><path d="M266 145 L236 145"/>
-            <path d="M96 86 L76 66"/><path d="M214 204 L235 225"/>
-            <path d="M214 86 L235 66"/><path d="M96 204 L76 225"/>
+        <circle cx="158" cy="166" r="54" fill="url(#eduSun)"/>
+        <g stroke="#f59e0b" stroke-width="7" stroke-linecap="round">
+            <path d="M158 76 L158 44"/><path d="M158 288 L158 254"/>
+            <path d="M68 166 L34 166"/><path d="M282 166 L246 166"/>
+            <path d="M94 102 L70 78"/><path d="M222 230 L248 256"/>
+            <path d="M222 102 L248 78"/><path d="M94 230 L70 256"/>
         </g>
     </g>
-    {_text(155, 148, labels[0])}
-    <path fill="#7dd3fc" opacity="0.95" d="M212 402 C212 378 238 352 238 352 C238 352 264 378 264 402 C264 420 253 432 238 432 C223 432 212 420 212 402 Z"/>
-    {_wrapped_text(238, 455, labels[1], width=16)}
-    <g>
-        <ellipse class="edu-shadow" cx="510" cy="310" rx="178" ry="82" fill="url(#eduLeaf)" transform="rotate(-14 510 310)"/>
-        <path d="M353 352 C470 302 555 276 675 242" class="edu-soft-line"/>
-        <path d="M382 341 C438 346 505 331 562 292" class="edu-soft-line"/>
-        <path d="M449 319 C497 330 543 320 603 274" class="edu-soft-line"/>
+    {_label_box(158, 248, labels[0], width=126, theme="yellow")}
+    <path class="edu-shadow" fill="url(#eduLeaf)" stroke="#15803d" stroke-width="3" d="M358 380 C425 190 662 158 790 302 C660 452 468 482 358 380 Z"/>
+    <path d="M382 368 C504 326 620 286 766 302" class="edu-soft-line"/>
+    <path d="M445 346 C484 360 548 350 612 314" class="edu-soft-line"/>
+    <path d="M548 312 C590 330 642 324 708 304" class="edu-soft-line"/>
+    <path d="M356 382 C328 420 308 452 286 492" stroke="#15803d" stroke-width="14" stroke-linecap="round"/>
+    <path fill="url(#eduWater)" d="M224 462 C224 426 260 392 260 392 C260 392 296 426 296 462 C296 486 280 502 260 502 C240 502 224 486 224 462 Z"/>
+    {_label_box(260, 540, labels[1], width=118, theme="blue")}
+    <g fill="#e0f2fe" stroke="#0284c7" stroke-width="2.5" class="edu-shadow">
+        <circle cx="312" cy="262" r="22"/><circle cx="350" cy="278" r="22"/><circle cx="388" cy="262" r="22"/>
     </g>
-    {_arrow_path("M216 178 C300 214 354 240 422 274")}
-    {_arrow_path("M270 395 C345 368 394 348 444 328")}
-    {_arrow_path("M710 278 C766 246 804 206 828 164")}
-    {_arrow_path("M655 357 C724 378 766 407 805 450")}
-    <g fill="#e0f2fe" stroke="#0284c7" stroke-width="2">
-        <circle cx="292" cy="246" r="21"/><circle cx="328" cy="260" r="21"/><circle cx="364" cy="246" r="21"/>
+    {_label_box(350, 218, labels[2], width=158, theme="blue")}
+    <rect x="714" y="472" width="146" height="50" rx="24" fill="#fef3c7" stroke="#d97706" stroke-width="2.5" class="edu-shadow"/>
+    {_wrapped_text(787, 497, labels[4], width=16)}
+    <g fill="#dcfce7" stroke="#16a34a" stroke-width="2.5" class="edu-shadow">
+        <circle cx="824" cy="190" r="19"/><circle cx="852" cy="174" r="19"/>
     </g>
-    {_wrapped_text(328, 250, labels[2], width=14)}
-    <g fill="#dcfce7" stroke="#16a34a" stroke-width="2">
-        <circle cx="804" cy="128" r="18"/><circle cx="831" cy="112" r="18"/>
-    </g>
-    {_wrapped_text(782, 108, labels[3], width=14, anchor="end")}
-    <rect x="710" y="432" width="130" height="42" rx="21" fill="#fef3c7" stroke="#d97706" stroke-width="2.4"/>
-    {_wrapped_text(775, 453, labels[4], width=16)}
-    {_wrapped_text(510, 420, labels[5], width=18)}
+    {_label_box(820, 128, labels[3], width=132, theme="green")}
+    <path class="edu-arrow-energy" d="M220 202 C282 236 342 264 430 306"/>
+    <path class="edu-arrow-input" d="M396 270 C446 282 480 296 520 324"/>
+    <path class="edu-arrow-input" d="M298 464 C388 430 444 394 500 358"/>
+    <path class="edu-arrow-output" d="M732 282 C780 246 812 230 834 200"/>
+    <path class="edu-arrow-output" d="M692 398 C748 420 780 446 792 472"/>
+    {_label_box(582, 432, labels[5], width=104, theme="green")}
+    {_legend([("#f59e0b", "Energy"), ("#0284c7", "Inputs"), ("#16a34a", "Outputs"), ("#22c55e", "Plant structure")], x=56, y=498, width=190)}
     """
-    return _wrap_svg(payload.get("title") or "Photosynthesis", "Textbook-style biological process", body, template="photosynthesis")
+    return _wrap_svg(payload.get("title") or "Photosynthesis", "Inputs and outputs in a green leaf", body, template="photosynthesis")
 
 
 def render_plant_cell(payload):
     labels = _labels(payload, ["Cell wall", "Cell membrane", "Nucleus", "Chloroplast", "Vacuole", "Cytoplasm"])
     body = f"""
-    <rect class="edu-shadow" x="250" y="150" width="410" height="290" rx="58" fill="#bbf7d0" stroke="#15803d" stroke-width="12"/>
-    <rect x="268" y="168" width="374" height="254" rx="48" fill="url(#eduCell)" stroke="#22c55e" stroke-width="4"/>
-    <ellipse cx="455" cy="292" rx="86" ry="58" fill="#dbeafe" stroke="#0284c7" stroke-width="3"/>
-    <circle cx="548" cy="256" r="39" fill="#f5d0fe" stroke="#a21caf" stroke-width="3"/>
-    <circle cx="548" cy="256" r="15" fill="#c084fc"/>
-    <g fill="#22c55e" stroke="#15803d" stroke-width="2">
-        <ellipse cx="350" cy="244" rx="32" ry="18" transform="rotate(-24 350 244)"/>
-        <ellipse cx="374" cy="346" rx="32" ry="18" transform="rotate(20 374 346)"/>
-        <ellipse cx="586" cy="344" rx="32" ry="18" transform="rotate(-18 586 344)"/>
+    <rect class="edu-shadow" x="278" y="172" width="424" height="302" rx="66" fill="#bbf7d0" stroke="#15803d" stroke-width="12"/>
+    <rect x="296" y="190" width="388" height="266" rx="54" fill="url(#eduCell)" stroke="#22c55e" stroke-width="4"/>
+    <ellipse cx="482" cy="320" rx="92" ry="62" fill="#dbeafe" stroke="#0284c7" stroke-width="3"/>
+    <circle cx="586" cy="274" r="42" fill="#f5d0fe" stroke="#a21caf" stroke-width="3"/>
+    <circle cx="586" cy="274" r="15" fill="#c084fc"/>
+    <g fill="#22c55e" stroke="#15803d" stroke-width="2.5">
+        <ellipse cx="374" cy="256" rx="35" ry="19" transform="rotate(-24 374 256)"/>
+        <ellipse cx="402" cy="378" rx="35" ry="19" transform="rotate(20 402 378)"/>
+        <ellipse cx="622" cy="374" rx="35" ry="19" transform="rotate(-18 622 374)"/>
+        <ellipse cx="628" cy="228" rx="30" ry="16" transform="rotate(22 628 228)"/>
     </g>
-    <path d="M315 210 C410 188 525 184 604 226" fill="none" stroke="#86efac" stroke-width="10" opacity="0.6"/>
-    {_callout(250, 248, 128, 210, labels[0])}
-    {_callout(278, 315, 132, 316, labels[1])}
-    {_callout(548, 256, 704, 210, labels[2])}
-    {_callout(350, 244, 170, 395, labels[3])}
-    {_callout(455, 292, 704, 326, labels[4])}
-    {_callout(425, 390, 708, 418, labels[5])}
+    <path d="M340 236 C428 210 560 210 650 250" fill="none" stroke="#86efac" stroke-width="12" opacity="0.58"/>
+    {_callout(280, 276, 108, 190, labels[0], width=132, theme="green")}
+    {_callout(300, 350, 110, 330, labels[1], width=150, theme="green")}
+    {_callout(586, 274, 760, 198, labels[2], width=126, theme="purple")}
+    {_callout(374, 256, 118, 470, labels[3], width=144, theme="green")}
+    {_callout(482, 320, 760, 332, labels[4], width=128, theme="blue")}
+    {_callout(446, 430, 760, 452, labels[5], width=130, theme="green")}
+    {_legend([("#15803d", "Cell boundary"), ("#0284c7", "Vacuole"), ("#a21caf", "Nucleus"), ("#22c55e", "Chloroplasts")], x=390, y=500, width=212)}
     """
-    return _wrap_svg(payload.get("title") or "Plant Cell", "Labeled plant cell structure", body, template="plant_cell")
+    return _wrap_svg(payload.get("title") or "Plant Cell", "Labeled organelles in a plant cell", body, template="plant_cell")
 
 
 def render_animal_cell(payload):
     labels = _labels(payload, ["Cell membrane", "Cytoplasm", "Nucleus", "Mitochondria", "Ribosomes"])
     body = f"""
-    <path class="edu-shadow" d="M282 316 C262 206 348 150 468 154 C596 158 677 238 638 350 C604 452 484 464 382 432 C322 414 292 372 282 316 Z" fill="url(#eduAnimalCell)" stroke="#db2777" stroke-width="5"/>
-    <circle cx="487" cy="292" r="58" fill="#f5d0fe" stroke="#a21caf" stroke-width="3"/>
-    <circle cx="487" cy="292" r="19" fill="#c084fc"/>
-    <g fill="#fecaca" stroke="#dc2626" stroke-width="2.4">
-        <ellipse cx="390" cy="248" rx="36" ry="18" transform="rotate(25 390 248)"/>
-        <ellipse cx="570" cy="355" rx="36" ry="18" transform="rotate(-22 570 355)"/>
+    <path class="edu-shadow" d="M286 352 C258 224 360 158 496 164 C640 170 732 260 688 386 C650 496 512 510 398 472 C330 450 296 416 286 352 Z" fill="url(#eduAnimalCell)" stroke="#7c3aed" stroke-width="5"/>
+    <circle cx="520" cy="322" r="62" fill="#f5d0fe" stroke="#a21caf" stroke-width="3"/>
+    <circle cx="520" cy="322" r="20" fill="#c084fc"/>
+    <g fill="#fecaca" stroke="#dc2626" stroke-width="2.8">
+        <ellipse cx="404" cy="278" rx="38" ry="19" transform="rotate(25 404 278)"/>
+        <ellipse cx="612" cy="394" rx="38" ry="19" transform="rotate(-22 612 394)"/>
+        <ellipse cx="604" cy="246" rx="30" ry="16" transform="rotate(18 604 246)"/>
     </g>
     <g fill="#7c3aed">
-        <circle cx="415" cy="372" r="5"/><circle cx="446" cy="215" r="5"/><circle cx="550" cy="226" r="5"/><circle cx="348" cy="318" r="5"/>
+        <circle cx="430" cy="414" r="5"/><circle cx="468" cy="236" r="5"/><circle cx="590" cy="264" r="5"/><circle cx="360" cy="350" r="5"/><circle cx="546" cy="454" r="5"/>
     </g>
-    {_callout(305, 300, 142, 246, labels[0])}
-    {_callout(405, 322, 144, 390, labels[1])}
-    {_callout(487, 292, 704, 232, labels[2])}
-    {_callout(570, 355, 714, 364, labels[3])}
-    {_callout(446, 215, 706, 154, labels[4])}
+    {_callout(306, 336, 112, 246, labels[0], width=154, theme="purple")}
+    {_callout(432, 360, 118, 454, labels[1], width=134, theme="purple")}
+    {_callout(520, 322, 754, 248, labels[2], width=118, theme="purple")}
+    {_callout(612, 394, 760, 408, labels[3], width=148, theme="yellow")}
+    {_callout(468, 236, 754, 162, labels[4], width=126, theme="blue")}
+    {_legend([("#7c3aed", "Cell structures"), ("#a21caf", "Nucleus"), ("#dc2626", "Mitochondria"), ("#64748b", "Ribosomes")], x=384, y=508, width=214)}
     """
-    return _wrap_svg(payload.get("title") or "Animal Cell", "Labeled animal cell structure", body, template="animal_cell")
+    return _wrap_svg(payload.get("title") or "Animal Cell", "Labeled organelles in an animal cell", body, template="animal_cell")
 
 
 def render_water_cycle(payload):
     labels = _labels(payload, ["Evaporation", "Condensation", "Precipitation", "Collection"])
     body = f"""
-    <circle cx="142" cy="144" r="44" fill="url(#eduSun)" class="edu-shadow"/>
-    <path d="M98 420 C178 332 226 258 306 420 Z" fill="#cbd5e1" stroke="#94a3b8" stroke-width="2"/>
-    <path d="M238 420 C348 282 424 214 548 420 Z" fill="#e2e8f0" stroke="#94a3b8" stroke-width="2"/>
-    <path d="M28 430 C180 404 315 422 454 404 C604 384 744 398 872 430 L872 532 L28 532 Z" fill="url(#eduOcean)"/>
-    <path d="M365 438 C442 446 511 462 604 438 C646 428 683 426 726 438" fill="none" stroke="#e0f2fe" stroke-width="8" stroke-linecap="round"/>
-    <g fill="#ffffff" stroke="#cbd5e1" stroke-width="2" class="edu-shadow">
-        <ellipse cx="568" cy="162" rx="66" ry="34"/><ellipse cx="622" cy="168" rx="54" ry="30"/><ellipse cx="520" cy="174" rx="50" ry="28"/>
+    <circle cx="150" cy="158" r="46" fill="url(#eduSun)" class="edu-shadow"/>
+    <path d="M86 456 C176 346 238 278 330 456 Z" fill="#cbd5e1" stroke="#94a3b8" stroke-width="2"/>
+    <path d="M236 456 C364 300 450 228 596 456 Z" fill="#e2e8f0" stroke="#94a3b8" stroke-width="2"/>
+    <path d="M26 468 C190 438 328 456 488 434 C650 412 798 432 954 468 L954 612 L26 612 Z" fill="url(#eduOcean)"/>
+    <path d="M390 484 C466 494 540 512 642 486 C694 474 740 474 790 488" fill="none" stroke="#e0f2fe" stroke-width="8" stroke-linecap="round"/>
+    {_cloud(594, 156, 1.02)}
+    <g stroke="#0284c7" stroke-width="3.2" stroke-linecap="round">
+        <path d="M536 246 L518 316"/><path d="M592 248 L574 330"/><path d="M650 246 L628 318"/>
     </g>
-    <g stroke="#0284c7" stroke-width="3" stroke-linecap="round">
-        <path d="M542 220 L526 280"/><path d="M590 224 L574 290"/><path d="M638 220 L620 282"/>
-    </g>
-    {_arrow_path("M672 430 C740 330 700 250 620 188")}
-    {_arrow_path("M422 174 C492 128 566 124 640 158")}
-    {_arrow_path("M592 218 C552 278 520 338 492 414")}
-    {_arrow_path("M360 455 C470 486 586 488 720 456")}
-    {_wrapped_text(744, 316, labels[0], width=18)}
-    {_wrapped_text(530, 116, labels[1], width=18)}
-    {_wrapped_text(658, 286, labels[2], width=18)}
-    {_wrapped_text(610, 498, labels[3], width=18)}
+    <path class="edu-arrow-input" d="M730 462 C816 342 766 248 666 184"/>
+    <path class="edu-arrow" d="M430 172 C514 120 610 122 700 160"/>
+    <path class="edu-arrow-input" d="M624 238 C584 304 546 374 512 452"/>
+    <path class="edu-arrow-output" d="M386 502 C516 536 650 538 804 498"/>
+    {_label_box(782, 318, labels[0], width=148, theme="blue")}
+    {_label_box(514, 118, labels[1], width=158, theme="white")}
+    {_label_box(688, 296, labels[2], width=160, theme="blue")}
+    {_label_box(666, 560, labels[3], width=134, theme="blue")}
+    {_legend([("#0284c7", "Water movement"), ("#ffffff", "Clouds"), ("#94a3b8", "Landforms"), ("#0ea5e9", "Collection")], x=58, y=500, width=204)}
     """
-    return _wrap_svg(payload.get("title") or "Water Cycle", "Natural cycle illustration", body, template="water_cycle")
+    return _wrap_svg(payload.get("title") or "Water Cycle", "Evaporation, condensation, precipitation, and collection", body, template="water_cycle")
 
 
 def render_food_chain(payload):
     labels = _labels(payload, ["Sun", "Grass", "Grasshopper", "Frog", "Snake", "Hawk"])
-    x_positions = [110, 250, 390, 530, 670, 800]
+    x_positions = [118, 270, 424, 578, 728, 864]
     body_parts = []
     for index in range(len(labels) - 1):
-        body_parts.append(_arrow_path(f"M{x_positions[index] + 42} 318 L{x_positions[index + 1] - 48} 318"))
+        body_parts.append(_arrow_path(f"M{x_positions[index] + 46} 334 L{x_positions[index + 1] - 56} 334", css_class="edu-arrow-output"))
     body = "".join(body_parts) + f"""
-    <circle cx="110" cy="270" r="38" fill="url(#eduSun)" class="edu-shadow"/>{_wrapped_text(110, 365, labels[0], width=14)}
-    <g fill="#22c55e"><path d="M230 336 C232 298 242 282 250 336"/><path d="M250 336 C252 292 266 274 272 336"/><path d="M270 336 C272 304 284 286 292 336"/></g>{_wrapped_text(250, 365, labels[1], width=14)}
-    <ellipse cx="390" cy="314" rx="40" ry="24" fill="#bef264" stroke="#65a30d" stroke-width="3"/><circle cx="424" cy="304" r="8" fill="#172033"/>{_wrapped_text(390, 365, labels[2], width=14)}
-    <ellipse cx="530" cy="314" rx="40" ry="26" fill="#86efac" stroke="#16a34a" stroke-width="3"/><circle cx="555" cy="302" r="7" fill="#172033"/>{_wrapped_text(530, 365, labels[3], width=14)}
-    <path d="M632 316 C664 288 704 344 736 310" fill="none" stroke="#a16207" stroke-width="13" stroke-linecap="round"/>{_wrapped_text(670, 365, labels[4], width=14)}
-    <path d="M768 298 L832 270 L812 318 L848 338 L790 334 Z" fill="#cbd5e1" stroke="#475569" stroke-width="3"/>{_wrapped_text(800, 365, labels[5], width=14)}
+    <circle cx="118" cy="286" r="40" fill="url(#eduSun)" class="edu-shadow"/>{_label_box(118, 404, labels[0], width=96, theme="yellow")}
+    <g fill="#22c55e"><path d="M244 356 C246 304 260 280 270 356"/><path d="M270 356 C274 296 292 270 302 356"/><path d="M294 356 C298 316 312 292 324 356"/></g>{_label_box(270, 404, labels[1], width=106, theme="green")}
+    <ellipse cx="424" cy="330" rx="42" ry="25" fill="#bef264" stroke="#65a30d" stroke-width="3"/><path d="M392 346 L364 372 M418 350 L404 382 M446 346 L476 372" stroke="#65a30d" stroke-width="4" stroke-linecap="round"/><circle cx="458" cy="318" r="8" fill="#172033"/>{_label_box(424, 404, labels[2], width=134, theme="green")}
+    <ellipse cx="578" cy="330" rx="43" ry="28" fill="#86efac" stroke="#16a34a" stroke-width="3"/><path d="M542 346 C520 370 502 370 488 352 M614 346 C638 372 658 372 674 352" stroke="#16a34a" stroke-width="5" fill="none"/><circle cx="604" cy="318" r="7" fill="#172033"/>{_label_box(578, 404, labels[3], width=106, theme="green")}
+    <path d="M690 332 C724 300 766 362 802 326" fill="none" stroke="#a16207" stroke-width="14" stroke-linecap="round"/><circle cx="803" cy="325" r="5" fill="#172033"/>{_label_box(728, 404, labels[4], width=104, theme="yellow")}
+    <path d="M830 312 L902 276 L880 330 L920 352 L854 346 Z" fill="#cbd5e1" stroke="#475569" stroke-width="3"/>{_label_box(864, 404, labels[5], width=102, theme="white")}
+    {_legend([("#f59e0b", "Energy source"), ("#22c55e", "Producer"), ("#86efac", "Consumers"), ("#16a34a", "Energy flow")], x=364, y=506, width=220)}
     """
     return _wrap_svg(payload.get("title") or "Food Chain", "Energy transfer between organisms", body, template="food_chain")
 
 
 def render_solar_system(payload):
     labels = _labels(payload, ["Sun", "Mercury", "Venus", "Earth", "Mars", "Jupiter"])
-    planets = [(285, 292, 8, "#94a3b8"), (345, 250, 12, "#f59e0b"), (438, 338, 13, "#2563eb"), (538, 248, 10, "#dc2626"), (660, 330, 22, "#d97706")]
-    orbits = "".join(f'<ellipse class="edu-soft-line" cx="190" cy="294" rx="{85 + index * 78}" ry="{46 + index * 30}"/>' for index in range(5))
-    bodies = "".join(f'<circle cx="{x}" cy="{y}" r="{r}" fill="{color}" class="edu-shadow"/>{_wrapped_text(x, y + r + 24, labels[index + 1], width=12)}' for index, (x, y, r, color) in enumerate(planets))
+    planets = [(332, 320, 8, "#94a3b8"), (396, 274, 12, "#f59e0b"), (500, 382, 14, "#2563eb"), (612, 272, 11, "#dc2626"), (746, 388, 24, "#d97706")]
+    orbits = "".join(f'<ellipse class="edu-soft-line" cx="214" cy="330" rx="{92 + index * 84}" ry="{50 + index * 34}"/>' for index in range(5))
+    bodies = "".join(f'<circle cx="{x}" cy="{y}" r="{r}" fill="{color}" class="edu-shadow"/>{_label_box(x, y + r + 34, labels[index + 1], width=96, theme="white")}' for index, (x, y, r, color) in enumerate(planets))
     body = f"""
+    <rect x="54" y="126" width="872" height="380" rx="28" fill="#0f172a" opacity="0.96"/>
+    <g fill="#ffffff" opacity="0.72"><circle cx="338" cy="166" r="2"/><circle cx="718" cy="172" r="2"/><circle cx="842" cy="270" r="1.8"/><circle cx="582" cy="188" r="1.6"/><circle cx="422" cy="470" r="2"/></g>
     {orbits}
-    <circle cx="190" cy="294" r="52" fill="url(#eduSun)" class="edu-shadow"/>
-    {_wrapped_text(190, 372, labels[0], width=12)}
+    <circle cx="214" cy="330" r="58" fill="url(#eduSun)" class="edu-shadow"/>
+    {_label_box(214, 426, labels[0], width=94, theme="yellow")}
     {bodies}
+    {_legend([("#f59e0b", "Sun and rocky planets"), ("#2563eb", "Earth"), ("#d97706", "Gas giant"), ("#94a3b8", "Orbit paths")], x=686, y=510, width=226)}
     """
-    return _wrap_svg(payload.get("title") or "Solar System", "Orbit-based planetary illustration", body, template="solar_system")
+    return _wrap_svg(payload.get("title") or "Solar System", "Planet positions along orbital paths", body, template="solar_system")
 
 
 def render_timeline(payload):
     labels = _labels(payload, ["Start", "Event 1", "Event 2", "Event 3", "Finish"], limit=8)
     count = len(labels)
-    start_x = 110
-    gap = 680 / max(1, count - 1)
+    start_x = 122
+    gap = 736 / max(1, count - 1)
     dots = []
     for index, label in enumerate(labels):
         x = start_x + index * gap
-        y = 306
-        label_y = 228 if index % 2 == 0 else 388
-        dots.append(f'<circle class="edu-shadow" cx="{x:.1f}" cy="{y}" r="13" fill="#3157d5"/><path class="edu-soft-line" d="M{x:.1f} {y} L{x:.1f} {label_y + (-22 if index % 2 else 22)}"/>{_wrapped_text(x, label_y, label, width=18)}')
+        y = 332
+        label_y = 236 if index % 2 == 0 else 430
+        dots.append(f'<circle class="edu-shadow" cx="{x:.1f}" cy="{y}" r="14" fill="#3157d5"/><path class="edu-soft-line" d="M{x:.1f} {y} L{x:.1f} {label_y + (-34 if index % 2 else 34)}"/>{_label_box(x, label_y, label, width=132, theme="white")}')
     body = f"""
-    <path class="edu-arrow" marker-end="url(#eduArrow)" d="M86 306 C252 282 382 330 510 306 S714 282 820 306"/>
+    <rect x="60" y="148" width="860" height="350" rx="22" fill="#f8fafc" stroke="rgba(100,116,139,0.18)"/>
+    <path class="edu-arrow" marker-end="url(#eduArrow)" d="M86 332 C266 300 420 364 560 332 S766 300 900 332"/>
     {"".join(dots)}
+    {_legend([("#3157d5", "Milestone"), ("#64748b", "Chronological order"), ("#ffffff", "Event label")], x=382, y=520, width=218)}
     """
-    return _wrap_svg(payload.get("title") or "Timeline", "Chronological event illustration", body, template="timeline")
+    return _wrap_svg(payload.get("title") or "Timeline", "Chronological sequence of key events", body, template="timeline")
 
 
 def render_electric_circuit(payload):
     labels = _labels(payload, ["Battery", "Switch", "Bulb", "Wires", "Current"])
     body = f"""
-    <path class="edu-arrow" d="M190 310 L190 210 L710 210 L710 410 L190 410 Z"/>
-    <line x1="160" y1="286" x2="220" y2="286" stroke="#172033" stroke-width="5"/>
-    <line x1="174" y1="322" x2="206" y2="322" stroke="#172033" stroke-width="5"/>
-    <path d="M420 210 L482 170" stroke="#172033" stroke-width="5" stroke-linecap="round"/>
-    <circle cx="710" cy="310" r="48" fill="#fef3c7" stroke="#d97706" stroke-width="4" class="edu-shadow"/>
-    <path d="M686 310 C702 282 718 282 734 310 C718 338 702 338 686 310 Z" fill="none" stroke="#d97706" stroke-width="3"/>
-    {_arrow_path("M280 210 L360 210")} {_arrow_path("M710 260 L710 220")} {_arrow_path("M610 410 L520 410")}
-    {_wrapped_text(190, 360, labels[0], width=14)}
-    {_wrapped_text(452, 154, labels[1], width=14)}
-    {_wrapped_text(710, 382, labels[2], width=14)}
-    {_wrapped_text(450, 442, labels[3], width=14)}
-    {_wrapped_text(336, 186, labels[4], width=14)}
+    <rect x="128" y="166" width="724" height="326" rx="22" fill="#fffbeb" stroke="#f59e0b" stroke-width="2"/>
+    <path class="edu-arrow" d="M210 342 L210 224 L760 224 L760 452 L210 452 Z"/>
+    <line x1="178" y1="312" x2="242" y2="312" stroke="#172033" stroke-width="6"/>
+    <line x1="194" y1="354" x2="226" y2="354" stroke="#172033" stroke-width="6"/>
+    <circle cx="760" cy="342" r="54" fill="#fef3c7" stroke="#d97706" stroke-width="4" class="edu-shadow"/>
+    <path d="M730 342 C748 306 772 306 790 342 C772 378 748 378 730 342 Z" fill="none" stroke="#d97706" stroke-width="3"/>
+    <g stroke="#f59e0b" stroke-width="3" stroke-linecap="round"><path d="M760 264 L760 246"/><path d="M820 342 L840 342"/><path d="M760 420 L760 438"/></g>
+    <path d="M446 224 L514 176" stroke="#172033" stroke-width="6" stroke-linecap="round"/>
+    <circle cx="446" cy="224" r="7" fill="#172033"/><circle cx="522" cy="224" r="7" fill="#172033"/>
+    {_arrow_path("M306 224 L390 224")} {_arrow_path("M760 288 L760 248")} {_arrow_path("M660 452 L560 452")}
+    {_callout(210, 334, 80, 360, labels[0], width=116, theme="yellow")}
+    {_callout(484, 198, 408, 132, labels[1], width=116, theme="yellow")}
+    {_callout(760, 342, 836, 250, labels[2], width=108, theme="yellow")}
+    {_callout(404, 452, 378, 536, labels[3], width=100, theme="white")}
+    {_callout(344, 224, 246, 146, labels[4], width=108, theme="blue")}
+    {_legend([("#f59e0b", "Electrical energy"), ("#3157d5", "Current direction"), ("#172033", "Conducting wire")], x=626, y=510, width=230)}
     """
-    return _wrap_svg(payload.get("title") or "Electric Circuit", "Closed circuit with current flow", body, template="electric_circuit")
+    return _wrap_svg(payload.get("title") or "Electric Circuit", "Closed circuit with current direction", body, template="electric_circuit")
 
 
 def render_human_heart(payload):
     labels = _labels(payload, ["Aorta", "Pulmonary artery", "Right atrium", "Left atrium", "Right ventricle", "Left ventricle"])
     body = f"""
-    <path class="edu-shadow" d="M448 210 C386 142 292 184 306 288 C320 394 448 454 448 454 C448 454 576 394 590 288 C604 184 510 142 448 210 Z" fill="#fecaca" stroke="#dc2626" stroke-width="4"/>
-    <path d="M448 210 L448 448" stroke="#dc2626" stroke-width="3" opacity="0.45"/>
-    <path d="M408 178 C410 118 444 106 462 166" fill="none" stroke="#dc2626" stroke-width="24" stroke-linecap="round"/>
-    <path d="M488 190 C548 128 590 160 552 226" fill="none" stroke="#2563eb" stroke-width="20" stroke-linecap="round"/>
-    {_callout(426, 158, 166, 160, labels[0])}
-    {_callout(528, 194, 700, 164, labels[1])}
-    {_callout(384, 266, 154, 260, labels[2])}
-    {_callout(512, 266, 716, 260, labels[3])}
-    {_callout(386, 360, 162, 404, labels[4])}
-    {_callout(510, 360, 718, 404, labels[5])}
+    <path class="edu-shadow" d="M490 214 C428 146 326 188 340 304 C354 414 490 482 490 482 C490 482 626 414 640 304 C654 188 552 146 490 214 Z" fill="#fecaca" stroke="#dc2626" stroke-width="4"/>
+    <path d="M490 214 L490 472" stroke="#dc2626" stroke-width="3" opacity="0.42"/>
+    <path d="M430 294 C454 274 474 274 490 300 C508 274 536 272 562 292" fill="none" stroke="#dc2626" stroke-width="3"/>
+    <path d="M452 182 C456 116 492 102 514 168" fill="none" stroke="#dc2626" stroke-width="26" stroke-linecap="round"/>
+    <path d="M526 190 C594 126 640 162 596 236" fill="none" stroke="#2563eb" stroke-width="22" stroke-linecap="round"/>
+    <path d="M426 352 C456 370 470 406 480 448" fill="none" stroke="#991b1b" stroke-width="3"/>
+    <path d="M554 352 C526 374 512 408 502 448" fill="none" stroke="#991b1b" stroke-width="3"/>
+    {_callout(486, 156, 168, 156, labels[0], width=132, theme="yellow")}
+    {_callout(570, 198, 718, 156, labels[1], width=160, theme="blue")}
+    {_callout(424, 286, 146, 272, labels[2], width=144, theme="blue")}
+    {_callout(556, 286, 746, 274, labels[3], width=126, theme="blue")}
+    {_callout(430, 382, 150, 438, labels[4], width=156, theme="purple")}
+    {_callout(552, 382, 746, 438, labels[5], width=148, theme="purple")}
+    {_legend([("#dc2626", "Oxygen-rich blood"), ("#2563eb", "Oxygen-poor blood"), ("#991b1b", "Heart chambers")], x=382, y=516, width=238)}
     """
-    return _wrap_svg(payload.get("title") or "Human Heart", "Simplified anatomical heart diagram", body, template="human_heart")
+    return _wrap_svg(payload.get("title") or "Human Heart", "Simplified four-chamber heart anatomy", body, template="human_heart")
 
 
 def render_digestive_system(payload):
     labels = _labels(payload, ["Mouth", "Oesophagus", "Stomach", "Small intestine", "Large intestine"])
     body = f"""
-    <circle cx="450" cy="138" r="32" fill="#fde68a" stroke="#d97706" stroke-width="3"/>
-    <path d="M450 170 C450 218 450 240 450 274" stroke="#f97316" stroke-width="16" stroke-linecap="round"/>
-    <path d="M450 274 C520 260 560 300 520 340 C490 368 430 352 432 318 C434 294 454 282 450 274 Z" fill="#fecaca" stroke="#dc2626" stroke-width="4"/>
-    <path d="M438 358 C336 384 374 478 480 442 C566 414 550 514 430 492" fill="none" stroke="#f59e0b" stroke-width="18" stroke-linecap="round"/>
-    <path d="M350 366 C292 456 342 520 472 520 C610 520 642 420 556 358" fill="none" stroke="#a16207" stroke-width="20" stroke-linecap="round"/>
-    {_callout(450, 138, 174, 142, labels[0])}
-    {_callout(450, 220, 174, 222, labels[1])}
-    {_callout(506, 312, 708, 278, labels[2])}
-    {_callout(466, 442, 710, 430, labels[3])}
-    {_callout(350, 408, 170, 430, labels[4])}
+    <circle cx="474" cy="146" r="42" fill="#fde68a" stroke="#d97706" stroke-width="3"/>
+    <path d="M452 140 C462 154 486 154 496 140" fill="none" stroke="#92400e" stroke-width="4" stroke-linecap="round"/>
+    <path d="M474 188 C474 240 474 268 474 304" stroke="#f97316" stroke-width="17" stroke-linecap="round"/>
+    <path d="M474 304 C552 286 600 330 552 376 C516 410 448 392 450 352 C452 326 478 314 474 304 Z" fill="#fecaca" stroke="#dc2626" stroke-width="4" class="edu-shadow"/>
+    <path d="M462 392 C340 424 386 532 506 490 C606 454 588 572 448 544" fill="none" stroke="#f59e0b" stroke-width="19" stroke-linecap="round"/>
+    <path d="M362 400 C294 496 354 590 502 584 C652 578 684 456 584 392" fill="none" stroke="#a16207" stroke-width="21" stroke-linecap="round"/>
+    {_callout(474, 146, 174, 150, labels[0], width=112, theme="yellow")}
+    {_callout(474, 238, 174, 248, labels[1], width=136, theme="yellow")}
+    {_callout(536, 346, 716, 294, labels[2], width=128, theme="purple")}
+    {_callout(506, 490, 718, 480, labels[3], width=150, theme="yellow")}
+    {_callout(362, 440, 174, 466, labels[4], width=150, theme="yellow")}
+    {_legend([("#f97316", "Food passage"), ("#dc2626", "Stomach"), ("#f59e0b", "Small intestine"), ("#a16207", "Large intestine")], x=370, y=506, width=246)}
     """
-    return _wrap_svg(payload.get("title") or "Digestive System", "Simplified human digestive tract", body, template="digestive_system")
+    return _wrap_svg(payload.get("title") or "Digestive System", "Main organs in the digestive tract", body, template="digestive_system")
 
 
 def render_atom(payload):
     labels = _labels(payload, ["Nucleus", "Electron", "Orbit", "Proton", "Neutron"])
     body = f"""
-    <ellipse class="edu-soft-line" cx="450" cy="302" rx="220" ry="82" transform="rotate(0 450 302)"/>
-    <ellipse class="edu-soft-line" cx="450" cy="302" rx="220" ry="82" transform="rotate(60 450 302)"/>
-    <ellipse class="edu-soft-line" cx="450" cy="302" rx="220" ry="82" transform="rotate(-60 450 302)"/>
-    <circle cx="450" cy="302" r="54" fill="#fef3c7" stroke="#d97706" stroke-width="4" class="edu-shadow"/>
-    <circle cx="646" cy="302" r="13" fill="#3157d5"/><circle cx="354" cy="218" r="13" fill="#3157d5"/><circle cx="354" cy="386" r="13" fill="#3157d5"/>
-    {_wrapped_text(450, 302, labels[0], width=12)}
-    {_callout(646, 302, 726, 230, labels[1])}
-    {_callout(546, 230, 710, 370, labels[2])}
+    <ellipse class="edu-soft-line" cx="490" cy="330" rx="238" ry="90" transform="rotate(0 490 330)"/>
+    <ellipse class="edu-soft-line" cx="490" cy="330" rx="238" ry="90" transform="rotate(60 490 330)"/>
+    <ellipse class="edu-soft-line" cx="490" cy="330" rx="238" ry="90" transform="rotate(-60 490 330)"/>
+    <circle cx="490" cy="330" r="58" fill="#fef3c7" stroke="#d97706" stroke-width="4" class="edu-shadow"/>
+    <g fill="#dc2626"><circle cx="474" cy="318" r="13"/><circle cx="508" cy="344" r="13"/></g>
+    <g fill="#64748b"><circle cx="506" cy="314" r="12"/><circle cx="472" cy="348" r="12"/></g>
+    <circle cx="704" cy="330" r="14" fill="#3157d5"/><circle cx="388" cy="238" r="14" fill="#3157d5"/><circle cx="388" cy="422" r="14" fill="#3157d5"/>
+    {_label_box(490, 330, labels[0], width=112, theme="yellow")}
+    {_callout(704, 330, 778, 246, labels[1], width=118, theme="blue")}
+    {_callout(590, 250, 750, 414, labels[2], width=104, theme="white")}
+    {_callout(474, 318, 178, 294, labels[3], width=110, theme="yellow")}
+    {_callout(506, 314, 178, 374, labels[4], width=110, theme="white")}
+    {_legend([("#d97706", "Nucleus"), ("#3157d5", "Electrons"), ("#dc2626", "Protons"), ("#64748b", "Neutrons")], x=386, y=506, width=212)}
     """
-    return _wrap_svg(payload.get("title") or "Atom", "Atomic structure illustration", body, template="atom")
+    return _wrap_svg(payload.get("title") or "Atom", "Nucleus, electrons, and orbital paths", body, template="atom")
 
 
 def render_tree(payload):
@@ -395,52 +508,64 @@ def render_tree(payload):
     root = labels[0]
     children = labels[1:]
     count = max(1, len(children))
-    body = f'<circle cx="450" cy="178" r="52" fill="#dcfce7" stroke="#16a34a" stroke-width="3" class="edu-shadow"/>{_wrapped_text(450, 178, root, width=14)}'
+    body = f"""
+    <path d="M490 230 C490 318 490 390 490 496" stroke="#92400e" stroke-width="24" stroke-linecap="round"/>
+    <path d="M490 498 C448 530 414 544 376 560 M490 500 C522 536 558 550 608 562" stroke="#92400e" stroke-width="8" stroke-linecap="round"/>
+    <circle cx="490" cy="198" r="62" fill="#dcfce7" stroke="#16a34a" stroke-width="3" class="edu-shadow"/>
+    {_label_box(490, 198, root, width=128, theme="green")}
+    """
     for index, label in enumerate(children):
-        x = 160 + index * (580 / max(1, count - 1))
-        body += f'<path class="edu-soft-line" d="M450 230 C450 292 {x:.1f} 292 {x:.1f} 350"/><circle cx="{x:.1f}" cy="370" r="42" fill="#e0f2fe" stroke="#0284c7" stroke-width="3" class="edu-shadow"/>{_wrapped_text(x, 370, label, width=14)}'
+        angle_x = 168 + index * (642 / max(1, count - 1))
+        y = 342 if index % 2 == 0 else 420
+        body += f'<path class="edu-soft-line" d="M490 258 C490 {y - 76} {angle_x:.1f} {y - 72} {angle_x:.1f} {y - 36}"/><circle cx="{angle_x:.1f}" cy="{y}" r="48" fill="#e0f2fe" stroke="#0284c7" stroke-width="3" class="edu-shadow"/>{_label_box(angle_x, y, label, width=124, theme="blue")}'
+    body += _legend([("#16a34a", "Main category"), ("#0284c7", "Branches"), ("#92400e", "Connection")], x=704, y=502, width=198)
     return _wrap_svg(payload.get("title") or "Tree Diagram", "Branching educational structure", body, template="tree")
 
 
 def render_database(payload):
     labels = _labels(payload, ["Students", "Courses", "Enrollment", "Teachers"], limit=6)
     body = ""
-    x_positions = [210, 450, 690, 330, 570, 450]
-    y_positions = [230, 230, 230, 380, 380, 470]
+    positions = [(206, 236), (492, 214), (774, 236), (342, 420), (638, 420), (492, 520)]
     for index, label in enumerate(labels):
-        x = x_positions[index % len(x_positions)]
-        y = y_positions[index % len(y_positions)]
-        body += f'<path class="edu-shadow" d="M{x-70} {y-28} C{x-70} {y-52} {x+70} {y-52} {x+70} {y-28} L{x+70} {y+38} C{x+70} {y+62} {x-70} {y+62} {x-70} {y+38} Z" fill="#eef2ff" stroke="#3157d5" stroke-width="3"/><ellipse cx="{x}" cy="{y-28}" rx="70" ry="24" fill="#dbeafe" stroke="#3157d5" stroke-width="3"/>{_wrapped_text(x, y+18, label, width=16)}'
-    body += _arrow_path("M280 230 L380 230") + _arrow_path("M520 230 L620 230")
-    return _wrap_svg(payload.get("title") or "Database Relationships", "Entity relationship illustration", body, template="database")
+        x, y = positions[index % len(positions)]
+        body += f'<path class="edu-shadow" d="M{x-78} {y-30} C{x-78} {y-58} {x+78} {y-58} {x+78} {y-30} L{x+78} {y+42} C{x+78} {y+70} {x-78} {y+70} {x-78} {y+42} Z" fill="#ecfeff" stroke="#0f766e" stroke-width="3"/><ellipse cx="{x}" cy="{y-30}" rx="78" ry="28" fill="#dbeafe" stroke="#3157d5" stroke-width="3"/>{_label_box(x, y+18, label, width=130, theme="blue")}'
+    for left, right in [(positions[0], positions[1]), (positions[1], positions[2]), (positions[0], positions[3]), (positions[2], positions[4])]:
+        body += _arrow_path(f"M{left[0]+82} {left[1]+8} C{(left[0]+right[0])/2:.1f} {left[1]+28}, {(left[0]+right[0])/2:.1f} {right[1]-28}, {right[0]-82} {right[1]+8}")
+    body += _legend([("#3157d5", "Entity header"), ("#0f766e", "Table body"), ("#3157d5", "Relationship")], x=382, y=528, width=230)
+    return _wrap_svg(payload.get("title") or "Database Relationships", "ER-style database relationship layout", body, template="database")
 
 
 def render_network(payload):
     labels = _labels(payload, ["Router", "Server", "Laptop", "Printer", "Internet"], limit=7)
-    coords = [(450, 288), (220, 204), (682, 204), (250, 414), (650, 414), (450, 448), (450, 150)]
+    coords = [(490, 326), (218, 218), (762, 218), (250, 470), (730, 470), (490, 512), (490, 160)]
     body = ""
     for index in range(1, min(len(labels), len(coords))):
         body += f'<path class="edu-soft-line" d="M{coords[0][0]} {coords[0][1]} L{coords[index][0]} {coords[index][1]}"/>'
     for index, label in enumerate(labels):
         x, y = coords[index % len(coords)]
-        fill = "#dcfce7" if index == 0 else "#e0f2fe"
-        body += f'<circle cx="{x}" cy="{y}" r="44" fill="{fill}" stroke="#3157d5" stroke-width="3" class="edu-shadow"/>{_wrapped_text(x, y, label, width=12)}'
-    return _wrap_svg(payload.get("title") or "Network", "Connected systems illustration", body, template="network")
+        fill = "#dbeafe" if index else "#dcfce7"
+        stroke = "#3157d5" if index else "#16a34a"
+        body += f'<circle cx="{x}" cy="{y}" r="52" fill="{fill}" stroke="{stroke}" stroke-width="3" class="edu-shadow"/>{_label_box(x, y, label, width=116, theme="blue" if index else "green")}'
+    body += _legend([("#16a34a", "Hub device"), ("#3157d5", "Connected nodes"), ("#94a3b8", "Network links")], x=386, y=540, width=218)
+    return _wrap_svg(payload.get("title") or "Network", "Hub-and-spoke computer network", body, template="network")
 
 
 def render_map(payload):
     labels = _labels(payload, ["Region", "Route", "River", "Mountain"], limit=5)
     body = f"""
-    <path class="edu-shadow" d="M222 214 C314 144 426 184 500 150 C608 100 704 182 674 300 C642 424 530 388 444 454 C350 526 212 448 238 340 C252 286 172 270 222 214 Z" fill="#bbf7d0" stroke="#16a34a" stroke-width="4"/>
-    <path d="M250 370 C354 330 396 390 492 328 C570 278 612 314 660 250" fill="none" stroke="#0284c7" stroke-width="8" stroke-linecap="round"/>
-    <path class="edu-arrow" d="M280 250 C350 210 430 238 490 206 C548 176 612 196 650 242"/>
-    <path d="M354 420 L386 360 L424 420 Z" fill="#cbd5e1" stroke="#64748b" stroke-width="3"/>
-    {_wrapped_text(450, 472, labels[0], width=18)}
-    {_callout(492, 206, 706, 166, labels[1])}
-    {_callout(492, 328, 706, 330, labels[2])}
-    {_callout(386, 382, 154, 420, labels[3])}
+    <path class="edu-shadow" d="M224 230 C324 152 442 194 528 152 C638 98 746 188 712 318 C676 454 558 414 468 486 C362 562 210 474 240 356 C256 296 170 288 224 230 Z" fill="#bbf7d0" stroke="#16a34a" stroke-width="4"/>
+    <path d="M258 396 C374 350 420 414 524 346 C610 290 652 328 704 260" fill="none" stroke="#0284c7" stroke-width="9" stroke-linecap="round"/>
+    <path class="edu-arrow" d="M292 266 C370 220 458 252 526 214 C590 178 662 202 704 256"/>
+    <path d="M382 460 L418 390 L460 460 Z" fill="#cbd5e1" stroke="#64748b" stroke-width="3"/>
+    <path d="M826 204 L850 260 L826 246 L802 260 Z" fill="#fef3c7" stroke="#d97706" stroke-width="2"/>
+    {_label_box(850, 288, "N", width=54, theme="yellow")}
+    {_label_box(478, 530, labels[0], width=126, theme="green")}
+    {_callout(526, 214, 748, 164, labels[1], width=112, theme="yellow")}
+    {_callout(524, 346, 748, 350, labels[2], width=104, theme="blue")}
+    {_callout(418, 420, 166, 464, labels[3], width=128, theme="white")}
+    {_legend([("#16a34a", "Land"), ("#0284c7", "Water"), ("#d97706", "Route and compass"), ("#64748b", "Mountains")], x=672, y=486, width=220)}
     """
-    return _wrap_svg(payload.get("title") or "Map", "Simplified educational map", body, template="map")
+    return _wrap_svg(payload.get("title") or "Map", "Educational map with route, river, and legend", body, template="map")
 
 
 SPECIALIZED_RENDERERS = {
