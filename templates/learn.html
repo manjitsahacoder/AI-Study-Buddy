@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ topic }} - AI Study Buddy</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/visualization.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/visualization.css', v='diagram-fit-2') }}">
     {% include 'components/pwa_head.html' %}
 </head>
 
@@ -230,6 +230,6 @@ function toggleTheme() {
 }
 
 </script>
-<script src="{{ url_for('static', filename='js/visualization.js') }}"></script>
+<script src="{{ url_for('static', filename='js/visualization.js', v='diagram-fit-2') }}"></script>
 </body>
 </html>
