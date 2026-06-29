@@ -6,7 +6,7 @@ from database import db
 from models import DiagramLibrary
 
 from .cache import cache_file_exists, utc_now
-from .lookup import acceptable_candidate_title, build_search_queries
+from .lookup import acceptable_candidate_title, build_search_queries, rank_diagram_candidates
 from .providers import ProviderRegistry
 from .storage import download_and_store, repair_cached_image_extension
 from .wikimedia import WikimediaCommonsProvider
@@ -71,7 +71,12 @@ def get_or_create_diagram(
     )
     cache_dir = Path(static_folder) / "diagram_cache"
     try:
-        candidates = registry.search(queries, limit_per_query=8)
+        candidates = rank_diagram_candidates(
+            registry.search(queries, limit_per_query=8),
+            topic=topic,
+            subject=subject,
+            visualization_type=visualization_type,
+        )
         for candidate in candidates:
             if not acceptable_candidate_title(candidate.title):
                 continue

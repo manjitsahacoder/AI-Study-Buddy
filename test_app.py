@@ -32,6 +32,7 @@ from models import (
     User,
 )
 from diagram_library.metadata import DiagramCandidate, reusable_license
+from diagram_library.lookup import candidate_language_category, rank_diagram_candidates
 from diagram_library.service import get_or_create_diagram
 from diagram_library.storage import download_and_store, repair_cached_image_extension, valid_cached_image
 
@@ -381,6 +382,79 @@ Q5. What is question five?
         self.assertEqual(author, "Commons Author")
         self.assertEqual(license_text, "CC BY 4.0")
         self.assertIn("Commons Author", attribution)
+
+    def diagram_candidate(self, title, mime_type="image/svg+xml", width=1200, height=900):
+        return DiagramCandidate(
+            provider="Wikimedia Commons",
+            title=title,
+            image_url=f"https://upload.wikimedia.org/wikipedia/commons/{title.replace(' ', '_')}",
+            source_url=f"https://commons.wikimedia.org/wiki/File:{title.replace(' ', '_')}",
+            author="Commons Author",
+            license="CC BY-SA 4.0",
+            attribution=f"{title} by Commons Author, CC BY-SA 4.0",
+            mime_type=mime_type,
+            width=width,
+            height=height,
+        )
+
+    def test_diagram_ranking_prefers_english_result_over_arabic(self):
+        arabic = self.diagram_candidate("Mitochondrion diagram ar.svg", width=1800, height=1200)
+        english = self.diagram_candidate("Mitochondrion structure English.svg", width=1200, height=900)
+
+        ranked = rank_diagram_candidates([arabic, english], topic="mitochondria", subject="Biology")
+
+        self.assertEqual(ranked[0].title, english.title)
+        self.assertEqual(candidate_language_category(arabic), "non_english")
+
+    def test_diagram_ranking_prefers_english_over_other_non_english_variants(self):
+        russian = self.diagram_candidate("Mitochondria structure ru.svg", width=1800, height=1200)
+        chinese = self.diagram_candidate("Mitochondria diagram zh.svg", width=1800, height=1200)
+        english = self.diagram_candidate("Mitochondria labelled diagram en.svg", width=900, height=700)
+
+        ranked = rank_diagram_candidates([russian, chinese, english], topic="mitochondria", subject="Biology")
+
+        self.assertEqual(ranked[0].title, english.title)
+        self.assertEqual(candidate_language_category(russian), "non_english")
+        self.assertEqual(candidate_language_category(chinese), "non_english")
+
+    def test_diagram_ranking_falls_back_when_only_non_english_images_exist(self):
+        arabic = self.diagram_candidate("Mitochondrion diagram ar.svg", width=1400, height=900)
+        russian = self.diagram_candidate("Mitochondrion structure ru.svg", width=900, height=650)
+
+        ranked = rank_diagram_candidates([russian, arabic], topic="mitochondria", subject="Biology")
+
+        self.assertEqual([candidate.title for candidate in ranked], [arabic.title, russian.title])
+        self.assertTrue(all(candidate_language_category(candidate) == "non_english" for candidate in ranked))
+
+    def test_diagram_service_downloads_ranked_english_candidate_first(self):
+        stored_relative = self.write_test_diagram("ranked-english.png")
+        stored_path = Path(app_module.app.static_folder) / stored_relative
+        arabic = self.diagram_candidate("Mitochondrion diagram ar.svg", width=1800, height=1200)
+        english = self.diagram_candidate("Mitochondrion labelled diagram en.svg", width=900, height=700)
+
+        class FakeRegistry:
+            def search(self, queries, limit_per_query=8):
+                return [arabic, english]
+
+        downloaded_titles = []
+
+        def fake_download(candidate, cache_dir, topic):
+            downloaded_titles.append(candidate.title)
+            return stored_path
+
+        with patch("diagram_library.service.download_and_store", side_effect=fake_download):
+            with app_module.app.app_context():
+                diagram = get_or_create_diagram(
+                    lesson_id=1,
+                    subject="Biology",
+                    topic="mitochondria",
+                    static_folder=app_module.app.static_folder,
+                    provider_registry=FakeRegistry(),
+                )
+                saved_title = diagram.attribution
+
+        self.assertEqual(downloaded_titles, [english.title])
+        self.assertIn(english.title, saved_title)
 
     def test_wikimedia_svg_thumbnail_is_saved_with_actual_png_extension(self):
         class FakeDownloadResponse:

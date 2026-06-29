@@ -32,6 +32,8 @@ class DiagramCandidate:
     license: str
     attribution: str
     mime_type: str
+    width: int = 0
+    height: int = 0
 
 
 def reusable_license(license_text):

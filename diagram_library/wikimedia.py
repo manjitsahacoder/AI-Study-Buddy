@@ -32,7 +32,7 @@ class WikimediaCommonsProvider:
                 "gsrnamespace": 6,
                 "gsrlimit": limit,
                 "prop": "imageinfo",
-                "iiprop": "url|mime|extmetadata",
+                "iiprop": "url|mime|extmetadata|size",
                 "iiurlwidth": 1400,
                 "iiurlheight": 900,
             }
@@ -62,6 +62,8 @@ class WikimediaCommonsProvider:
                 license=license_text,
                 attribution=attribution_text(page_title, author, license_text, source_url),
                 mime_type=mime_type,
+                width=_safe_int(imageinfo.get("thumbwidth") or imageinfo.get("width")),
+                height=_safe_int(imageinfo.get("thumbheight") or imageinfo.get("height")),
             )
 
 
@@ -84,3 +86,10 @@ def _is_direct_image_url(value):
         and "/wikipedia/commons/" in path
         and bool(path.rsplit("/", 1)[-1])
     )
+
+
+def _safe_int(value):
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
