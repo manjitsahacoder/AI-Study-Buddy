@@ -47,6 +47,12 @@
             <span><strong>License</strong> {{ diagram_view.license or 'Reusable license' }}</span>
         </figcaption>
     </figure>
+    <div class="diagram-lightbox" role="dialog" aria-modal="true" aria-label="{{ topic }} full-size educational diagram" data-diagram-lightbox hidden>
+        <button type="button" class="diagram-lightbox-close" data-diagram-lightbox-close>Close</button>
+        <div class="diagram-lightbox-stage">
+            <img class="diagram-lightbox-image" src="{{ diagram_view.image_url }}" alt="{{ topic }} educational diagram full size">
+        </div>
+    </div>
     {% elif diagram_available %}
     <div class="visualization-info-card diagram-unavailable-card" role="note" aria-label="Educational diagram unavailable">
         <span class="visualization-info-icon" aria-hidden="true">&#9432;</span>

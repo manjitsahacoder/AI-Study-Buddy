@@ -450,16 +450,29 @@ Q5. What is question five?
     def test_visualization_assets_support_image_zoom_mobile_and_dark_mode(self):
         css_path = os.path.join(app_module.app.root_path, "static", "css", "visualization.css")
         js_path = os.path.join(app_module.app.root_path, "static", "js", "visualization.js")
+        template_path = os.path.join(app_module.app.root_path, "templates", "visualization.html")
         with open(css_path, encoding="utf-8") as css_file:
             css = css_file.read()
         with open(js_path, encoding="utf-8") as js_file:
             script = js_file.read()
+        with open(template_path, encoding="utf-8") as template_file:
+            template = template_file.read()
 
         self.assertIn(".diagram-library-image", css)
+        self.assertIn("max-width: 100%", css)
+        self.assertIn("object-fit: contain", css)
+        self.assertIn("max-height: min(58vh, 620px)", css)
         self.assertIn("@media (max-width: 760px)", css)
         self.assertIn(".dark-mode .diagram-library-image-shell", css)
+        self.assertIn(".exhibition-mode .diagram-library-figure", css)
+        self.assertIn(".diagram-lightbox", css)
+        self.assertNotIn("scale(1.18)", css)
         self.assertIn("data-diagram-zoom", script)
+        self.assertIn("data-diagram-lightbox", script)
+        self.assertIn("diagram-lightbox-open", script)
         self.assertIn("is-fullscreen", script)
+        self.assertIn("data-diagram-lightbox", template)
+        self.assertNotIn("style=\"", template)
 
     @patch.object(app_module.model, "generate_content")
     def test_learn_shows_no_diagram_when_no_template_matches(self, generate_content):

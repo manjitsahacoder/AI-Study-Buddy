@@ -1,6 +1,8 @@
 .visualization-card {
     margin: 30px 0;
     padding: clamp(16px, 2.6vw, 24px);
+    max-width: 100%;
+    overflow: hidden;
     border: 1px solid var(--line);
     border-radius: 8px;
     background: rgba(255, 255, 255, 0.94);
@@ -73,15 +75,20 @@
 }
 
 .diagram-library-figure {
-    margin: 0;
+    width: min(100%, 980px);
+    max-width: 100%;
+    margin: 0 auto;
 }
 
 .diagram-library-image-shell {
     position: relative;
     display: grid;
-    min-height: 380px;
+    width: 100%;
+    min-height: clamp(260px, 38vw, 500px);
+    max-height: clamp(380px, 66vh, 680px);
     place-items: center;
     overflow: hidden;
+    padding: clamp(12px, 2vw, 22px);
     border: 1px solid rgba(100, 116, 139, 0.18);
     border-radius: 8px;
     background:
@@ -106,25 +113,23 @@
 .diagram-library-image {
     position: relative;
     display: block;
-    width: 100%;
-    max-height: min(68vh, 720px);
+    width: auto;
+    max-width: 100%;
+    height: auto;
+    max-height: min(58vh, 620px);
     object-fit: contain;
-    padding: clamp(12px, 2vw, 22px);
     cursor: zoom-in;
     opacity: 0;
-    transform: scale(0.985);
+    transform: translateZ(0);
     transition: opacity 180ms ease, transform 180ms ease;
 }
 
 .diagram-library-image.is-loaded {
     opacity: 1;
-    transform: scale(1);
 }
 
 .visualization-card.is-zoomed .diagram-library-image {
-    cursor: zoom-out;
-    max-height: none;
-    transform: scale(1.18);
+    cursor: zoom-in;
 }
 
 .visualization-card.is-fullscreen {
@@ -140,6 +145,15 @@
 
 .visualization-card.is-fullscreen .diagram-library-image-shell {
     min-height: 72vh;
+    max-height: none;
+}
+
+.visualization-card.is-fullscreen .diagram-library-figure {
+    width: min(100%, 1180px);
+}
+
+.visualization-card.is-fullscreen .diagram-library-image {
+    max-height: calc(100vh - 220px);
 }
 
 .diagram-library-attribution {
@@ -164,6 +178,59 @@
 .diagram-library-attribution a {
     color: var(--primary);
     font-weight: 800;
+}
+
+.diagram-lightbox[hidden] {
+    display: none;
+}
+
+.diagram-lightbox {
+    position: fixed;
+    inset: 0;
+    z-index: 3000;
+    display: grid;
+    grid-template-rows: auto 1fr;
+    gap: 12px;
+    padding: clamp(14px, 2.5vw, 28px);
+    background: rgba(248, 250, 252, 0.96);
+    backdrop-filter: blur(14px);
+}
+
+.diagram-lightbox-close {
+    justify-self: end;
+    min-height: 42px;
+    padding: 9px 14px;
+    border: 1px solid rgba(100, 116, 139, 0.22);
+    border-radius: 8px;
+    color: var(--ink);
+    background: #ffffff;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
+    font-weight: 850;
+}
+
+.diagram-lightbox-stage {
+    display: grid;
+    min-height: 0;
+    place-items: center;
+    overflow: auto;
+    border: 1px solid rgba(100, 116, 139, 0.18);
+    border-radius: 8px;
+    background:
+        linear-gradient(135deg, rgba(49, 87, 213, 0.07), rgba(28, 184, 154, 0.07)),
+        #ffffff;
+}
+
+.diagram-lightbox-image {
+    display: block;
+    width: auto;
+    max-width: 100%;
+    height: auto;
+    max-height: 100%;
+    object-fit: contain;
+}
+
+body.diagram-lightbox-open {
+    overflow: hidden;
 }
 
 .visualization-info-card {
@@ -285,6 +352,27 @@
     border-color: rgba(134, 161, 255, 0.18);
 }
 
+.dark-mode .diagram-lightbox {
+    background: rgba(15, 23, 42, 0.96);
+}
+
+.dark-mode .diagram-lightbox-close {
+    color: var(--ink);
+    background: rgba(21, 27, 41, 0.98);
+    border-color: rgba(134, 161, 255, 0.22);
+}
+
+.dark-mode .diagram-lightbox-stage {
+    background:
+        linear-gradient(135deg, rgba(134, 161, 255, 0.12), rgba(45, 212, 191, 0.08)),
+        #0f172a;
+    border-color: var(--line);
+}
+
+.exhibition-mode .diagram-library-figure {
+    width: min(100%, 1040px);
+}
+
 @media (max-width: 760px) {
     .visualization-header,
     .diagram-library-toolbar {
@@ -305,12 +393,26 @@
     }
 
     .diagram-library-image-shell {
-        min-height: 300px;
+        min-height: clamp(220px, 58vw, 320px);
+        max-height: 56vh;
+        padding: 10px;
     }
 
     .diagram-library-image {
-        max-height: 58vh;
+        max-height: 50vh;
+    }
+
+    .diagram-lightbox {
         padding: 10px;
+    }
+
+    .diagram-lightbox-close {
+        width: 100%;
+        justify-self: stretch;
+    }
+
+    .diagram-lightbox-image {
+        max-height: calc(100vh - 86px);
     }
 
     .visualization-info-card {
