@@ -4,6 +4,7 @@ from html import escape
 from .layouts import bounds_for, layout_for_type
 from .planner import build_diagram_payload
 from .schemas import display_type, normalize_visualization_type
+from .educational_renderers import render_specialized
 
 
 PALETTE = [
@@ -285,6 +286,10 @@ def render_educational_diagram_svg(payload):
         payload = build_diagram_payload("", "", payload)
     if not payload.get("available"):
         return render_unavailable(payload)
+
+    specialized_svg = render_specialized(payload)
+    if specialized_svg:
+        return specialized_svg
 
     visualization_type = normalize_visualization_type(payload.get("type") or payload.get("diagram_type"))
     nodes = layout_for_type(visualization_type, payload.get("nodes", []), payload.get("connections", []))

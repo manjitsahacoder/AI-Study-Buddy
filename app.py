@@ -6641,7 +6641,7 @@ Rewrite the answer using this exact structure:
 {"visualization_required": true, "visualization_type": "biology_process", "confidence": 0.9}
 
 ## Diagram JSON
-{"type":"process","title":"Topic Visualization","nodes":[{"id":"1","label":"First idea"},{"id":"2","label":"Second idea"}],"connections":[["1","2"]],"reason":"This topic is best shown as a sequence.","confidence":0.9,"explanation":"Optional one-line explanation."}
+{"template":"photosynthesis","title":"Topic Visualization","elements":{"sun":true,"leaf":true},"labels":["First idea","Second idea"],"reason":"This topic is best shown as an educational illustration.","confidence":0.9}
 
 ## Questions
 Q1. question
@@ -7837,7 +7837,7 @@ Choose the single best visualization_type only when visualization_required is tr
 ## Diagram JSON
 
 Only include a diagram JSON object when visualization_required is true.
-Return only a valid JSON object describing the diagram.
+Return only a valid JSON object describing the educational illustration.
 Do NOT create an image.
 Do NOT create a text diagram.
 Do NOT create HTML.
@@ -7845,19 +7845,25 @@ Do NOT create SVG.
 The JSON must be structured data only. The app will render the SVG.
 Use this structure:
 {{
-  "type": "flowchart, process, cycle, timeline, tree, hierarchy, concept_map, mind_map, comparison, network_graph, organization_chart, ecosystem, anatomy, scientific_process, layer, pyramid, matrix, cause_and_effect, orbit, chain, circuit, er_diagram, or none",
+  "template": "photosynthesis, plant_cell, animal_cell, water_cycle, food_chain, solar_system, timeline, tree, database, network, electric_circuit, human_heart, digestive_system, atom, map, or generic",
   "title": "short visualization title",
-  "nodes": [
-    {{"id": "1", "label": "short label"}},
-    {{"id": "2", "label": "short label"}}
-  ],
-  "connections": [["1", "2"]],
-  "reason": "one short sentence explaining why this type was selected",
-  "confidence": 0.0 to 1.0,
-  "explanation": "optional one short helpful explanation"
+  "elements": {{
+    "sun": true,
+    "leaf": true,
+    "water": true,
+    "co2": true,
+    "oxygen": true,
+    "glucose": true
+  }},
+  "labels": ["short label 1", "short label 2", "short label 3"],
+  "type": "scientific_process, anatomy, cycle, chain, orbit, timeline, tree, hierarchy, er_diagram, network_graph, circuit, concept_map, or flowchart",
+  "nodes": [],
+  "connections": [],
+  "reason": "one short sentence explaining why this template was selected",
+  "confidence": 0.0 to 1.0
 }}
-Choose the best visualization type for the topic. Do not default to flowchart unless it is genuinely best.
-If visualization_required is false, use "type": "none" and empty nodes.
+Choose the best template for textbook-style illustration. Use nodes and connections only when a specialized template does not fit.
+If visualization_required is false, use "template": "generic", "type": "none", empty labels, and empty nodes.
 
 ## Questions
 

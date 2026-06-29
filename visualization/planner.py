@@ -169,6 +169,12 @@ def normalize_diagram_payload(raw_diagram):
     raw_type = raw_diagram.get("type") or raw_diagram.get("diagram_type") or raw_diagram.get("visualization_type")
     visualization_required = raw_diagram.get("visualization_required")
     labels = _legacy_to_nodes(raw_diagram) if "labels" in raw_diagram else []
+    if not labels and isinstance(raw_diagram.get("elements"), dict):
+        labels = [
+            key.replace("_", " ").title()
+            for key, enabled in raw_diagram["elements"].items()
+            if enabled
+        ]
     nodes = normalize_nodes(raw_diagram.get("nodes"), labels=labels)
     node_ids = [node["id"] for node in nodes]
     raw_connections = (
@@ -187,6 +193,8 @@ def normalize_diagram_payload(raw_diagram):
         "available": visualization_type != "none" and bool(nodes),
         "visualization_required": visualization_required,
         "decision_visualization_type": normalize_text(raw_diagram.get("decision_visualization_type") or ""),
+        "template": normalize_text(raw_diagram.get("template") or raw_diagram.get("illustration_template") or ""),
+        "elements": raw_diagram.get("elements") if isinstance(raw_diagram.get("elements"), dict) else {},
         "type": visualization_type,
         "diagram_type": visualization_type,
         "title": normalize_text(raw_diagram.get("title", "")),
@@ -222,6 +230,8 @@ def _template_payload(template):
     return {
         "available": True,
         "template_key": template.get("key") or template["terms"][0].replace(" ", "_"),
+        "template": template.get("key") or template["terms"][0].replace(" ", "_"),
+        "elements": {},
         "type": template["type"],
         "diagram_type": template["type"],
         "title": template["title"],
@@ -307,6 +317,8 @@ def build_diagram_payload(subject, topic, raw_diagram=None):
             "available": False,
             "visualization_required": False,
             "visualization_type": payload.get("decision_visualization_type") or "none",
+            "template": "",
+            "elements": {},
             "template_key": "none",
             "type": "none",
             "diagram_type": "none",
@@ -334,6 +346,8 @@ def build_diagram_payload(subject, topic, raw_diagram=None):
         "available": False,
         "visualization_required": False,
         "visualization_type": "none",
+        "template": "",
+        "elements": {},
         "template_key": "none",
         "type": "none",
         "diagram_type": "none",
