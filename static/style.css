@@ -5875,6 +5875,15 @@ footer {
 .tutor-header,
 .hero {
     position: relative;
+}
+
+.dashboard-topbar {
+    z-index: 80;
+    overflow: visible;
+}
+
+.tutor-header,
+.hero {
     overflow: hidden;
 }
 
@@ -5885,6 +5894,7 @@ footer {
     content: "";
     position: absolute;
     inset: 0;
+    border-radius: inherit;
     pointer-events: none;
     background:
         radial-gradient(circle at 12% 0%, rgba(49, 87, 213, 0.14), transparent 34%),

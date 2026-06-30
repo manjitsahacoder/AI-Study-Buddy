@@ -1203,7 +1203,7 @@ Grade: A
         self.assertEqual(response.headers["Service-Worker-Allowed"], "/")
         self.assertEqual(response.headers["Cache-Control"], "no-cache")
         script = response.get_data(as_text=True)
-        self.assertIn('const CACHE_VERSION = "ai-study-buddy-pwa-v1"', script)
+        self.assertIn('const CACHE_VERSION = "ai-study-buddy-pwa-v2"', script)
         self.assertIn('request.method !== "GET"', script)
         self.assertIn('request.mode === "navigate"', script)
         self.assertIn("networkOnlyNavigation(request)", script)
@@ -1985,6 +1985,18 @@ Grade: A
         self.assertIn("Logout", page)
         self.assertNotIn(">Login</a>", page)
         self.assertNotIn(">Register</a>", page)
+
+    def test_account_dropdown_is_not_clipped_by_dashboard_topbar(self):
+        css = Path("static/style.css").read_text(encoding="utf-8")
+
+        self.assertIn(".profile-menu.is-open .profile-dropdown", css)
+        self.assertIn("pointer-events: auto", css)
+        self.assertIn(".dashboard-topbar {\n    z-index: 80;\n    overflow: visible;\n}", css)
+        self.assertIn(".tutor-header,\n.hero {\n    overflow: hidden;\n}", css)
+        self.assertNotIn(
+            ".dashboard-topbar,\n.tutor-header,\n.hero {\n    position: relative;\n    overflow: hidden;\n}",
+            css,
+        )
 
     def test_login_session_persists_across_page_refreshes(self):
         self.register_user()
