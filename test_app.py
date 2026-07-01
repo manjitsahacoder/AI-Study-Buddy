@@ -1166,6 +1166,32 @@ Grade: A
         self.assertIn('data-pwa-install-banner', page)
         self.assertIn('/static/pwa.js', page)
 
+    def test_navigation_pages_include_shared_transition_loader(self):
+        self.register_user()
+        self.login_user()
+
+        response = self.client.get("/dashboard")
+
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        self.assertIn('id="page-transition-overlay"', page)
+        self.assertIn("data-page-transition-overlay", page)
+        self.assertIn("data-page-transition-message", page)
+        self.assertIn("AI Study Buddy", page)
+        self.assertIn('href="/profile"', page)
+        self.assertIn('href="/learning-history"', page)
+
+        script = Path("static/motion.js").read_text(encoding="utf-8")
+        self.assertIn("setupPageTransitionOverlay", script)
+        self.assertIn('document.addEventListener("click", handlePageTransitionClick, true)', script)
+        self.assertIn("showPageTransitionOverlay(link)", script)
+        self.assertIn("Loading Dashboard...", script)
+        self.assertIn("Opening Profile...", script)
+        self.assertIn("Preparing Learning History...", script)
+        self.assertIn("[data-developer-users-link]", script)
+        self.assertIn("download-data", script)
+        self.assertIn("download(?:", script)
+
     def test_pwa_manifest_contains_install_metadata_and_icons(self):
         response = self.client.get("/manifest.json")
 

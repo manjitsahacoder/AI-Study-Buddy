@@ -342,6 +342,177 @@
         }
     }
 
+    function setupPageTransitionOverlay() {
+        const overlay = document.querySelector("[data-page-transition-overlay]");
+        const messageTarget = document.querySelector("[data-page-transition-message]");
+        if (!overlay || !messageTarget) {
+            return;
+        }
+
+        let pendingHideTimer = null;
+        const attachmentRoutePatterns = [
+            /^\/download_(?:pdf|notes|diagram)(?:\/)?$/,
+            /\/download(?:\/)?$/,
+            /\/diagram\/download(?:\/)?$/,
+            /\/settings\/download-data(?:\/)?$/,
+        ];
+        const attachmentExtensions = /\.(?:pdf|png|jpe?g|gif|webp|svg|json|zip)$/i;
+        const messageRules = [
+            { pattern: /dashboard/i, message: "Loading Dashboard..." },
+            { pattern: /profile|my profile/i, message: "Opening Profile..." },
+            { pattern: /learning history|study library/i, message: "Preparing Learning History..." },
+            { pattern: /settings/i, message: "Opening Settings..." },
+            { pattern: /performance|analytics/i, message: "Loading Performance Analytics..." },
+            { pattern: /quiz history/i, message: "Opening Quiz History..." },
+            { pattern: /saved notes|favourite/i, message: "Opening Saved Notes..." },
+            { pattern: /revision/i, message: "Preparing Revision..." },
+            { pattern: /mind map|mindmap/i, message: "Preparing Mind Map..." },
+            { pattern: /important questions/i, message: "Preparing Important Questions..." },
+            { pattern: /flashcards/i, message: "Preparing Flashcards..." },
+            { pattern: /memory/i, message: "Opening Memory Challenge..." },
+            { pattern: /tutor/i, message: "Opening AI Tutor..." },
+            { pattern: /home|back to home|start new lesson/i, message: "Opening Home..." },
+            { pattern: /login/i, message: "Opening Login..." },
+            { pattern: /register|create/i, message: "Opening Registration..." },
+            { pattern: /logout/i, message: "Signing Out..." },
+        ];
+
+        function linkLabel(link) {
+            return (link.dataset.pageLoadingLabel || link.textContent || "").replace(/\s+/g, " ").trim();
+        }
+
+        function contextualMessage(link) {
+            if (link.dataset.pageLoadingMessage) {
+                return link.dataset.pageLoadingMessage;
+            }
+
+            const label = linkLabel(link);
+            const path = new URL(link.href, window.location.href).pathname.replace(/[-_/]+/g, " ");
+            const haystack = `${label} ${path}`;
+            const rule = messageRules.find(function (item) {
+                return item.pattern.test(haystack);
+            });
+
+            if (rule) {
+                return rule.message;
+            }
+
+            if (label) {
+                return `Opening ${label.replace(/[.?!]+$/g, "")}...`;
+            }
+            return "Loading page...";
+        }
+
+        function isAttachmentLink(link, url) {
+            if (link.hasAttribute("download")) {
+                return true;
+            }
+            if (attachmentExtensions.test(url.pathname)) {
+                return true;
+            }
+            return attachmentRoutePatterns.some(function (pattern) {
+                return pattern.test(url.pathname);
+            });
+        }
+
+        function shouldHandlePageTransition(event, link) {
+            if (
+                event.defaultPrevented ||
+                event.button !== 0 ||
+                event.metaKey ||
+                event.ctrlKey ||
+                event.shiftKey ||
+                event.altKey
+            ) {
+                return false;
+            }
+
+            if (
+                link.closest(
+                    [
+                        "#theme-toggle",
+                        "[data-page-loader='false']",
+                        "[data-no-page-loader]",
+                        "[data-developer-users-link]",
+                        "[data-diagram-lightbox]",
+                        "[data-diagram-zoom]",
+                        "[data-diagram-fullscreen]",
+                    ].join(", ")
+                )
+            ) {
+                return false;
+            }
+
+            const rawHref = link.getAttribute("href");
+            if (!rawHref || rawHref.startsWith("#")) {
+                return false;
+            }
+
+            const url = new URL(link.href, window.location.href);
+            if (
+                url.origin !== window.location.origin ||
+                link.target && link.target !== "_self" ||
+                /^(?:mailto|tel|javascript):/i.test(rawHref)
+            ) {
+                return false;
+            }
+
+            if (isAttachmentLink(link, url)) {
+                return false;
+            }
+
+            return !(
+                url.pathname === window.location.pathname &&
+                url.search === window.location.search &&
+                url.hash
+            );
+        }
+
+        function hidePageTransitionOverlay() {
+            window.clearTimeout(pendingHideTimer);
+            pendingHideTimer = null;
+            overlay.classList.remove("is-visible");
+            overlay.hidden = true;
+            document.documentElement.classList.remove("page-transition-active");
+        }
+
+        function showPageTransitionOverlay(link) {
+            window.clearTimeout(pendingHideTimer);
+            messageTarget.textContent = contextualMessage(link);
+            overlay.hidden = false;
+            document.documentElement.classList.add("page-transition-active");
+            window.requestAnimationFrame(function () {
+                overlay.classList.add("is-visible");
+            });
+        }
+
+        function handlePageTransitionClick(event) {
+            const link = event.target.closest("a[href]");
+            if (!link || !shouldHandlePageTransition(event, link)) {
+                return;
+            }
+
+            showPageTransitionOverlay(link);
+            pendingHideTimer = window.setTimeout(function () {
+                if (event.defaultPrevented) {
+                    hidePageTransitionOverlay();
+                }
+            }, 120);
+        }
+
+        document.addEventListener("click", handlePageTransitionClick, true);
+        window.addEventListener("pageshow", hidePageTransitionOverlay);
+        window.addEventListener("focus", function () {
+            if (!document.hidden) {
+                pendingHideTimer = window.setTimeout(function () {
+                    if (document.visibilityState === "visible") {
+                        hidePageTransitionOverlay();
+                    }
+                }, 800);
+            }
+        });
+    }
+
     document.addEventListener("DOMContentLoaded", function () {
         setupReveal();
         setupCounters();
@@ -350,5 +521,6 @@
         setupSidebarMotion();
         setupDemoButtons();
         setupExhibitionTour();
+        setupPageTransitionOverlay();
     });
 })();

@@ -5449,6 +5449,121 @@ footer p {
     line-height: 1.35;
 }
 
+.page-transition-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    display: grid;
+    place-items: center;
+    padding: clamp(18px, 5vw, 40px);
+    background:
+        linear-gradient(180deg, rgba(255, 253, 248, 0.88), rgba(247, 244, 238, 0.94)),
+        rgba(255, 253, 248, 0.92);
+    opacity: 0;
+    pointer-events: none;
+    backdrop-filter: blur(16px);
+    transition: opacity 0.18s ease;
+}
+
+.page-transition-overlay[hidden] {
+    display: none;
+}
+
+.page-transition-overlay.is-visible {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.page-transition-card {
+    display: grid;
+    justify-items: center;
+    width: min(420px, 100%);
+    padding: clamp(24px, 6vw, 38px);
+    border: 1px solid rgba(49, 87, 213, 0.16);
+    border-radius: 8px;
+    background:
+        linear-gradient(145deg, rgba(255, 255, 255, 0.9), rgba(255, 253, 248, 0.96)),
+        var(--surface);
+    box-shadow: 0 24px 70px rgba(30, 40, 58, 0.22);
+    text-align: center;
+    transform: translateY(8px) scale(0.98);
+    transition: transform 0.22s ease;
+}
+
+.page-transition-overlay.is-visible .page-transition-card {
+    transform: translateY(0) scale(1);
+}
+
+.page-transition-brand {
+    display: inline-grid;
+    grid-template-columns: 52px minmax(0, 1fr);
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 24px;
+    text-align: left;
+}
+
+.page-transition-logo {
+    display: grid;
+    place-items: center;
+    width: 52px;
+    aspect-ratio: 1;
+    border-radius: 8px;
+    color: #ffffff;
+    background: linear-gradient(135deg, var(--primary), var(--teal));
+    box-shadow: 0 12px 26px rgba(49, 87, 213, 0.28);
+    font-size: 1rem;
+    font-weight: 950;
+    letter-spacing: 0;
+}
+
+.page-transition-brand strong,
+.page-transition-brand span {
+    display: block;
+}
+
+.page-transition-brand strong {
+    color: var(--ink);
+    font-size: clamp(1.15rem, 3vw, 1.45rem);
+    line-height: 1.1;
+}
+
+.page-transition-brand div > span {
+    margin-top: 5px;
+    color: var(--muted);
+    font-size: 0.88rem;
+    font-weight: 800;
+}
+
+.page-transition-spinner {
+    width: 58px;
+    height: 58px;
+    margin-bottom: 18px;
+    border: 6px solid rgba(49, 87, 213, 0.16);
+    border-top-color: var(--primary);
+    border-right-color: var(--teal);
+    border-radius: 50%;
+    animation: spin 0.84s linear infinite;
+}
+
+.page-transition-overlay p {
+    width: 100%;
+    min-height: 48px;
+    margin: 0;
+    padding: 13px 16px;
+    border: 1px solid rgba(49, 87, 213, 0.14);
+    border-radius: 8px;
+    color: var(--ink);
+    background: rgba(49, 87, 213, 0.06);
+    font-size: clamp(1rem, 2.5vw, 1.12rem);
+    font-weight: 850;
+    line-height: 1.35;
+}
+
+.page-transition-active {
+    cursor: progress;
+}
+
 #loader {
     display: none;
     position: fixed;
@@ -7155,6 +7270,46 @@ textarea:focus {
     background: rgba(134, 161, 255, 0.11);
 }
 
+.dark-mode .page-transition-overlay {
+    background:
+        linear-gradient(180deg, rgba(16, 20, 31, 0.9), rgba(20, 25, 37, 0.96)),
+        rgba(16, 20, 31, 0.94);
+}
+
+.dark-mode .page-transition-card {
+    background:
+        linear-gradient(145deg, rgba(28, 36, 53, 0.96), rgba(21, 27, 41, 0.98)),
+        var(--surface);
+    border-color: rgba(134, 161, 255, 0.2);
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.42);
+}
+
+.dark-mode .page-transition-logo {
+    color: #10141f;
+    background: linear-gradient(135deg, var(--primary), var(--teal));
+}
+
+.dark-mode .page-transition-spinner {
+    border-color: rgba(134, 161, 255, 0.18);
+    border-top-color: var(--primary);
+    border-right-color: var(--teal);
+}
+
+.dark-mode .page-transition-overlay p {
+    color: var(--ink);
+    background: rgba(134, 161, 255, 0.1);
+    border-color: rgba(134, 161, 255, 0.18);
+}
+
+.exhibition-mode .page-transition-card {
+    border-color: rgba(189, 138, 32, 0.28);
+    box-shadow: 0 26px 76px rgba(49, 87, 213, 0.2);
+}
+
+.exhibition-mode .page-transition-logo {
+    background: linear-gradient(135deg, var(--gold), var(--primary));
+}
+
 .dark-mode #loader {
     background: rgba(16, 20, 31, 0.94);
 }
@@ -8432,6 +8587,26 @@ textarea:focus {
 
     .page-illustrations {
         display: none;
+    }
+
+    .page-transition-card {
+        padding: 22px;
+    }
+
+    .page-transition-brand {
+        grid-template-columns: 44px minmax(0, 1fr);
+        gap: 12px;
+        margin-bottom: 20px;
+    }
+
+    .page-transition-logo {
+        width: 44px;
+    }
+
+    .page-transition-spinner {
+        width: 50px;
+        height: 50px;
+        border-width: 5px;
     }
 
     .loader-icons {
