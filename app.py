@@ -1,6 +1,7 @@
 from flask import (
     Flask,
     abort,
+    before_render_template,
     flash,
     g,
     has_request_context,
@@ -11,6 +12,7 @@ from flask import (
     send_file,
     send_from_directory,
     session,
+    template_rendered,
     url_for,
 )
 from base64 import b64encode
@@ -30,9 +32,12 @@ from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache, wraps
 from difflib import SequenceMatcher
+from werkzeug.exceptions import HTTPException
 from werkzeug.security import check_password_hash, generate_password_hash
 from urllib.parse import quote, urlencode, urlsplit
 from sqlalchemy import and_, func, inspect, or_, text
+from sqlalchemy import event
+from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import load_only
 import json
@@ -102,6 +107,206 @@ latest_report = {}
 genai.configure(api_key=GEMINI_API_KEY)
 
 model = genai.GenerativeModel("gemini-2.5-flash")
+
+
+AUTH_TIMING_ENABLED = os.environ.get("AUTH_TIMING_ENABLED", "0").lower() not in {"0", "false", "no"}
+
+
+def request_cache():
+    if not has_request_context():
+        return None
+    if not hasattr(g, "_request_cache"):
+        g._request_cache = {}
+    return g._request_cache
+
+
+def request_cached(cache_key, factory):
+    cache = request_cache()
+    if cache is None:
+        return factory()
+    if cache_key not in cache:
+        cache[cache_key] = factory()
+    return cache[cache_key]
+
+
+def clear_request_cache(*prefixes):
+    cache = request_cache()
+    if cache is None:
+        return
+    if not prefixes:
+        cache.clear()
+        return
+    for cache_key in list(cache):
+        key_prefix = cache_key[0] if isinstance(cache_key, tuple) and cache_key else cache_key
+        if key_prefix in prefixes:
+            cache.pop(cache_key, None)
+
+
+def clear_user_progress_request_cache():
+    clear_request_cache(
+        "gamification_counts",
+        "memory_challenge_xp",
+        "gamification_activity_dates",
+        "memory_achievement_stats",
+        "today_gamification_counts",
+        "gamification_summary",
+        "weekly_study_streak",
+        "has_activity_today",
+        "study_plan_lessons",
+        "study_plan_bulk_context",
+        "important_question_count",
+    )
+
+
+def auth_timing_request_label():
+    if not has_request_context():
+        return "no-request"
+
+    return f"{request.method} {request.path} endpoint={request.endpoint or '-'}"
+
+
+def auth_timing_start(step, detail=""):
+    started_at = time.perf_counter()
+    if AUTH_TIMING_ENABLED:
+        app.logger.info(
+            "AUTH_TIMING START step=%s at=%.6f request=%s%s",
+            step,
+            started_at,
+            auth_timing_request_label(),
+            f" detail={detail}" if detail else "",
+        )
+    return started_at
+
+
+def auth_timing_end(step, started_at, detail=""):
+    ended_at = time.perf_counter()
+    if AUTH_TIMING_ENABLED:
+        app.logger.info(
+            "AUTH_TIMING END step=%s at=%.6f duration_ms=%.2f request=%s%s",
+            step,
+            ended_at,
+            (ended_at - started_at) * 1000,
+            auth_timing_request_label(),
+            f" detail={detail}" if detail else "",
+        )
+    return ended_at
+
+
+def auth_timing_error(step, started_at, error):
+    ended_at = time.perf_counter()
+    if AUTH_TIMING_ENABLED:
+        if isinstance(error, HTTPException):
+            app.logger.info(
+                "AUTH_TIMING HTTP_EXCEPTION step=%s at=%.6f duration_ms=%.2f request=%s status=%s error=%s",
+                step,
+                ended_at,
+                (ended_at - started_at) * 1000,
+                auth_timing_request_label(),
+                error.code,
+                error,
+            )
+            return
+        app.logger.exception(
+            "AUTH_TIMING ERROR step=%s at=%.6f duration_ms=%.2f request=%s error=%s",
+            step,
+            ended_at,
+            (ended_at - started_at) * 1000,
+            auth_timing_request_label(),
+            error,
+        )
+
+
+def auth_timing_sql_preview(statement):
+    return re.sub(r"\s+", " ", statement or "").strip()[:240]
+
+
+@event.listens_for(Engine, "before_cursor_execute")
+def trace_database_query_start(conn, cursor, statement, parameters, context, executemany):
+    if not (AUTH_TIMING_ENABLED and has_request_context()):
+        return
+
+    context._auth_timing_query_started_at = auth_timing_start(
+        "Database queries",
+        detail=f"sql={auth_timing_sql_preview(statement)}",
+    )
+
+
+@event.listens_for(Engine, "after_cursor_execute")
+def trace_database_query_end(conn, cursor, statement, parameters, context, executemany):
+    if not (AUTH_TIMING_ENABLED and has_request_context()):
+        return
+
+    started_at = getattr(context, "_auth_timing_query_started_at", None)
+    if started_at is not None:
+        auth_timing_end(
+            "Database queries",
+            started_at,
+            detail=f"rowcount={getattr(cursor, 'rowcount', 'unknown')}",
+        )
+
+
+@event.listens_for(Engine, "handle_error")
+def trace_database_query_error(exception_context):
+    if not (AUTH_TIMING_ENABLED and has_request_context()):
+        return
+
+    started_at = getattr(exception_context.execution_context, "_auth_timing_query_started_at", None)
+    if started_at is not None:
+        auth_timing_error("Database queries", started_at, exception_context.original_exception)
+
+
+@before_render_template.connect_via(app)
+def trace_template_render_start(sender, template, context, **extra):
+    if not AUTH_TIMING_ENABLED:
+        return
+
+    if not hasattr(g, "_auth_timing_template_stack"):
+        g._auth_timing_template_stack = []
+    g._auth_timing_template_stack.append(
+        auth_timing_start("Template rendering", detail=f"template={template.name}")
+    )
+
+
+@template_rendered.connect_via(app)
+def trace_template_render_end(sender, template, context, **extra):
+    if not AUTH_TIMING_ENABLED:
+        return
+
+    started_at = None
+    if hasattr(g, "_auth_timing_template_stack") and g._auth_timing_template_stack:
+        started_at = g._auth_timing_template_stack.pop()
+    if started_at is not None:
+        auth_timing_end("Template rendering", started_at, detail=f"template={template.name}")
+
+
+@app.before_request
+def trace_authenticated_request_lifecycle_start():
+    request_started_at = auth_timing_start("Request received")
+    g._auth_timing_request_started_at = request_started_at
+    auth_timing_end("Request received", request_started_at)
+
+    hooks_started_at = auth_timing_start("before_request hooks")
+    session_started_at = auth_timing_start("Session loading", detail="before_request session probe")
+    session_user_id = session.get("user_id")
+    auth_timing_end("Session loading", session_started_at, detail=f"user_id={session_user_id or '-'}")
+
+    flask_login_started_at = auth_timing_start(
+        "Flask-Login user loading",
+        detail="Flask-Login is not configured; local current_user helper is used",
+    )
+    auth_timing_end("Flask-Login user loading", flask_login_started_at, detail="skipped")
+    auth_timing_end("before_request hooks", hooks_started_at)
+
+
+@app.after_request
+def trace_authenticated_request_lifecycle_end(response):
+    response_started_at = auth_timing_start("Response returned", detail=f"status={response.status}")
+    auth_timing_end("Response returned", response_started_at, detail=f"status={response.status}")
+
+    request_started_at = getattr(g, "_auth_timing_request_started_at", None)
+    if request_started_at is not None:
+        auth_timing_end("Authenticated request lifecycle", request_started_at, detail=f"status={response.status}")
+    return response
 
 @app.errorhandler(SQLAlchemyError)
 def handle_database_error(error):
@@ -588,7 +793,15 @@ def normalize_role(role):
 
 
 def role_details(role):
-    return ROLE_DEFINITIONS[normalize_role(role)]
+    timing_started_at = auth_timing_start("RBAC / role resolution", detail=f"role_details role={role or '-'}")
+    try:
+        normalized = normalize_role(role)
+        details = ROLE_DEFINITIONS[normalized]
+        auth_timing_end("RBAC / role resolution", timing_started_at, detail=f"role_details normalized={normalized}")
+        return details
+    except Exception as error:
+        auth_timing_error("RBAC / role resolution", timing_started_at, error)
+        raise
 
 
 def ensure_user_roles():
@@ -618,10 +831,40 @@ def init_learning_history_db():
 
 
 def get_user_by_id(user_id):
+    timing_started_at = auth_timing_start("current_user helper", detail=f"get_user_by_id user_id={user_id or '-'}")
     if not user_id:
+        auth_timing_end("current_user helper", timing_started_at, detail="get_user_by_id skipped")
         return None
 
-    return db.session.get(User, user_id)
+    try:
+        user = db.session.get(
+            User,
+            user_id,
+            options=[
+                load_only(
+                    User.id,
+                    User.full_name,
+                    User.username,
+                    User.email,
+                    User.student_class,
+                    User.role,
+                    User.theme_preference,
+                    User.ai_explanation_style,
+                    User.default_subject,
+                    User.default_class,
+                    User.notifications_enabled,
+                    User.notify_study_reminders,
+                    User.notify_achievement_notifications,
+                    User.notify_daily_challenge_reminders,
+                    User.created_at,
+                )
+            ],
+        )
+        auth_timing_end("current_user helper", timing_started_at, detail=f"get_user_by_id found={bool(user)}")
+        return user
+    except Exception as error:
+        auth_timing_error("current_user helper", timing_started_at, error)
+        raise
 
 
 def get_user_by_username_or_email(identifier):
@@ -992,9 +1235,22 @@ def validate_new_password(password, confirm_password):
 
 
 def current_user():
-    if not hasattr(g, "_current_user"):
-        g._current_user = get_user_by_id(session.get("user_id"))
-    return g._current_user
+    timing_started_at = auth_timing_start("current_user helper", detail="current_user")
+    try:
+        if not hasattr(g, "_current_user"):
+            session_started_at = auth_timing_start("Session loading", detail="current_user session lookup")
+            user_id = session.get("user_id")
+            auth_timing_end("Session loading", session_started_at, detail=f"user_id={user_id or '-'}")
+            g._current_user = get_user_by_id(user_id)
+        auth_timing_end(
+            "current_user helper",
+            timing_started_at,
+            detail=f"cached={hasattr(g, '_current_user')} found={bool(g._current_user)}",
+        )
+        return g._current_user
+    except Exception as error:
+        auth_timing_error("current_user helper", timing_started_at, error)
+        raise
 
 
 def start_authenticated_session(account):
@@ -1010,26 +1266,40 @@ def start_authenticated_session(account):
 
 @app.context_processor
 def inject_current_user():
-    account = current_user() if session.get("user_id") else None
-    account_role = account["role"] if account else None
-    account_role_details = role_details(account_role) if account else None
-    exhibition_mode = bool(session.get("exhibition_mode"))
-    return {
-        "current_user": account,
-        "exhibition_mode": exhibition_mode,
-        "is_developer": account_role == "developer",
-        "role_details": role_details,
-        "user": {
-            "id": account["id"],
-            "name": account["full_name"],
-            "full_name": account["full_name"],
-            "username": account["username"],
-            "role": account_role,
-            "role_label": account_role_details["label"],
-            "role_badge": account_role_details["badge"],
-            "role_class": account_role_details["class"],
-        } if account else None,
-    }
+    timing_started_at = auth_timing_start("Context processors", detail="inject_current_user")
+    try:
+        session_started_at = auth_timing_start("Session loading", detail="context_processor session lookup")
+        user_id = session.get("user_id")
+        exhibition_mode = bool(session.get("exhibition_mode"))
+        auth_timing_end("Session loading", session_started_at, detail=f"user_id={user_id or '-'}")
+
+        account = current_user() if user_id else None
+        role_started_at = auth_timing_start("RBAC / role resolution", detail="context_processor account role")
+        account_role = account["role"] if account else None
+        account_role_details = role_details(account_role) if account else None
+        auth_timing_end("RBAC / role resolution", role_started_at, detail=f"role={account_role or '-'}")
+
+        context = {
+            "current_user": account,
+            "exhibition_mode": exhibition_mode,
+            "is_developer": account_role == "developer",
+            "role_details": role_details,
+            "user": {
+                "id": account["id"],
+                "name": account["full_name"],
+                "full_name": account["full_name"],
+                "username": account["username"],
+                "role": account_role,
+                "role_label": account_role_details["label"],
+                "role_badge": account_role_details["badge"],
+                "role_class": account_role_details["class"],
+            } if account else None,
+        }
+        auth_timing_end("Context processors", timing_started_at, detail="inject_current_user")
+        return context
+    except Exception as error:
+        auth_timing_error("Context processors", timing_started_at, error)
+        raise
 
 
 def login_required(view):
@@ -1047,11 +1317,26 @@ def login_required(view):
 
 
 def user_can_access_role(account, allowed_roles):
-    if not account:
-        return False
-    user_role = normalize_role(account["role"])
-    normalized_allowed_roles = {normalize_role(role) for role in allowed_roles}
-    return user_role == "developer" or user_role in normalized_allowed_roles
+    timing_started_at = auth_timing_start(
+        "RBAC / role resolution",
+        detail=f"user_can_access_role allowed={','.join(allowed_roles)}",
+    )
+    try:
+        if not account:
+            auth_timing_end("RBAC / role resolution", timing_started_at, detail="allowed=False no_account")
+            return False
+        user_role = normalize_role(account["role"])
+        normalized_allowed_roles = {normalize_role(role) for role in allowed_roles}
+        allowed = user_role == "developer" or user_role in normalized_allowed_roles
+        auth_timing_end(
+            "RBAC / role resolution",
+            timing_started_at,
+            detail=f"user_role={user_role} allowed={allowed}",
+        )
+        return allowed
+    except Exception as error:
+        auth_timing_error("RBAC / role resolution", timing_started_at, error)
+        raise
 
 
 def role_required(*allowed_roles):
@@ -2683,43 +2968,24 @@ def calculate_study_streak(activity_dates):
 
 
 def get_dashboard_stats(user_id):
+    gamification = get_gamification_summary(user_id)
+    counts = gamification["counts"]
     quiz_rows = (
-        QuizHistory.query.with_entities(QuizHistory.score, QuizHistory.created_at)
+        QuizHistory.query.with_entities(QuizHistory.score)
         .filter_by(user_id=user_id)
         .all()
     )
-    lesson_dates = [
-        row.created_at
-        for row in LearningHistory.query.with_entities(LearningHistory.created_at)
-        .filter_by(user_id=user_id)
-        .all()
-    ]
-    topics_studied = len(lesson_dates)
-    quizzes_attempted = len(quiz_rows)
-    downloaded_count = DownloadedFile.query.filter_by(user_id=user_id).count()
+    topics_studied = counts["notes"]
+    quizzes_attempted = counts["quiz"]
     flashcards_studied = (
         Flashcard.query.with_entities(func.count(Flashcard.id))
         .filter(Flashcard.user_id == user_id)
         .scalar()
         or 0
     )
-    revision_sheets_generated = (
-        RevisionSheet.query.with_entities(func.count(RevisionSheet.id))
-        .filter(RevisionSheet.user_id == user_id)
-        .scalar()
-        or 0
-    )
-    mind_maps_generated = (
-        MindMap.query.with_entities(func.count(MindMap.id))
-        .filter(MindMap.user_id == user_id)
-        .scalar()
-        or 0
-    )
-    important_question_sets_generated = (
-        ImportantQuestionSet.query.with_entities(func.count(ImportantQuestionSet.id))
-        .filter(ImportantQuestionSet.user_id == user_id)
-        .scalar()
-        or 0
+    important_question_sets_generated = request_cached(
+        ("important_question_count", user_id),
+        lambda: count_user_rows(ImportantQuestionSet, user_id),
     )
 
     scores = [
@@ -2728,7 +2994,6 @@ def get_dashboard_stats(user_id):
         if numeric_score is not None
     ]
     average_score = f"{sum(scores) / len(scores):.1f}/10" if scores else "0"
-    gamification = get_gamification_summary(user_id)
     study_streak = gamification["study_streak"]
     achievements_count = gamification["achievements_unlocked"]
 
@@ -2739,8 +3004,8 @@ def get_dashboard_stats(user_id):
         "achievements": achievements_count,
         "study_streak": study_streak,
         "flashcards_studied": flashcards_studied,
-        "revision_sheets_generated": revision_sheets_generated,
-        "mind_maps_generated": mind_maps_generated,
+        "revision_sheets_generated": counts["revision"],
+        "mind_maps_generated": counts["mind_map"],
         "important_question_sets_generated": important_question_sets_generated,
         "memory_match": summarize_memory_match_dashboard(user_id),
         "total_xp": gamification["total_xp"],
@@ -2881,6 +3146,98 @@ def get_or_create_study_plan_progress(lesson_id, user_id):
     return progress
 
 
+def get_study_plan_lessons(user_id):
+    def load_lessons():
+        return (
+            LearningHistory.query.options(
+                load_only(
+                    LearningHistory.id,
+                    LearningHistory.subject,
+                    LearningHistory.topic,
+                    LearningHistory.quiz_questions,
+                    LearningHistory.created_at,
+                )
+            )
+            .filter_by(user_id=user_id)
+            .order_by(LearningHistory.created_at.desc(), LearningHistory.id.desc())
+            .all()
+        )
+
+    return request_cached(("study_plan_lessons", user_id), load_lessons)
+
+
+def study_plan_bulk_context(user_id, lessons):
+    lesson_ids = [lesson.id for lesson in lessons]
+    cache_key = ("study_plan_bulk_context", user_id, tuple(lesson_ids))
+
+    def load_context():
+        if not lesson_ids:
+            return {
+                "flashcards": set(),
+                "revisions": set(),
+                "mind_maps": set(),
+                "important_questions": set(),
+                "memory_challenges": set(),
+                "tutor_lessons": set(),
+                "quiz_pairs": set(),
+                "progress_by_lesson": {},
+            }
+
+        progress_rows = (
+            StudyPlanProgress.query.options(
+                load_only(
+                    StudyPlanProgress.id,
+                    StudyPlanProgress.learning_history_id,
+                    StudyPlanProgress.completed_at,
+                    StudyPlanProgress.xp_awarded_at,
+                    StudyPlanProgress.xp_earned,
+                )
+            )
+            .filter(
+                StudyPlanProgress.user_id == user_id,
+                StudyPlanProgress.learning_history_id.in_(lesson_ids),
+            )
+            .all()
+        )
+        quiz_pairs = {
+            (row.subject, row.topic)
+            for row in QuizHistory.query.with_entities(QuizHistory.subject, QuizHistory.topic)
+            .filter(QuizHistory.user_id == user_id)
+            .all()
+        }
+        return {
+            "flashcards": flashcard_lesson_ids(user_id, lesson_ids),
+            "revisions": revision_lesson_ids(user_id, lesson_ids),
+            "mind_maps": mind_map_lesson_ids(user_id, lesson_ids),
+            "important_questions": important_question_lesson_ids(user_id, lesson_ids),
+            "memory_challenges": {
+                row.lesson_id
+                for row in MemoryChallenge.query.with_entities(MemoryChallenge.lesson_id)
+                .filter(
+                    MemoryChallenge.user_id == user_id,
+                    MemoryChallenge.lesson_id.in_(lesson_ids),
+                )
+                .all()
+            },
+            "tutor_lessons": {
+                row.learning_history_id
+                for row in TutorLesson.query.with_entities(TutorLesson.learning_history_id)
+                .filter(
+                    TutorLesson.user_id == user_id,
+                    TutorLesson.learning_history_id.in_(lesson_ids),
+                )
+                .all()
+            },
+            "quiz_pairs": quiz_pairs,
+            "progress_by_lesson": {
+                progress.learning_history_id: progress
+                for progress in progress_rows
+            },
+        }
+
+    return request_cached(cache_key, load_context)
+
+
 def study_plan_activity_statuses(lesson, user_id, current_page_url=None):
     flashcard_set = existing_flashcard_set(lesson.id, user_id)
     completions = {
@@ -2936,6 +3293,61 @@ def study_plan_activity_statuses(lesson, user_id, current_page_url=None):
     return activities
 
 
+def study_plan_activity_statuses_from_bulk(lesson, bulk_context, current_page_url=None):
+    has_flashcards = lesson.id in bulk_context["flashcards"]
+    completions = {
+        "notes": True,
+        "revision": lesson.id in bulk_context["revisions"],
+        "mind_map": lesson.id in bulk_context["mind_maps"],
+        "flashcards": has_flashcards,
+        "memory_challenge": lesson.id in bulk_context["memory_challenges"],
+        "ai_tutor": lesson.id in bulk_context["tutor_lessons"],
+        "quiz": (lesson.subject, lesson.topic) in bulk_context["quiz_pairs"],
+    }
+    questions = decode_json_list(lesson.quiz_questions)
+    can_build_urls = has_request_context()
+    next_url = current_page_url or (url_for("study_plan", lesson_id=lesson.id) if can_build_urls else None)
+    activities = []
+    for key, title, description, minutes, endpoint in STUDY_PLAN_ACTIVITY_DEFINITIONS:
+        completed = completions[key]
+        if key == "quiz":
+            action_url = url_for("quiz") if can_build_urls else "#"
+            action_label = "Take Quiz" if questions else "No Quiz Available"
+            action_method = "post"
+        else:
+            target_endpoint = endpoint
+            if key == "memory_challenge" and not has_flashcards:
+                target_endpoint = "flashcards"
+            action_url = (
+                url_for(target_endpoint, lesson_id=lesson.id, next=next_url)
+                if can_build_urls
+                else "#"
+            )
+            action_label = {
+                "notes": "Open Notes",
+                "revision": "Generate Revision",
+                "mind_map": "Generate Mind Map",
+                "flashcards": "Generate Flashcards",
+                "memory_challenge": "Generate Flashcards" if not has_flashcards else "Play Challenge",
+                "ai_tutor": "Start Tutor",
+            }[key]
+            action_method = "get"
+        activities.append(
+            {
+                "key": key,
+                "title": title,
+                "description": description,
+                "estimated_minutes": minutes,
+                "completed": completed,
+                "action_url": action_url,
+                "action_label": action_label,
+                "action_method": action_method,
+                "disabled": key == "quiz" and not questions,
+            }
+        )
+    return activities
+
+
 def build_study_plan(lesson, user_id, current_page_url=None, include_questions=False):
     activities = study_plan_activity_statuses(lesson, user_id, current_page_url=current_page_url)
     completed_count = sum(1 for activity in activities if activity["completed"])
@@ -2967,6 +3379,41 @@ def build_study_plan(lesson, user_id, current_page_url=None, include_questions=F
     return plan
 
 
+def build_study_plan_from_bulk(lesson, bulk_context, current_page_url=None, include_questions=False):
+    activities = study_plan_activity_statuses_from_bulk(
+        lesson,
+        bulk_context,
+        current_page_url=current_page_url,
+    )
+    completed_count = sum(1 for activity in activities if activity["completed"])
+    total_count = len(activities)
+    total_minutes = sum(activity["estimated_minutes"] for activity in activities)
+    remaining_minutes = sum(
+        activity["estimated_minutes"]
+        for activity in activities
+        if not activity["completed"]
+    )
+    progress = bulk_context["progress_by_lesson"].get(lesson.id)
+    plan = {
+        "lesson_id": lesson.id,
+        "subject": lesson.subject,
+        "topic": lesson.topic,
+        "activities": activities,
+        "completed_count": completed_count,
+        "total_count": total_count,
+        "completion_percentage": int((completed_count / total_count) * 100) if total_count else 0,
+        "estimated_total_minutes": total_minutes,
+        "estimated_remaining_minutes": remaining_minutes,
+        "completed": completed_count == total_count,
+        "xp_value": STUDY_PLAN_COMPLETION_XP,
+        "xp_awarded": bool(progress and progress.xp_awarded_at),
+        "completed_at": progress.completed_at if progress else None,
+    }
+    if include_questions:
+        plan["questions"] = decode_json_list(lesson.quiz_questions)
+    return plan
+
+
 def award_study_plan_xp_if_completed(lesson, user_id, plan):
     if not plan["completed"] or plan["xp_awarded"]:
         return False
@@ -2977,26 +3424,16 @@ def award_study_plan_xp_if_completed(lesson, user_id, plan):
     progress.xp_awarded_at = progress.xp_awarded_at or now
     progress.xp_earned = progress.xp_earned or STUDY_PLAN_COMPLETION_XP
     db.session.commit()
+    clear_user_progress_request_cache()
     plan["xp_awarded"] = True
     plan["completed_at"] = progress.completed_at
     return True
 
 
 def get_study_planner_stats(user_id):
-    lessons = (
-        LearningHistory.query.options(
-            load_only(
-                LearningHistory.id,
-                LearningHistory.subject,
-                LearningHistory.topic,
-                LearningHistory.quiz_questions,
-            )
-        )
-        .filter_by(user_id=user_id)
-        .order_by(LearningHistory.created_at.desc(), LearningHistory.id.desc())
-        .all()
-    )
-    plans = [build_study_plan(lesson, user_id) for lesson in lessons]
+    lessons = get_study_plan_lessons(user_id)
+    bulk_context = study_plan_bulk_context(user_id, lessons)
+    plans = [build_study_plan_from_bulk(lesson, bulk_context) for lesson in lessons]
     completed_lessons = sum(1 for plan in plans if plan["completed"])
     total_lessons = len(plans)
     average_completion = (
@@ -3004,35 +3441,28 @@ def get_study_planner_stats(user_id):
         if total_lessons
         else 0
     )
-    awarded_count = study_plan_completion_count(user_id)
+    awarded_progress = [
+        progress
+        for progress in bulk_context["progress_by_lesson"].values()
+        if progress.xp_awarded_at
+    ]
     return {
         "total_lessons": total_lessons,
         "completed_lessons": completed_lessons,
         "in_progress_lessons": max(0, total_lessons - completed_lessons),
         "average_completion": average_completion,
-        "xp_awarded": int(study_plan_xp_for_user(user_id) or 0),
-        "awarded_count": awarded_count,
+        "xp_awarded": int(sum(progress.xp_earned or 0 for progress in awarded_progress)),
+        "awarded_count": len(awarded_progress),
         "weekly_streak": get_weekly_study_streak(user_id),
     }
 
 
 def get_today_study_goal(user_id):
-    lesson = (
-        LearningHistory.query.options(
-            load_only(
-                LearningHistory.id,
-                LearningHistory.subject,
-                LearningHistory.topic,
-                LearningHistory.quiz_questions,
-                LearningHistory.created_at,
-            )
-        )
-        .filter_by(user_id=user_id)
-        .order_by(LearningHistory.created_at.desc(), LearningHistory.id.desc())
-        .all()
-    )
-    for row in lesson:
-        plan = build_study_plan(row, user_id)
+    lessons = get_study_plan_lessons(user_id)
+    bulk_context = study_plan_bulk_context(user_id, lessons)
+    weekly_streak = get_weekly_study_streak(user_id)
+    for row in lessons:
+        plan = build_study_plan_from_bulk(row, bulk_context)
         next_task = next((activity for activity in plan["activities"] if not activity["completed"]), None)
         if next_task:
             return {
@@ -3043,7 +3473,7 @@ def get_today_study_goal(user_id):
                 "estimated_remaining_minutes": plan["estimated_remaining_minutes"],
                 "url": url_for("study_plan", lesson_id=row.id),
                 "cta": "Open Study Plan",
-                "weekly_streak": get_weekly_study_streak(user_id),
+                "weekly_streak": weekly_streak,
             }
 
     return {
@@ -3054,7 +3484,7 @@ def get_today_study_goal(user_id):
         "estimated_remaining_minutes": 0,
         "url": url_for("home") + "#lesson-form",
         "cta": "Create Lesson",
-        "weekly_streak": get_weekly_study_streak(user_id),
+        "weekly_streak": weekly_streak,
     }
 
 
@@ -3104,29 +3534,35 @@ def get_developer_study_planner_stats():
 
 
 def get_gamification_counts(user_id):
-    return {
-        "notes": count_user_rows(LearningHistory, user_id),
-        "revision": count_user_rows(RevisionSheet, user_id),
-        "mind_map": count_user_rows(MindMap, user_id),
-        "flashcards": count_user_rows(FlashcardSet, user_id),
-        "memory_match": count_user_rows(MemoryChallenge, user_id),
-        "tutor": count_user_rows(TutorLesson, user_id),
-        "quiz": count_user_rows(QuizHistory, user_id),
-        "study_plan": study_plan_completion_count(user_id),
-    }
+    def load_counts():
+        return {
+            "notes": count_user_rows(LearningHistory, user_id),
+            "revision": count_user_rows(RevisionSheet, user_id),
+            "mind_map": count_user_rows(MindMap, user_id),
+            "flashcards": count_user_rows(FlashcardSet, user_id),
+            "memory_match": count_user_rows(MemoryChallenge, user_id),
+            "tutor": count_user_rows(TutorLesson, user_id),
+            "quiz": count_user_rows(QuizHistory, user_id),
+            "study_plan": study_plan_completion_count(user_id),
+        }
+
+    return request_cached(("gamification_counts", user_id), load_counts)
 
 
 def memory_challenge_xp_for_user(user_id):
-    total = (
-        MemoryChallenge.query.with_entities(func.coalesce(func.sum(MemoryChallenge.xp_earned), 0))
-        .filter_by(user_id=user_id)
-        .scalar()
-        or 0
-    )
-    if total:
-        return int(total)
-    legacy_count = count_user_rows(MemoryChallenge, user_id)
-    return legacy_count * GAMIFICATION_XP_VALUES["memory_match"] if legacy_count else 0
+    def load_xp():
+        total = (
+            MemoryChallenge.query.with_entities(func.coalesce(func.sum(MemoryChallenge.xp_earned), 0))
+            .filter_by(user_id=user_id)
+            .scalar()
+            or 0
+        )
+        if total:
+            return int(total)
+        legacy_count = count_user_rows(MemoryChallenge, user_id)
+        return legacy_count * GAMIFICATION_XP_VALUES["memory_match"] if legacy_count else 0
+
+    return request_cached(("memory_challenge_xp", user_id), load_xp)
 
 
 def calculate_xp_from_counts(counts, memory_xp=None):
@@ -3157,50 +3593,56 @@ def gamification_level(total_xp):
 
 
 def get_gamification_activity_dates(user_id):
-    activity_dates = []
-    for model in (LearningHistory, RevisionSheet, MindMap, FlashcardSet, TutorLesson, QuizHistory):
+    def load_dates():
+        activity_dates = []
+        for model in (LearningHistory, RevisionSheet, MindMap, FlashcardSet, TutorLesson, QuizHistory):
+            activity_dates.extend(
+                row.created_at
+                for row in model.query.with_entities(model.created_at)
+                .filter_by(user_id=user_id)
+                .all()
+            )
         activity_dates.extend(
-            row.created_at
-            for row in model.query.with_entities(model.created_at)
+            row.completed_at
+            for row in MemoryChallenge.query.with_entities(MemoryChallenge.completed_at)
             .filter_by(user_id=user_id)
             .all()
         )
-    activity_dates.extend(
-        row.completed_at
-        for row in MemoryChallenge.query.with_entities(MemoryChallenge.completed_at)
-        .filter_by(user_id=user_id)
-        .all()
-    )
-    activity_dates.extend(
-        row.xp_awarded_at
-        for row in StudyPlanProgress.query.with_entities(StudyPlanProgress.xp_awarded_at)
-        .filter(
-            StudyPlanProgress.user_id == user_id,
-            StudyPlanProgress.xp_awarded_at.isnot(None),
+        activity_dates.extend(
+            row.xp_awarded_at
+            for row in StudyPlanProgress.query.with_entities(StudyPlanProgress.xp_awarded_at)
+            .filter(
+                StudyPlanProgress.user_id == user_id,
+                StudyPlanProgress.xp_awarded_at.isnot(None),
+            )
+            .all()
         )
-        .all()
-    )
-    return activity_dates
+        return activity_dates
+
+    return request_cached(("gamification_activity_dates", user_id), load_dates)
 
 
 def get_memory_achievement_stats(user_id):
-    row = (
-        MemoryChallenge.query.with_entities(
-            func.count(MemoryChallenge.id),
-            func.max(MemoryChallenge.best_accuracy),
-            func.min(MemoryChallenge.best_time),
-            func.max(MemoryChallenge.highest_combo),
+    def load_stats():
+        row = (
+            MemoryChallenge.query.with_entities(
+                func.count(MemoryChallenge.id),
+                func.max(MemoryChallenge.best_accuracy),
+                func.min(MemoryChallenge.best_time),
+                func.max(MemoryChallenge.highest_combo),
+            )
+            .filter_by(user_id=user_id)
+            .first()
         )
-        .filter_by(user_id=user_id)
-        .first()
-    )
-    games_played, best_accuracy, best_time, highest_combo = row if row else (0, 0, None, 0)
-    return {
-        "games_played": games_played or 0,
-        "best_accuracy": float(best_accuracy or 0),
-        "best_time": int(best_time or 0) if best_time else 0,
-        "highest_combo": int(highest_combo or 0),
-    }
+        games_played, best_accuracy, best_time, highest_combo = row if row else (0, 0, None, 0)
+        return {
+            "games_played": games_played or 0,
+            "best_accuracy": float(best_accuracy or 0),
+            "best_time": int(best_time or 0) if best_time else 0,
+            "highest_combo": int(highest_combo or 0),
+        }
+
+    return request_cached(("memory_achievement_stats", user_id), load_stats)
 
 
 def build_gamification_badges(counts, total_xp, study_streak, memory_stats=None):
@@ -3325,27 +3767,30 @@ def build_gamification_achievements(counts, total_xp, study_streak, memory_stats
 
 
 def get_today_gamification_counts(user_id):
-    today_start, tomorrow_start = utc_day_range()
-    return {
-        "notes": count_user_rows_between(LearningHistory, user_id, today_start, tomorrow_start),
-        "revision": count_user_rows_between(RevisionSheet, user_id, today_start, tomorrow_start),
-        "mind_map": count_user_rows_between(MindMap, user_id, today_start, tomorrow_start),
-        "flashcards": count_user_rows_between(FlashcardSet, user_id, today_start, tomorrow_start),
-        "memory_match": count_user_rows_between(MemoryChallenge, user_id, today_start, tomorrow_start),
-        "tutor": count_user_rows_between(TutorLesson, user_id, today_start, tomorrow_start),
-        "tutor_messages": count_user_rows_between(TutorMessage, user_id, today_start, tomorrow_start),
-        "quiz": count_user_rows_between(QuizHistory, user_id, today_start, tomorrow_start),
-        "study_plan": (
-            StudyPlanProgress.query.with_entities(func.count(StudyPlanProgress.id))
-            .filter(
-                StudyPlanProgress.user_id == user_id,
-                StudyPlanProgress.xp_awarded_at >= today_start,
-                StudyPlanProgress.xp_awarded_at < tomorrow_start,
-            )
-            .scalar()
-            or 0
-        ),
-    }
+    def load_counts():
+        today_start, tomorrow_start = utc_day_range()
+        return {
+            "notes": count_user_rows_between(LearningHistory, user_id, today_start, tomorrow_start),
+            "revision": count_user_rows_between(RevisionSheet, user_id, today_start, tomorrow_start),
+            "mind_map": count_user_rows_between(MindMap, user_id, today_start, tomorrow_start),
+            "flashcards": count_user_rows_between(FlashcardSet, user_id, today_start, tomorrow_start),
+            "memory_match": count_user_rows_between(MemoryChallenge, user_id, today_start, tomorrow_start),
+            "tutor": count_user_rows_between(TutorLesson, user_id, today_start, tomorrow_start),
+            "tutor_messages": count_user_rows_between(TutorMessage, user_id, today_start, tomorrow_start),
+            "quiz": count_user_rows_between(QuizHistory, user_id, today_start, tomorrow_start),
+            "study_plan": (
+                StudyPlanProgress.query.with_entities(func.count(StudyPlanProgress.id))
+                .filter(
+                    StudyPlanProgress.user_id == user_id,
+                    StudyPlanProgress.xp_awarded_at >= today_start,
+                    StudyPlanProgress.xp_awarded_at < tomorrow_start,
+                )
+                .scalar()
+                or 0
+            ),
+        }
+
+    return request_cached(("today_gamification_counts", user_id), load_counts)
 
 
 def build_daily_challenges(user_id):
@@ -3420,27 +3865,30 @@ def build_daily_challenges(user_id):
 
 
 def get_gamification_summary(user_id):
-    counts = get_gamification_counts(user_id)
-    memory_xp = memory_challenge_xp_for_user(user_id)
-    total_xp = calculate_xp_from_counts(counts, memory_xp=memory_xp)
-    study_streak = calculate_study_streak(get_gamification_activity_dates(user_id))
-    memory_stats = get_memory_achievement_stats(user_id)
-    badges = build_gamification_badges(counts, total_xp, study_streak, memory_stats)
-    achievements = build_gamification_achievements(counts, total_xp, study_streak, memory_stats)
-    return {
-        "counts": counts,
-        "xp_values": GAMIFICATION_XP_VALUES,
-        "total_xp": total_xp,
-        "memory_xp": memory_xp,
-        "memory_stats": memory_stats,
-        "level": gamification_level(total_xp),
-        "study_streak": study_streak,
-        "badges": badges,
-        "badges_unlocked": sum(1 for badge in badges if badge["unlocked"]),
-        "achievements": achievements,
-        "achievements_unlocked": sum(1 for achievement in achievements if achievement["unlocked"]),
-        "daily_challenges": build_daily_challenges(user_id),
-    }
+    def load_summary():
+        counts = get_gamification_counts(user_id)
+        memory_xp = memory_challenge_xp_for_user(user_id)
+        total_xp = calculate_xp_from_counts(counts, memory_xp=memory_xp)
+        study_streak = calculate_study_streak(get_gamification_activity_dates(user_id))
+        memory_stats = get_memory_achievement_stats(user_id)
+        badges = build_gamification_badges(counts, total_xp, study_streak, memory_stats)
+        achievements = build_gamification_achievements(counts, total_xp, study_streak, memory_stats)
+        return {
+            "counts": counts,
+            "xp_values": GAMIFICATION_XP_VALUES,
+            "total_xp": total_xp,
+            "memory_xp": memory_xp,
+            "memory_stats": memory_stats,
+            "level": gamification_level(total_xp),
+            "study_streak": study_streak,
+            "badges": badges,
+            "badges_unlocked": sum(1 for badge in badges if badge["unlocked"]),
+            "achievements": achievements,
+            "achievements_unlocked": sum(1 for achievement in achievements if achievement["unlocked"]),
+            "daily_challenges": build_daily_challenges(user_id),
+        }
+
+    return request_cached(("gamification_summary", user_id), load_summary)
 
 
 def get_gamification_rollups(user_ids):
@@ -4499,13 +4947,16 @@ def get_weekly_study_summary(user_id):
 
 
 def get_weekly_study_streak(user_id):
-    week_start = datetime.now(timezone.utc).date() - timedelta(days=6)
-    weekly_dates = [
-        date_value
-        for date_value in get_gamification_activity_dates(user_id)
-        if date_value and (date_value.date() if isinstance(date_value, datetime) else datetime.fromisoformat(str(date_value)[:10]).date()) >= week_start
-    ]
-    return min(7, calculate_study_streak(weekly_dates))
+    def load_streak():
+        week_start = datetime.now(timezone.utc).date() - timedelta(days=6)
+        weekly_dates = [
+            date_value
+            for date_value in get_gamification_activity_dates(user_id)
+            if date_value and (date_value.date() if isinstance(date_value, datetime) else datetime.fromisoformat(str(date_value)[:10]).date()) >= week_start
+        ]
+        return min(7, calculate_study_streak(weekly_dates))
+
+    return request_cached(("weekly_study_streak", user_id), load_streak)
 
 
 def dashboard_learning_progress(stats, weekly_summary):
@@ -4609,23 +5060,11 @@ def get_due_flashcard_lessons(user_id, now=None):
 
 
 def has_activity_today(user_id):
-    today_start, tomorrow_start = utc_day_range()
-    lesson_count = LearningHistory.query.filter(
-        LearningHistory.user_id == user_id,
-        LearningHistory.created_at >= today_start,
-        LearningHistory.created_at < tomorrow_start,
-    ).count()
-    quiz_count = QuizHistory.query.filter(
-        QuizHistory.user_id == user_id,
-        QuizHistory.created_at >= today_start,
-        QuizHistory.created_at < tomorrow_start,
-    ).count()
-    tutor_count = TutorMessage.query.filter(
-        TutorMessage.user_id == user_id,
-        TutorMessage.created_at >= today_start,
-        TutorMessage.created_at < tomorrow_start,
-    ).count()
-    return bool(lesson_count or quiz_count or tutor_count)
+    def load_status():
+        today_counts = get_today_gamification_counts(user_id)
+        return bool(today_counts["notes"] or today_counts["quiz"] or today_counts["tutor_messages"])
+
+    return request_cached(("has_activity_today", user_id), load_status)
 
 
 def get_smart_recommendations(user_id, stats=None, continue_lesson=None, limit=4):
@@ -7487,6 +7926,7 @@ def complete_memory_match(lesson_id):
     )
     db.session.add(challenge)
     db.session.commit()
+    clear_user_progress_request_cache()
 
     after_summary = get_gamification_summary(session["user_id"])
     return jsonify(
@@ -8363,6 +8803,71 @@ def download_pdf():
 @app.route("/test")
 def test():
     return "PDF Route Test"
+
+
+def instrument_function_timing(function_name, step, detail=None):
+    original = globals().get(function_name)
+    if original is None or getattr(original, "_auth_timing_wrapped", False):
+        return
+
+    @wraps(original)
+    def timed_function(*args, **kwargs):
+        timing_started_at = auth_timing_start(step, detail=detail or function_name)
+        try:
+            result = original(*args, **kwargs)
+            auth_timing_end(step, timing_started_at, detail=detail or function_name)
+            return result
+        except Exception as error:
+            auth_timing_error(step, timing_started_at, error)
+            raise
+
+    timed_function._auth_timing_wrapped = True
+    globals()[function_name] = timed_function
+
+
+def instrument_route_handler_timing():
+    for endpoint, view_func in list(app.view_functions.items()):
+        if endpoint == "static" or getattr(view_func, "_auth_timing_wrapped", False):
+            continue
+
+        @wraps(view_func)
+        def timed_view(*args, __endpoint=endpoint, __view_func=view_func, **kwargs):
+            timing_started_at = auth_timing_start(
+                "Route handler execution",
+                detail=f"endpoint={__endpoint} view={__view_func.__name__}",
+            )
+            try:
+                response = __view_func(*args, **kwargs)
+                auth_timing_end(
+                    "Route handler execution",
+                    timing_started_at,
+                    detail=f"endpoint={__endpoint} view={__view_func.__name__}",
+                )
+                return response
+            except Exception as error:
+                auth_timing_error("Route handler execution", timing_started_at, error)
+                raise
+
+        timed_view._auth_timing_wrapped = True
+        app.view_functions[endpoint] = timed_view
+
+
+for traced_function_name, traced_step in (
+    ("get_dashboard_stats", "Database queries"),
+    ("get_gamification_summary", "Database queries"),
+    ("get_study_planner_stats", "Database queries"),
+    ("get_continue_lesson", "Database queries"),
+    ("get_recent_tutor_conversation", "Database queries"),
+    ("get_weekly_study_summary", "Database queries"),
+    ("get_recent_learning_activity", "Database queries"),
+    ("get_learning_history_entries", "Database queries"),
+    ("summarize_memory_profile", "Database queries"),
+    ("get_smart_recommendations", "Recommendation engine initialization"),
+    ("get_performance_analytics", "Analytics initialization"),
+):
+    instrument_function_timing(traced_function_name, traced_step)
+
+instrument_route_handler_timing()
 
 
 if __name__ == "__main__":
