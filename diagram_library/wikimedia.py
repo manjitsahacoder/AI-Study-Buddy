@@ -31,10 +31,11 @@ class WikimediaCommonsProvider:
                 "gsrsearch": query,
                 "gsrnamespace": 6,
                 "gsrlimit": limit,
-                "prop": "imageinfo",
+                "prop": "imageinfo|categories",
                 "iiprop": "url|mime|extmetadata|size",
                 "iiurlwidth": 1400,
                 "iiurlheight": 900,
+                "cllimit": 20,
             }
         )
         pages = (search_payload.get("query") or {}).get("pages") or {}
@@ -52,6 +53,17 @@ class WikimediaCommonsProvider:
             author = (metadata.get("Artist") or {}).get("value") or "Wikimedia Commons contributor"
             author = _strip_html(author)
             page_title = title.replace("File:", "", 1)
+            description = _metadata_value(metadata, "ImageDescription") or _metadata_value(metadata, "ObjectName")
+            categories = tuple(
+                category.get("title", "").replace("Category:", "", 1)
+                for category in page.get("categories") or []
+                if category.get("title")
+            )
+            commons_metadata = {
+                key: _strip_html(value.get("value", ""))
+                for key, value in metadata.items()
+                if isinstance(value, dict) and value.get("value")
+            }
             source_url = COMMONS_FILE_URL + page_title.replace(" ", "_")
             yield DiagramCandidate(
                 provider=self.name,
@@ -64,7 +76,14 @@ class WikimediaCommonsProvider:
                 mime_type=mime_type,
                 width=_safe_int(imageinfo.get("thumbwidth") or imageinfo.get("width")),
                 height=_safe_int(imageinfo.get("thumbheight") or imageinfo.get("height")),
+                description=_strip_html(description),
+                categories=categories,
+                commons_metadata=commons_metadata,
             )
+
+
+def _metadata_value(metadata, key):
+    return (metadata.get(key) or {}).get("value") or ""
 
 
 def _strip_html(value):

@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 SUPPORTED_LICENSE_KEYWORDS = (
@@ -34,6 +34,9 @@ class DiagramCandidate:
     mime_type: str
     width: int = 0
     height: int = 0
+    description: str = ""
+    categories: tuple = ()
+    commons_metadata: dict = field(default_factory=dict)
 
 
 def reusable_license(license_text):

@@ -1,4 +1,5 @@
 import re
+from urllib.parse import unquote, urlsplit
 
 
 BAD_RESULT_TERMS = (
@@ -131,6 +132,66 @@ EDUCATIONAL_TERMS = (
     "illustration",
 )
 
+BROAD_TOPIC_PROFILES = {
+    "cell division": {
+        "preferred": (
+            "cell division",
+            "mitosis",
+            "meiosis",
+            "chromosome",
+            "chromosomes",
+            "cytokinesis",
+            "stages of mitosis",
+            "mitotic phase",
+            "metaphase",
+            "anaphase",
+            "telophase",
+            "prophase",
+            "interphase",
+        ),
+        "specialized": (
+            "fungal",
+            "fungus",
+            "fungi",
+            "yeast",
+            "basidiomycete",
+            "basidiomycetes",
+            "dikaryotic",
+            "dikaryon",
+            "bacterial",
+            "bacteria",
+            "archaeal",
+            "archaea",
+            "species specific",
+            "life cycle",
+            "saccharomyces",
+            "schizosaccharomyces",
+            "aspergillus",
+            "neurospora",
+        ),
+    }
+}
+
+BIOLOGY_SPECIALIZED_CASE_TERMS = (
+    "fungal",
+    "fungus",
+    "fungi",
+    "yeast",
+    "basidiomycete",
+    "dikaryotic",
+    "bacterial",
+    "archaeal",
+    "species specific",
+)
+
+FIELD_WEIGHTS = {
+    "title": 8,
+    "filename": 7,
+    "description": 5,
+    "categories": 4,
+    "metadata": 2,
+}
+
 
 def build_search_queries(subject="", topic="", student_class="", book_name="", visualization_type=""):
     subject = str(subject or "").strip()
@@ -195,7 +256,8 @@ def candidate_rank_score(candidate, topic="", subject="", visualization_type="")
     image_url = str(getattr(candidate, "image_url", "") or "")
     source_url = str(getattr(candidate, "source_url", "") or "")
     mime_type = str(getattr(candidate, "mime_type", "") or "").lower()
-    haystack = " ".join([title, image_url, source_url]).lower()
+    text_fields = _candidate_text_fields(candidate)
+    haystack = " ".join(text_fields.values()).lower()
     score = 0
 
     if _has_non_latin_script(haystack) or _has_non_english_language_marker(haystack):
@@ -205,6 +267,7 @@ def candidate_rank_score(candidate, topic="", subject="", visualization_type="")
     elif _looks_english_or_language_neutral(title):
         score += 45
 
+    score += _semantic_relevance_score(candidate, topic, subject)
     score += _topic_relevance_score(title, topic)
     score += _educational_style_score(haystack)
     score += _format_score(mime_type)
@@ -218,13 +281,7 @@ def candidate_rank_score(candidate, topic="", subject="", visualization_type="")
 
 
 def candidate_language_category(candidate):
-    haystack = " ".join(
-        [
-            str(getattr(candidate, "title", "") or ""),
-            str(getattr(candidate, "image_url", "") or ""),
-            str(getattr(candidate, "source_url", "") or ""),
-        ]
-    ).lower()
+    haystack = " ".join(_candidate_text_fields(candidate).values()).lower()
     if _has_non_latin_script(haystack) or _has_non_english_language_marker(haystack):
         return "non_english"
     if _has_english_language_marker(haystack) or _looks_english_or_language_neutral(getattr(candidate, "title", "")):
@@ -267,6 +324,133 @@ def _topic_relevance_score(title, topic):
         return 0
     matches = sum(1 for word in topic_words if word in title_words)
     return min(35, matches * 12)
+
+
+def _semantic_relevance_score(candidate, topic, subject=""):
+    topic_text = _normalize_text(topic)
+    if not topic_text:
+        return 0
+
+    fields = _candidate_text_fields(candidate)
+    normalized_fields = {name: _normalize_text(value) for name, value in fields.items()}
+    score = 0
+
+    score += _weighted_phrase_score(topic_text, normalized_fields, base=12, cap=110)
+    score += _topic_word_coverage_score(topic_text, normalized_fields)
+
+    profile = _topic_profile(topic_text)
+    preferred_hits = 0
+    if profile:
+        for term in profile["preferred"]:
+            term_score = _weighted_phrase_score(term, normalized_fields, base=7, cap=70)
+            if term_score:
+                preferred_hits += 1
+                score += term_score
+
+        for term in profile["specialized"]:
+            score -= _weighted_phrase_score(term, normalized_fields, base=7, cap=90)
+
+        if preferred_hits and _has_educational_match(normalized_fields):
+            score += 35
+        if preferred_hits >= 2:
+            score += 20
+        if _has_general_school_diagram_match(normalized_fields):
+            score += 16
+
+    if _is_broad_school_biology_topic(topic_text, subject):
+        for term in BIOLOGY_SPECIALIZED_CASE_TERMS:
+            score -= _weighted_phrase_score(term, normalized_fields, base=4, cap=44)
+
+    return score
+
+
+def _candidate_text_fields(candidate):
+    title = str(getattr(candidate, "title", "") or "")
+    image_url = str(getattr(candidate, "image_url", "") or "")
+    source_url = str(getattr(candidate, "source_url", "") or "")
+    description = str(getattr(candidate, "description", "") or "")
+    categories = " ".join(str(category or "") for category in getattr(candidate, "categories", ()) or ())
+    metadata = getattr(candidate, "commons_metadata", {}) or {}
+    if isinstance(metadata, dict):
+        metadata_text = " ".join(str(value or "") for value in metadata.values())
+    else:
+        metadata_text = str(metadata or "")
+    return {
+        "title": title,
+        "filename": _candidate_filename(title, image_url, source_url),
+        "description": description,
+        "categories": categories,
+        "metadata": metadata_text,
+    }
+
+
+def _candidate_filename(title, image_url, source_url):
+    for value in (image_url, source_url, title):
+        parsed_path = urlsplit(str(value or "")).path
+        filename = unquote(parsed_path.rsplit("/", 1)[-1] or str(value or ""))
+        filename = filename.replace("File:", "")
+        if filename:
+            return filename
+    return ""
+
+
+def _normalize_text(value):
+    normalized = unquote(str(value or "").lower())
+    normalized = re.sub(r"<[^>]+>", " ", normalized)
+    normalized = re.sub(r"[_+/|:;.,()[\]{}-]+", " ", normalized)
+    normalized = re.sub(r"\s+", " ", normalized)
+    return normalized.strip()
+
+
+def _weighted_phrase_score(phrase, normalized_fields, *, base, cap):
+    normalized_phrase = _normalize_text(phrase)
+    if not normalized_phrase:
+        return 0
+    score = 0
+    pattern = rf"\b{re.escape(normalized_phrase)}s?\b"
+    for field_name, field_value in normalized_fields.items():
+        if re.search(pattern, field_value):
+            score += base * FIELD_WEIGHTS.get(field_name, 1)
+    return min(cap, score)
+
+
+def _topic_word_coverage_score(topic_text, normalized_fields):
+    words = [word for word in re.findall(r"[a-z0-9]+", topic_text) if len(word) > 2]
+    if not words:
+        return 0
+    all_text = " ".join(normalized_fields.values())
+    matches = sum(1 for word in words if re.search(rf"\b{re.escape(word)}s?\b", all_text))
+    score = matches * 14
+    if matches == len(words):
+        score += 28
+    return min(score, 70)
+
+
+def _topic_profile(topic_text):
+    for topic_key, profile in BROAD_TOPIC_PROFILES.items():
+        if topic_key in topic_text or topic_text in topic_key:
+            return profile
+    return None
+
+
+def _has_educational_match(normalized_fields):
+    all_text = " ".join(normalized_fields.values())
+    return any(term in all_text for term in EDUCATIONAL_TERMS)
+
+
+def _has_general_school_diagram_match(normalized_fields):
+    all_text = " ".join([normalized_fields["title"], normalized_fields["filename"], normalized_fields["description"]])
+    return any(
+        term in all_text
+        for term in ("diagram", "labelled", "labeled", "overview", "stages", "process", "educational")
+    )
+
+
+def _is_broad_school_biology_topic(topic_text, subject):
+    subject_text = _normalize_text(subject)
+    if "biology" not in subject_text and not any(term in topic_text for term in ("cell", "mitosis", "meiosis")):
+        return False
+    return _topic_profile(topic_text) is not None
 
 
 def _educational_style_score(value):

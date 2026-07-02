@@ -383,7 +383,16 @@ Q5. What is question five?
         self.assertEqual(license_text, "CC BY 4.0")
         self.assertIn("Commons Author", attribution)
 
-    def diagram_candidate(self, title, mime_type="image/svg+xml", width=1200, height=900):
+    def diagram_candidate(
+        self,
+        title,
+        mime_type="image/svg+xml",
+        width=1200,
+        height=900,
+        description="",
+        categories=(),
+        commons_metadata=None,
+    ):
         return DiagramCandidate(
             provider="Wikimedia Commons",
             title=title,
@@ -395,6 +404,9 @@ Q5. What is question five?
             mime_type=mime_type,
             width=width,
             height=height,
+            description=description,
+            categories=categories,
+            commons_metadata=commons_metadata or {},
         )
 
     def test_diagram_ranking_prefers_english_result_over_arabic(self):
@@ -426,6 +438,59 @@ Q5. What is question five?
         self.assertEqual([candidate.title for candidate in ranked], [arabic.title, russian.title])
         self.assertTrue(all(candidate_language_category(candidate) == "non_english" for candidate in ranked))
 
+    def test_diagram_ranking_prefers_cell_division_mitosis_over_specialized_fungal_cycle(self):
+        fungal = self.diagram_candidate(
+            "Fungal Cell Cycle - Dikaryotic Basidiomycete.svg",
+            width=2200,
+            height=1500,
+            description="Life cycle diagram of dikaryotic fungal cells in a basidiomycete species.",
+            categories=("Fungal life cycles", "Basidiomycetes", "Species-specific biology diagrams"),
+            commons_metadata={
+                "ObjectName": "Fungal cell cycle",
+                "ImageDescription": "Specialized fungal cell cycle diagram showing dikaryotic stages.",
+            },
+        )
+        mitosis = self.diagram_candidate(
+            "Stages of mitosis cell division diagram English.svg",
+            width=900,
+            height=650,
+            description="Educational diagram of cell division showing prophase, metaphase, anaphase, telophase, chromosomes, and cytokinesis.",
+            categories=("Mitosis diagrams", "Cell division", "Biology education"),
+            commons_metadata={
+                "ObjectName": "Stages of mitosis",
+                "ImageDescription": "General school biology diagram for cell division and chromosome separation.",
+            },
+        )
+
+        ranked = rank_diagram_candidates([fungal, mitosis], topic="Cell Division", subject="Biology")
+
+        self.assertEqual(ranked[0].title, mitosis.title)
+
+    def test_diagram_ranking_uses_commons_metadata_for_cell_division_relevance(self):
+        fungal = self.diagram_candidate(
+            "Cell cycle diagram English.svg",
+            width=1600,
+            height=1200,
+            description="Dikaryotic basidiomycete fungal cell cycle.",
+            categories=("Fungi", "Basidiomycete biology"),
+            commons_metadata={"ImageDescription": "Specialized fungal biology example."},
+        )
+        mitosis = self.diagram_candidate(
+            "Chromosome separation educational illustration.png",
+            mime_type="image/png",
+            width=1000,
+            height=700,
+            description="General cell division classroom diagram.",
+            categories=("Biology education",),
+            commons_metadata={
+                "ImageDescription": "Mitosis diagram with chromosomes, cytokinesis, and stages of mitosis."
+            },
+        )
+
+        ranked = rank_diagram_candidates([fungal, mitosis], topic="Cell Division", subject="Biology")
+
+        self.assertEqual(ranked[0].title, mitosis.title)
+
     def test_diagram_service_downloads_ranked_english_candidate_first(self):
         stored_relative = self.write_test_diagram("ranked-english.png")
         stored_path = Path(app_module.app.static_folder) / stored_relative
@@ -455,6 +520,47 @@ Q5. What is question five?
 
         self.assertEqual(downloaded_titles, [english.title])
         self.assertIn(english.title, saved_title)
+
+    def test_diagram_service_downloads_cell_division_mitosis_before_fungal_cycle(self):
+        stored_relative = self.write_test_diagram("ranked-cell-division.png")
+        stored_path = Path(app_module.app.static_folder) / stored_relative
+        fungal = self.diagram_candidate(
+            "Fungal Cell Cycle - Dikaryotic Basidiomycete.svg",
+            width=2200,
+            height=1500,
+            description="Life cycle diagram of dikaryotic fungal cells in a basidiomycete species.",
+            categories=("Fungal life cycles", "Basidiomycetes", "Species-specific biology diagrams"),
+        )
+        mitosis = self.diagram_candidate(
+            "Mitosis cell division chromosomes diagram English.svg",
+            width=900,
+            height=650,
+            description="General educational cell division diagram showing mitosis, chromosomes, and cytokinesis.",
+            categories=("Mitosis diagrams", "Cell division", "Biology education"),
+        )
+
+        class FakeRegistry:
+            def search(self, queries, limit_per_query=8):
+                return [fungal, mitosis]
+
+        downloaded_titles = []
+
+        def fake_download(candidate, cache_dir, topic):
+            downloaded_titles.append(candidate.title)
+            return stored_path
+
+        with patch("diagram_library.service.download_and_store", side_effect=fake_download):
+            with app_module.app.app_context():
+                diagram = get_or_create_diagram(
+                    lesson_id=1,
+                    subject="Biology",
+                    topic="Cell Division",
+                    static_folder=app_module.app.static_folder,
+                    provider_registry=FakeRegistry(),
+                )
+
+        self.assertIsNotNone(diagram)
+        self.assertEqual(downloaded_titles, [mitosis.title])
 
     def test_wikimedia_svg_thumbnail_is_saved_with_actual_png_extension(self):
         class FakeDownloadResponse:
@@ -542,12 +648,16 @@ Q5. What is question five?
         self.assertIn(".dark-mode .diagram-library-image-shell", css)
         self.assertIn(".exhibition-mode .diagram-library-figure", css)
         self.assertIn(".diagram-lightbox", css)
+        self.assertIn(".diagram-explanation-card", css)
         self.assertNotIn("scale(1.18)", css)
         self.assertIn("data-diagram-zoom", script)
         self.assertIn("data-diagram-lightbox", script)
+        self.assertIn("data-diagram-explanation-panel", script)
+        self.assertIn("Step-by-Step Explanation", script)
         self.assertIn("diagram-lightbox-open", script)
         self.assertIn("is-fullscreen", script)
         self.assertIn("data-diagram-lightbox", template)
+        self.assertIn("data-diagram-explanation-panel", template)
         self.assertNotIn("style=\"", template)
 
     @patch.object(app_module.model, "generate_content")
@@ -3566,6 +3676,121 @@ Q5. What is question five?
         self.assertTrue(pdf_response.data.startswith(b"%PDF"))
         self.assertIn(b"Diagram Author", pdf_response.data)
         self.assertIn(b"CC BY-SA 4.0", pdf_response.data)
+
+    @patch.object(app_module, "generate_content_with_fallback")
+    def test_diagram_explanation_generates_once_and_reuses_saved_json(self, generate_content):
+        self.register_user()
+        self.login_user()
+        with app_module.app.app_context():
+            lesson_id = app_module.save_learning_history(
+                1,
+                "Biology",
+                "NCERT",
+                "Mitosis",
+                "# Mitosis\nCells divide.",
+                {
+                    "available": True,
+                    "visualization_required": True,
+                    "visualization_type": "biology_process",
+                    "type": "scientific_process",
+                    "title": "Stages of Mitosis",
+                    "labels": ["Prophase", "Metaphase", "Anaphase", "Telophase"],
+                    "reason": "Stages are easier to understand visually.",
+                    "confidence": 0.95,
+                },
+                self.questions,
+            )
+        self.seed_cached_diagram(
+            lesson_id=lesson_id,
+            subject="Biology",
+            topic="Mitosis",
+            filename="mitosis-explanation.png",
+        )
+        generate_content.return_value = MockResponse(
+            json.dumps(
+                {
+                    "summary": "This diagram shows the main stages of mitosis.",
+                    "steps": [{"title": "Prophase", "body": "Chromosomes condense."}],
+                    "labels": [{"title": "Chromosome", "body": "Stores genetic information."}],
+                    "key_points": [
+                        "Mitosis helps growth.",
+                        "It makes two daughter cells.",
+                        "DNA is copied before division.",
+                        "The chromosome number remains same.",
+                    ],
+                    "exam_tip": "Remember PMAT for the order of stages.",
+                    "related_topics": ["Meiosis", "Cell Cycle", "Chromosomes"],
+                }
+            )
+        )
+
+        first_response = self.client.get(f"/learning-history/{lesson_id}/diagram-explanation")
+        second_response = self.client.get(f"/learning-history/{lesson_id}/diagram-explanation")
+
+        self.assertEqual(first_response.status_code, 200)
+        self.assertEqual(second_response.status_code, 200)
+        self.assertFalse(first_response.get_json()["cached"])
+        self.assertTrue(second_response.get_json()["cached"])
+        self.assertEqual(generate_content.call_count, 1)
+        prompt = generate_content.call_args.args[0]
+        self.assertIn("Use simple NCERT textbook language.", prompt)
+        self.assertIn("Do not use OCR", prompt)
+        self.assertIn("Diagram metadata", prompt)
+        with app_module.app.app_context():
+            lesson = db.session.get(LearningHistory, lesson_id)
+            saved_explanation = json.loads(lesson.diagram_explanation)
+        self.assertEqual(saved_explanation["exam_tip"], "Remember PMAT for the order of stages.")
+
+    @patch.object(app_module, "generate_content_with_fallback")
+    def test_saved_lesson_renders_cached_diagram_explanation_payload(self, generate_content):
+        self.register_user()
+        self.login_user()
+        cached_explanation = {
+            "summary": "This diagram explains photosynthesis in simple textbook language.",
+            "steps": [{"title": "Sunlight", "body": "Light energy helps leaves make food."}],
+            "labels": [{"title": "Leaf", "body": "The main site of photosynthesis."}],
+            "key_points": ["Plants make food.", "Oxygen is released."],
+            "exam_tip": "Write the word equation clearly.",
+            "related_topics": ["Plant Cell", "Stomata"],
+        }
+        with app_module.app.app_context():
+            lesson_id = app_module.save_learning_history(
+                1,
+                "Biology",
+                "NCERT",
+                "Photosynthesis",
+                "# Photosynthesis\nPlants make food.",
+                {
+                    "available": True,
+                    "visualization_required": True,
+                    "visualization_type": "biology_process",
+                    "type": "scientific_process",
+                    "title": "Photosynthesis",
+                    "labels": ["Leaf", "Sunlight"],
+                    "reason": "This biological process is easier to understand visually.",
+                    "confidence": 0.96,
+                },
+                self.questions,
+            )
+            lesson = db.session.get(LearningHistory, lesson_id)
+            lesson.diagram_explanation = json.dumps(cached_explanation)
+            db.session.commit()
+        self.seed_cached_diagram(
+            lesson_id=lesson_id,
+            subject="Biology",
+            topic="Photosynthesis",
+            filename="photosynthesis-explanation.png",
+        )
+
+        detail_response = self.client.get(f"/learning-history/{lesson_id}")
+
+        self.assertEqual(detail_response.status_code, 200)
+        detail_page = detail_response.get_data(as_text=True)
+        self.assertIn("data-diagram-explanation-panel", detail_page)
+        self.assertIn("data-diagram-explanation-json", detail_page)
+        self.assertIn("This diagram explains photosynthesis", detail_page)
+        self.assertIn('data-lesson-subject="Biology"', detail_page)
+        generate_content.assert_not_called()
 
     @patch.object(app_module.model, "generate_content")
     def test_existing_visualization_records_continue_working(self, generate_content):
