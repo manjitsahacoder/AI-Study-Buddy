@@ -4,9 +4,9 @@
     max-width: 100%;
     overflow: hidden;
     border: 1px solid var(--line);
-    border-radius: 8px;
-    background: rgba(255, 255, 255, 0.94);
-    box-shadow: 0 14px 34px rgba(15, 23, 42, 0.08);
+    border-radius: var(--card-radius, 8px);
+    background: var(--surface);
+    box-shadow: var(--soft-shadow);
 }
 
 .visualization-header {
@@ -28,9 +28,9 @@
     min-height: 34px;
     padding: 8px 12px;
     border: 1px solid rgba(49, 87, 213, 0.22);
-    border-radius: 8px;
-    color: #203a8f;
-    background: rgba(49, 87, 213, 0.08);
+    border-radius: var(--radius-pill, 999px);
+    color: var(--primary);
+    background: var(--color-primary-soft, rgba(49, 87, 213, 0.08));
     font-weight: 850;
     white-space: nowrap;
 }
@@ -45,8 +45,8 @@
 .visualization-insights div {
     margin: 0;
     padding: 12px;
-    border: 1px solid rgba(100, 116, 139, 0.16);
-    border-radius: 8px;
+    border: 1px solid var(--line);
+    border-radius: var(--card-radius, 8px);
     background: rgba(248, 250, 252, 0.82);
 }
 
@@ -87,11 +87,11 @@
     width: 100%;
     height: clamp(320px, 52vw, 620px);
     overflow: hidden;
-    border: 1px solid rgba(100, 116, 139, 0.18);
-    border-radius: 8px;
+    border: 1px solid var(--line);
+    border-radius: var(--card-radius, 8px);
     background:
-        linear-gradient(135deg, rgba(49, 87, 213, 0.08), rgba(28, 184, 154, 0.08)),
-        #f8fafc;
+        linear-gradient(135deg, var(--color-primary-soft, rgba(49, 87, 213, 0.08)), var(--color-secondary-soft, rgba(4, 125, 135, 0.08))),
+        var(--surface-strong);
 }
 
 .diagram-library-image-shell::before {
@@ -120,7 +120,7 @@
     cursor: zoom-in;
     opacity: 0;
     transform: translateZ(0);
-    transition: opacity 180ms ease, transform 180ms ease;
+    transition: opacity var(--transition-base, 220ms ease), transform var(--transition-base, 220ms ease);
 }
 
 .diagram-library-image.is-loaded {
@@ -139,7 +139,7 @@
     grid-template-rows: auto auto 1fr;
     overflow: auto;
     margin: 0;
-    background: #ffffff;
+    background: var(--surface-strong);
 }
 
 .visualization-card.is-fullscreen .diagram-library-image-shell {
@@ -168,8 +168,8 @@
 .diagram-library-attribution span {
     min-width: 0;
     padding: 10px 12px;
-    border: 1px solid rgba(100, 116, 139, 0.16);
-    border-radius: 8px;
+    border: 1px solid var(--line);
+    border-radius: var(--card-radius, 8px);
     background: rgba(248, 250, 252, 0.76);
     overflow-wrap: anywhere;
 }
@@ -199,11 +199,11 @@
     justify-self: end;
     min-height: 42px;
     padding: 9px 14px;
-    border: 1px solid rgba(100, 116, 139, 0.22);
-    border-radius: 8px;
+    border: 1px solid var(--line);
+    border-radius: var(--control-radius, 8px);
     color: var(--ink);
-    background: #ffffff;
-    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
+    background: var(--surface-strong);
+    box-shadow: var(--soft-shadow);
     font-weight: 850;
 }
 
@@ -212,11 +212,11 @@
     display: block;
     min-height: 0;
     overflow: auto;
-    border: 1px solid rgba(100, 116, 139, 0.18);
-    border-radius: 8px;
+    border: 1px solid var(--line);
+    border-radius: var(--card-radius, 8px);
     background:
-        linear-gradient(135deg, rgba(49, 87, 213, 0.07), rgba(28, 184, 154, 0.07)),
-        #ffffff;
+        linear-gradient(135deg, var(--color-primary-soft, rgba(49, 87, 213, 0.07)), var(--color-secondary-soft, rgba(4, 125, 135, 0.07))),
+        var(--surface-strong);
 }
 
 .diagram-lightbox-image {
@@ -242,10 +242,10 @@ body.diagram-lightbox-open {
     margin-top: 10px;
     padding: clamp(16px, 2.4vw, 22px);
     border: 1px solid rgba(49, 87, 213, 0.18);
-    border-radius: 8px;
+    border-radius: var(--card-radius, 8px);
     background:
-        linear-gradient(135deg, rgba(49, 87, 213, 0.1), rgba(28, 184, 154, 0.08)),
-        rgba(248, 250, 252, 0.94);
+        linear-gradient(135deg, var(--color-primary-soft, rgba(49, 87, 213, 0.1)), var(--color-secondary-soft, rgba(4, 125, 135, 0.08))),
+        var(--surface);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
 }
 
@@ -255,11 +255,11 @@ body.diagram-lightbox-open {
     width: 46px;
     height: 46px;
     border: 1px solid rgba(49, 87, 213, 0.18);
-    border-radius: 8px;
-    color: #203a8f;
-    background: #ffffff;
+    border-radius: var(--radius-sm, 8px);
+    color: var(--primary);
+    background: var(--surface-strong);
     font-size: 1.25rem;
-    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+    box-shadow: var(--soft-shadow);
 }
 
 .visualization-info-card h3 {
@@ -291,7 +291,7 @@ body.diagram-lightbox-open {
 .diagram-learning-list li {
     padding: 7px 10px;
     border: 1px solid rgba(49, 87, 213, 0.16);
-    border-radius: 8px;
+    border-radius: var(--control-radius, 8px);
     color: var(--ink);
     background: rgba(255, 255, 255, 0.72);
     font-weight: 800;
@@ -308,25 +308,25 @@ body.diagram-lightbox-open {
 
 .dark-mode .visualization-card,
 .dark-mode .visualization-card.is-fullscreen {
-    background: rgba(21, 27, 41, 0.96);
+    background: var(--surface);
     border-color: var(--line);
 }
 
 .dark-mode .visualization-type-pill,
 .dark-mode .visualization-insights div,
 .dark-mode .diagram-library-attribution span {
-    background: rgba(134, 161, 255, 0.1);
+    background: var(--color-primary-soft, rgba(134, 161, 255, 0.1));
     border-color: rgba(134, 161, 255, 0.18);
 }
 
 .dark-mode .visualization-type-pill {
-    color: #b9c8ff;
+    color: var(--primary);
 }
 
 .dark-mode .diagram-library-image-shell {
     background:
-        linear-gradient(135deg, rgba(134, 161, 255, 0.12), rgba(45, 212, 191, 0.08)),
-        #0f172a;
+        linear-gradient(135deg, var(--color-primary-soft, rgba(134, 161, 255, 0.12)), var(--color-secondary-soft, rgba(92, 203, 211, 0.08))),
+        var(--surface-strong);
     border-color: var(--line);
 }
 
@@ -336,20 +336,20 @@ body.diagram-lightbox-open {
 
 .dark-mode .visualization-info-card {
     background:
-        linear-gradient(135deg, rgba(134, 161, 255, 0.13), rgba(45, 212, 191, 0.08)),
-        rgba(17, 24, 39, 0.72);
+        linear-gradient(135deg, var(--color-primary-soft, rgba(134, 161, 255, 0.13)), var(--color-secondary-soft, rgba(92, 203, 211, 0.08))),
+        var(--surface);
     border-color: rgba(134, 161, 255, 0.2);
 }
 
 .dark-mode .visualization-info-icon {
-    color: #b9c8ff;
-    background: rgba(15, 23, 42, 0.92);
+    color: var(--primary);
+    background: var(--surface-strong);
     border-color: rgba(134, 161, 255, 0.22);
 }
 
 .dark-mode .diagram-learning-list li {
     color: var(--ink);
-    background: rgba(134, 161, 255, 0.1);
+    background: var(--color-primary-soft, rgba(134, 161, 255, 0.1));
     border-color: rgba(134, 161, 255, 0.18);
 }
 
@@ -359,14 +359,14 @@ body.diagram-lightbox-open {
 
 .dark-mode .diagram-lightbox-close {
     color: var(--ink);
-    background: rgba(21, 27, 41, 0.98);
+    background: var(--surface);
     border-color: rgba(134, 161, 255, 0.22);
 }
 
 .dark-mode .diagram-lightbox-stage {
     background:
-        linear-gradient(135deg, rgba(134, 161, 255, 0.12), rgba(45, 212, 191, 0.08)),
-        #0f172a;
+        linear-gradient(135deg, var(--color-primary-soft, rgba(134, 161, 255, 0.12)), var(--color-secondary-soft, rgba(92, 203, 211, 0.08))),
+        var(--surface-strong);
     border-color: var(--line);
 }
 

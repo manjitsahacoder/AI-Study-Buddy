@@ -1,19 +1,77 @@
 :root {
-    --bg: #f7f4ee;
-    --surface: #fffdf8;
-    --surface-strong: #ffffff;
-    --ink: #172033;
-    --muted: #667085;
-    --line: #e7dfd2;
-    --primary: #3157d5;
-    --primary-dark: #2443a5;
-    --teal: #047d87;
-    --coral: #c4553f;
-    --amber: #a96d13;
+    --color-primary: #3157d5;
+    --color-primary-hover: #2443a5;
+    --color-primary-soft: rgba(49, 87, 213, 0.09);
+    --color-secondary: #047d87;
+    --color-secondary-hover: #036a72;
+    --color-secondary-soft: rgba(4, 125, 135, 0.08);
+    --color-success: #1f7a4d;
+    --color-success-soft: rgba(31, 122, 77, 0.1);
+    --color-warning: #a96d13;
+    --color-warning-soft: rgba(169, 109, 19, 0.12);
+    --color-danger: #c4553f;
+    --color-danger-soft: rgba(196, 85, 63, 0.1);
+    --color-info: #2f6fed;
+    --color-info-soft: rgba(47, 111, 237, 0.12);
+    --color-background: #f7f4ee;
+    --color-surface: #fffdf8;
+    --color-surface-strong: #ffffff;
+    --color-border: #e7dfd2;
+    --color-text: #172033;
+    --color-text-muted: #667085;
+    --font-family-base: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, Arial, sans-serif;
+    --font-size-xs: 0.78rem;
+    --font-size-sm: 0.86rem;
+    --font-size-md: 0.94rem;
+    --font-size-base: 1rem;
+    --font-size-lg: 1.08rem;
+    --line-height-tight: 1.15;
+    --line-height-base: 1.6;
+    --line-height-loose: 1.7;
+    --font-weight-regular: 400;
+    --font-weight-medium: 700;
+    --font-weight-bold: 800;
+    --font-weight-strong: 900;
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 20px;
+    --space-6: 24px;
+    --space-7: 32px;
+    --space-8: 40px;
+    --space-9: 48px;
+    --radius-sm: 8px;
+    --radius-md: 10px;
+    --radius-lg: 12px;
+    --radius-pill: 999px;
+    --shadow-sm: 0 6px 18px rgba(30, 40, 58, 0.08);
+    --shadow-md: 0 8px 24px rgba(30, 40, 58, 0.09);
+    --shadow-lg: 0 18px 45px rgba(30, 40, 58, 0.12);
+    --shadow-xl: 0 24px 64px rgba(30, 40, 58, 0.16);
+    --focus-ring: 0 0 0 4px rgba(49, 87, 213, 0.16);
+    --transition-fast: 160ms ease;
+    --transition-base: 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    --transition-slow: 360ms cubic-bezier(0.2, 0.8, 0.2, 1);
+    --bg: var(--color-background);
+    --surface: var(--color-surface);
+    --surface-strong: var(--color-surface-strong);
+    --ink: var(--color-text);
+    --muted: var(--color-text-muted);
+    --line: var(--color-border);
+    --primary: var(--color-primary);
+    --primary-dark: var(--color-primary-hover);
+    --teal: var(--color-secondary);
+    --coral: var(--color-danger);
+    --amber: var(--color-warning);
     --gold: #bd8a20;
-    --green: #1f7a4d;
-    --shadow: 0 18px 45px rgba(30, 40, 58, 0.12);
-    --soft-shadow: 0 8px 24px rgba(30, 40, 58, 0.09);
+    --green: var(--color-success);
+    --shadow: var(--shadow-lg);
+    --soft-shadow: var(--shadow-md);
+    --card-radius: var(--radius-sm);
+    --control-radius: var(--radius-sm);
+    --ease-premium: cubic-bezier(0.2, 0.8, 0.2, 1);
+    --lift-shadow: var(--shadow-xl);
 }
 
 * {
@@ -27,7 +85,7 @@ html {
 body {
     margin: 0;
     min-height: 100vh;
-    font-family: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, Arial, sans-serif;
+    font-family: var(--font-family-base);
     color: var(--ink);
     background:
         linear-gradient(180deg, rgba(255, 253, 248, 0.92), rgba(247, 244, 238, 0.98)),
@@ -361,7 +419,7 @@ body.home-page #theme-toggle:hover {
     max-width: 260px;
     padding: 10px 14px;
     border: 1px solid rgba(49, 87, 213, 0.22);
-    border-radius: 18px;
+    border-radius: var(--control-radius);
     color: var(--primary);
     background: rgba(255, 253, 248, 0.9);
     box-shadow: 0 12px 26px rgba(49, 87, 213, 0.15);
@@ -425,7 +483,7 @@ body.home-page #theme-toggle:hover {
     overscroll-behavior: contain;
     padding: 10px;
     border: 1px solid rgba(231, 223, 210, 0.96);
-    border-radius: 16px;
+    border-radius: var(--radius-lg);
     background: rgba(255, 253, 248, 0.98);
     box-shadow: 0 24px 55px rgba(30, 40, 58, 0.18);
     opacity: 0;
@@ -457,7 +515,7 @@ body.home-page #theme-toggle:hover {
     gap: 10px;
     min-height: 42px;
     padding: 9px 10px;
-    border-radius: 10px;
+    border-radius: var(--control-radius);
     color: var(--ink);
     font-size: 0.95rem;
     font-weight: 800;
@@ -2388,7 +2446,7 @@ body.dashboard-page #theme-toggle {
     place-items: center;
     width: 48px;
     height: 48px;
-    border-radius: 12px;
+    border-radius: var(--radius-lg);
     color: #ffffff;
     background: var(--teal);
     box-shadow: var(--soft-shadow);
@@ -2435,7 +2493,7 @@ body.dashboard-page #theme-toggle {
     min-width: 0;
     padding: 12px;
     border: 1px solid rgba(49, 87, 213, 0.13);
-    border-radius: 12px;
+    border-radius: var(--radius-lg);
     color: var(--muted);
     background: rgba(49, 87, 213, 0.06);
     font-size: 0.86rem;
@@ -3948,7 +4006,7 @@ body.dashboard-page #theme-toggle {
     min-height: clamp(300px, 42vh, 430px);
     padding: clamp(24px, 5vw, 46px);
     border: 1px solid rgba(49, 87, 213, 0.2);
-    border-radius: 18px;
+    border-radius: var(--radius-lg);
     color: var(--ink);
     background:
         radial-gradient(circle at 12% 10%, rgba(49, 87, 213, 0.13), transparent 32%),
@@ -5808,10 +5866,10 @@ footer p {
 
 /* Premium UI polish layer */
 :root {
-    --card-radius: 14px;
-    --control-radius: 12px;
+    --card-radius: var(--radius-sm);
+    --control-radius: var(--radius-sm);
     --ease-premium: cubic-bezier(0.2, 0.8, 0.2, 1);
-    --lift-shadow: 0 22px 54px rgba(30, 40, 58, 0.14);
+    --lift-shadow: var(--shadow-xl);
     --focus-ring: 0 0 0 4px rgba(49, 87, 213, 0.16);
     --success-delay: 0ms;
 }
@@ -5961,7 +6019,7 @@ footer {
 .learning-card-icon,
 .achievement-badge span,
 .insight-card span {
-    border-radius: 12px;
+    border-radius: var(--radius-lg);
 }
 
 .dashboard-topbar,
@@ -6264,7 +6322,7 @@ textarea:focus {
     margin: -4px -4px 12px;
     padding: 12px;
     border: 1px solid rgba(49, 87, 213, 0.12);
-    border-radius: 14px;
+    border-radius: var(--card-radius);
     background: rgba(49, 87, 213, 0.05);
 }
 
@@ -6398,7 +6456,7 @@ textarea:focus {
     height: 54px;
     margin-bottom: 12px;
     border: 1px solid rgba(49, 87, 213, 0.18);
-    border-radius: 18px;
+    border-radius: var(--radius-lg);
     color: var(--primary);
     background:
         linear-gradient(var(--primary), var(--primary)) center / 22px 3px no-repeat,
@@ -6442,7 +6500,7 @@ textarea:focus {
     max-width: min(430px, calc(100vw - 36px));
     padding: 12px;
     border: 1px solid rgba(49, 87, 213, 0.2);
-    border-radius: 16px;
+    border-radius: var(--radius-lg);
     background: rgba(255, 253, 248, 0.94);
     box-shadow: 0 18px 44px rgba(30, 40, 58, 0.18);
     backdrop-filter: blur(16px);
@@ -6564,7 +6622,7 @@ textarea:focus {
     place-items: center;
     width: 44px;
     height: 44px;
-    border-radius: 12px;
+    border-radius: var(--radius-lg);
     color: #ffffff;
     background: var(--primary);
     font-weight: 900;
@@ -6623,7 +6681,7 @@ textarea:focus {
     min-height: 48px;
     padding: 8px 10px;
     border: 1px solid transparent;
-    border-radius: 12px;
+    border-radius: var(--radius-lg);
     color: var(--muted);
     text-decoration: none;
     background: rgba(49, 87, 213, 0.05);
@@ -6781,7 +6839,7 @@ textarea:focus {
     right: 14px;
     top: 58px;
     height: 74px;
-    border-radius: 14px;
+    border-radius: var(--radius-lg);
     background:
         linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.65), transparent),
         repeating-linear-gradient(
@@ -6823,11 +6881,11 @@ textarea:focus {
 }
 
 .tutor-message {
-    border-radius: 16px 16px 16px 6px;
+    border-radius: var(--radius-lg) var(--radius-lg) var(--radius-lg) var(--space-2);
 }
 
 .student .tutor-message {
-    border-radius: 16px 16px 6px 16px;
+    border-radius: var(--radius-lg) var(--radius-lg) var(--space-2) var(--radius-lg);
     background: linear-gradient(135deg, var(--primary), #4d76f5);
 }
 
@@ -6847,7 +6905,7 @@ textarea:focus {
     margin-top: 16px;
     padding: 14px;
     border: 1px solid rgba(4, 125, 135, 0.18);
-    border-radius: 14px;
+    border-radius: var(--card-radius);
     background: rgba(4, 125, 135, 0.06);
 }
 
@@ -6928,7 +6986,7 @@ textarea:focus {
 
 .performance-chart-card canvas {
     padding: 8px;
-    border-radius: 14px;
+    border-radius: var(--card-radius);
     background: rgba(255, 255, 255, 0.5);
 }
 
@@ -6989,21 +7047,46 @@ textarea:focus {
 }
 
 .dark-mode {
-    --bg: #10141f;
-    --surface: #151b29;
-    --surface-strong: #1c2435;
-    --ink: #f6f8fb;
-    --muted: #b8c0cf;
-    --line: #2b3548;
-    --primary: #86a1ff;
-    --primary-dark: #a0b4ff;
-    --teal: #5ccbd3;
-    --coral: #ff9d84;
-    --amber: #f0b35f;
+    --color-primary: #86a1ff;
+    --color-primary-hover: #a0b4ff;
+    --color-primary-soft: rgba(134, 161, 255, 0.12);
+    --color-secondary: #5ccbd3;
+    --color-secondary-hover: #7edbe1;
+    --color-secondary-soft: rgba(92, 203, 211, 0.1);
+    --color-success: #6ed59b;
+    --color-success-soft: rgba(110, 213, 155, 0.14);
+    --color-warning: #f0b35f;
+    --color-warning-soft: rgba(240, 179, 95, 0.14);
+    --color-danger: #ff9d84;
+    --color-danger-soft: rgba(255, 157, 132, 0.14);
+    --color-info: #93c5fd;
+    --color-info-soft: rgba(147, 197, 253, 0.14);
+    --color-background: #10141f;
+    --color-surface: #151b29;
+    --color-surface-strong: #1c2435;
+    --color-border: #2b3548;
+    --color-text: #f6f8fb;
+    --color-text-muted: #b8c0cf;
+    --shadow-sm: 0 6px 18px rgba(0, 0, 0, 0.2);
+    --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.24);
+    --shadow-lg: 0 18px 45px rgba(0, 0, 0, 0.34);
+    --shadow-xl: 0 24px 64px rgba(0, 0, 0, 0.42);
+    --bg: var(--color-background);
+    --surface: var(--color-surface);
+    --surface-strong: var(--color-surface-strong);
+    --ink: var(--color-text);
+    --muted: var(--color-text-muted);
+    --line: var(--color-border);
+    --primary: var(--color-primary);
+    --primary-dark: var(--color-primary-hover);
+    --teal: var(--color-secondary);
+    --coral: var(--color-danger);
+    --amber: var(--color-warning);
     --gold: #ffd166;
-    --green: #6ed59b;
-    --shadow: 0 18px 45px rgba(0, 0, 0, 0.34);
-    --soft-shadow: 0 8px 24px rgba(0, 0, 0, 0.24);
+    --green: var(--color-success);
+    --shadow: var(--shadow-lg);
+    --soft-shadow: var(--shadow-md);
+    --lift-shadow: var(--shadow-xl);
     background:
         linear-gradient(180deg, rgba(16, 20, 31, 0.98), rgba(20, 25, 37, 0.98)),
         #10141f;
@@ -7844,6 +7927,518 @@ textarea:focus {
     box-shadow:
         0 0 0 4px rgba(134, 161, 255, 0.2),
         0 10px 24px rgba(0, 0, 0, 0.18);
+}
+
+/* Final design-system consistency layer */
+body {
+    font-size: var(--font-size-base);
+    line-height: var(--line-height-base);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+    color: var(--ink);
+    line-height: var(--line-height-tight);
+    letter-spacing: 0;
+}
+
+h1,
+h2,
+.dashboard-section-heading h2,
+.section-heading h2 {
+    font-weight: var(--font-weight-strong);
+}
+
+h3 {
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-bold);
+}
+
+p,
+li,
+dd,
+td {
+    line-height: var(--line-height-base);
+}
+
+p + p {
+    margin-top: var(--space-3);
+}
+
+:where(
+    .exhibition-header,
+    .welcome-card,
+    .account-motivation-card,
+    .guest-locked-card,
+    .project-team-card,
+    .about-card,
+    .learn-container,
+    .hero,
+    .study-form,
+    .feature-card,
+    .card,
+    .quiz-box,
+    .tip-box,
+    .diagram-card,
+    .profile-card,
+    .profile-future-card,
+    .settings-section-nav,
+    .settings-switch,
+    .delete-account-form,
+    .student-sidebar,
+    .dashboard-topbar,
+    .dashboard-panel,
+    .dashboard-stat-card,
+    .activity-card,
+    .performance-summary-card,
+    .performance-summary-grid div,
+    .performance-chart-card,
+    .subject-analysis-grid article,
+    .insight-card,
+    .history-tools,
+    .history-table-wrap,
+    .learning-history-card,
+    .learning-locked-panel,
+    .saved-quiz-card,
+    .achievement-badge,
+    .recommended-topic-card,
+    .locked-dashboard-card,
+    .rbac-status-list div,
+    .rbac-table-grid article,
+    .rbac-tool-card,
+    .developer-detail-grid article,
+    .score-card,
+    .recommendation-card,
+    .evaluation-card,
+    .answer-grid div,
+    .feedback-box,
+    .revision-tip,
+    .teacher-report-overview,
+    .teacher-report-card,
+    .continue-learning-section,
+    .learning-action-card,
+    .revision-tools-section,
+    .flashcards-header,
+    .flashcard-success-banner,
+    .flashcard-study-panel,
+    .memory-command-panel,
+    .memory-stats-grid article,
+    .memory-hud article,
+    .memory-empty-state,
+    .memory-completion-modal,
+    .revision-command-bar,
+    .revision-section-nav,
+    .revision-sheet-card,
+    .study-plan-preview-section,
+    .study-plan-card,
+    .study-plan-preview-card,
+    .study-plan-summary-card,
+    .study-plan-task,
+    .mindmap-toolbar,
+    .mindmap-stage,
+    .tutor-header,
+    .tutor-chat-panel,
+    .tutor-lesson-strip span,
+    .tutor-message,
+    .tutor-composer,
+    .locked-modal,
+    .page-transition-card,
+    .pwa-install-banner,
+    .exhibition-toolbar,
+    .exhibition-welcome-screen,
+    .exhibition-demo-panel,
+    .exhibition-flow-ribbon,
+    .exhibition-tour-card
+) {
+    border-radius: var(--card-radius);
+    border-color: var(--line);
+}
+
+:where(
+    .dashboard-panel,
+    .dashboard-stat-card,
+    .activity-card,
+    .performance-chart-card,
+    .insight-card,
+    .history-table-wrap,
+    .learning-history-card,
+    .learning-action-card,
+    .feature-card,
+    .score-card,
+    .card,
+    .recommendation-card,
+    .evaluation-card,
+    .teacher-report-card,
+    .saved-quiz-card,
+    .flashcard-study-panel,
+    .memory-command-panel,
+    .revision-sheet-card,
+    .study-plan-card,
+    .mindmap-stage,
+    .tutor-chat-panel
+) {
+    box-shadow: var(--soft-shadow);
+}
+
+:where(.dashboard-section-heading, .section-heading, .compact-heading) {
+    gap: var(--space-4);
+    margin-bottom: var(--space-5);
+    padding-bottom: var(--space-4);
+}
+
+:where(.dashboard-section-heading h2, .section-heading h2, .compact-heading h2),
+:where(.dashboard-section-heading p, .section-heading p, .compact-heading p) {
+    margin-bottom: 0;
+}
+
+:where(
+    .dashboard-stat-grid,
+    .dashboard-hero-grid,
+    .dashboard-insight-grid,
+    .dashboard-content-grid,
+    .quick-actions-grid,
+    .performance-stat-grid,
+    .performance-summary-grid,
+    .performance-chart-grid,
+    .subject-analysis-grid,
+    .achievement-badge-grid,
+    .recommended-topic-grid,
+    .continue-learning-grid,
+    .revision-tool-grid,
+    .study-plan-summary-grid,
+    .profile-gamification-grid,
+    .daily-challenge-grid,
+    .achievement-progress-grid,
+    .learning-history-grid,
+    .rbac-stat-grid,
+    .rbac-tool-grid,
+    .rbac-table-grid,
+    .developer-detail-grid,
+    .evaluation-summary-grid,
+    .teacher-report-grid,
+    .locked-feature-grid,
+    .locked-dashboard-grid,
+    .memory-stats-grid,
+    .memory-hud,
+    .memory-completion-grid
+) {
+    gap: var(--space-4);
+}
+
+:where(.form-field, .settings-fieldset, .developer-filter-form) label {
+    color: var(--ink);
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-bold);
+    line-height: var(--line-height-tight);
+}
+
+input,
+select,
+textarea {
+    min-height: 48px;
+    padding: 12px 14px;
+    border-color: var(--line);
+    border-radius: var(--control-radius);
+    color: var(--ink);
+    background: var(--surface-strong);
+    line-height: var(--line-height-base);
+}
+
+textarea {
+    min-height: 132px;
+}
+
+input::placeholder,
+textarea::placeholder {
+    color: var(--muted);
+    opacity: 0.78;
+}
+
+input[aria-invalid="true"],
+select[aria-invalid="true"],
+textarea[aria-invalid="true"] {
+    border-color: var(--color-danger);
+    box-shadow: 0 0 0 4px var(--color-danger-soft);
+}
+
+:where(
+    button,
+    .button-link,
+    .back-btn,
+    .auth-link,
+    .secondary-link,
+    .danger-link,
+    .profile-menu-button,
+    .profile-dropdown a,
+    .settings-section-nav a,
+    .memory-mode-switch a,
+    .exhibition-flow-ribbon a,
+    .tutor-starter-prompts button,
+    .tutor-suggestion-chips button,
+    .tutor-voice-tools button,
+    .copy-response-button,
+    .regenerate-response-button,
+    .diagram-lightbox-close
+) {
+    min-height: 44px;
+    border-radius: var(--control-radius);
+    font-weight: var(--font-weight-bold);
+    line-height: 1.2;
+    transition:
+        color var(--transition-base),
+        background var(--transition-base),
+        border-color var(--transition-base),
+        box-shadow var(--transition-base),
+        transform var(--transition-base),
+        opacity var(--transition-base);
+}
+
+:where(button, .button-link, .back-btn):not(.secondary-link):not(.danger-link) {
+    background: var(--primary);
+}
+
+.secondary-link {
+    color: var(--primary);
+    border: 1px solid rgba(49, 87, 213, 0.22);
+    background: var(--color-primary-soft);
+    box-shadow: none;
+}
+
+.secondary-link:hover,
+.secondary-link:focus-visible {
+    color: #ffffff;
+    background: var(--primary);
+    border-color: var(--primary);
+}
+
+.danger-link {
+    color: #ffffff;
+    border: 1px solid rgba(196, 85, 63, 0.28);
+    background: var(--color-danger);
+    box-shadow: 0 12px 24px rgba(196, 85, 63, 0.22);
+}
+
+.danger-link:hover,
+.danger-link:focus-visible {
+    background: #a94432;
+}
+
+:where(button, .button-link, .back-btn, .auth-link, .profile-menu-button):focus-visible {
+    outline: none;
+    box-shadow:
+        var(--focus-ring),
+        0 12px 24px rgba(49, 87, 213, 0.18);
+}
+
+:where(button, .button-link, .back-btn, .auth-link):disabled,
+:where(button, .button-link, .back-btn, .auth-link).disabled,
+:where(input, select, textarea):disabled {
+    opacity: 0.58;
+    transform: none;
+    box-shadow: none;
+}
+
+.sidebar-nav {
+    gap: var(--space-2);
+}
+
+.sidebar-nav a {
+    min-height: 44px;
+    padding: 10px 12px;
+    border-radius: var(--control-radius);
+}
+
+.sidebar-nav a > span:first-child {
+    display: grid;
+    place-items: center;
+    width: 28px;
+}
+
+.sidebar-nav a.active {
+    color: var(--primary);
+    background: var(--color-primary-soft);
+    box-shadow: 0 10px 24px rgba(49, 87, 213, 0.1);
+}
+
+.dashboard-topbar-actions,
+.auth-page-actions,
+.header-actions,
+.result-actions,
+.revision-command-bar,
+.mindmap-toolbar,
+.flashcards-header-actions,
+.flashcard-primary-actions,
+.flashcard-secondary-actions,
+.memory-actions,
+.lesson-card-actions,
+.diagram-actions,
+.tutor-header-actions,
+.tutor-message-actions,
+.locked-modal-actions,
+.exhibition-welcome-actions,
+.exhibition-tour-actions,
+.pwa-install-actions {
+    gap: var(--space-3);
+}
+
+.dashboard-stat-card,
+.performance-summary-grid div,
+.score-card {
+    min-height: 112px;
+}
+
+.dashboard-stat-card p,
+.performance-summary-grid span,
+.score-card h3,
+.memory-stats-grid span,
+.memory-hud span {
+    color: var(--muted);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-bold);
+}
+
+.dashboard-stat-card strong,
+.performance-summary-grid strong,
+.score-card h2,
+.memory-stats-grid strong,
+.memory-hud strong {
+    color: var(--ink);
+    line-height: var(--line-height-tight);
+}
+
+.history-table-wrap,
+.performance-table-wrap,
+.developer-table-wrap {
+    border: 1px solid var(--line);
+    border-radius: var(--card-radius);
+    background: var(--surface);
+    box-shadow: var(--soft-shadow);
+}
+
+.history-table {
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+.history-table th,
+.history-table td,
+.important-questions-content th,
+.important-questions-content td,
+.tutor-message-content th,
+.tutor-message-content td {
+    padding: 14px 16px;
+    border-color: var(--line);
+    line-height: var(--line-height-base);
+}
+
+.history-table th,
+.important-questions-content th,
+.tutor-message-content th {
+    color: var(--ink);
+    background: var(--color-primary-soft);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-strong);
+}
+
+.history-table tbody tr {
+    transition: background var(--transition-fast);
+}
+
+.history-table tbody tr:hover {
+    background: var(--color-primary-soft);
+}
+
+.eyebrow,
+.badge,
+.status-pill,
+.role-badge,
+.mode-badge,
+.verified-badge,
+.guest-badge,
+.coming-soon-pill {
+    border-radius: var(--radius-pill);
+    line-height: 1.2;
+}
+
+.flash-message {
+    border-radius: var(--control-radius);
+}
+
+.flash-error {
+    border-color: rgba(196, 85, 63, 0.28);
+    background: var(--color-danger-soft);
+}
+
+.flash-success {
+    border-color: rgba(31, 122, 77, 0.28);
+    background: var(--color-success-soft);
+}
+
+.dark-mode :where(
+    .dashboard-panel,
+    .dashboard-stat-card,
+    .activity-card,
+    .performance-chart-card,
+    .insight-card,
+    .history-table-wrap,
+    .learning-history-card,
+    .learning-action-card,
+    .feature-card,
+    .score-card,
+    .card,
+    .recommendation-card,
+    .evaluation-card,
+    .teacher-report-card,
+    .saved-quiz-card,
+    .flashcard-study-panel,
+    .memory-command-panel,
+    .revision-sheet-card,
+    .study-plan-card,
+    .mindmap-stage,
+    .tutor-chat-panel
+) {
+    box-shadow: var(--soft-shadow);
+}
+
+.dark-mode input,
+.dark-mode select,
+.dark-mode textarea {
+    color: var(--ink);
+    background: var(--surface-strong);
+    border-color: var(--line);
+}
+
+.dark-mode input::placeholder,
+.dark-mode textarea::placeholder {
+    color: var(--muted);
+    opacity: 0.72;
+}
+
+.dark-mode .secondary-link {
+    color: var(--primary);
+    background: var(--color-primary-soft);
+    border-color: rgba(134, 161, 255, 0.2);
+}
+
+.dark-mode .secondary-link:hover,
+.dark-mode .secondary-link:focus-visible {
+    color: #10141f;
+    background: var(--primary);
+    border-color: var(--primary);
+}
+
+.dark-mode .history-table th,
+.dark-mode .important-questions-content th,
+.dark-mode .tutor-message-content th {
+    background: rgba(134, 161, 255, 0.1);
+}
+
+.dark-mode .history-table tbody tr:hover {
+    background: var(--color-primary-soft);
 }
 
 @media (max-width: 900px) {
