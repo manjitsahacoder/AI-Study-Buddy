@@ -114,6 +114,7 @@ class LearningHistory(ModelMappingMixin, db.Model):
     topic = db.Column(db.Text, nullable=False)
     notes = db.Column(db.Text, nullable=False)
     diagram_data = db.Column(db.Text, nullable=False)
+    diagram_explanation = db.Column(db.Text)
     visualization_required = db.Column(db.Boolean)
     visualization_type = db.Column(db.Text)
     visualization_reason = db.Column(db.Text)

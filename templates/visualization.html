@@ -47,6 +47,28 @@
             <span><strong>License</strong> {{ diagram_view.license or 'Reusable license' }}</span>
         </figcaption>
     </figure>
+    {% set explanation_endpoint = diagram_explanation_url|default('', true) %}
+    {% set cached_explanation = diagram_explanation|default(none, true) %}
+    {% if explanation_endpoint or cached_explanation %}
+    <section class="diagram-explanation-panel"
+        aria-label="AI textbook diagram explanation"
+        data-diagram-explanation-panel
+        data-explanation-url="{{ explanation_endpoint }}"
+        data-learn-url="{{ url_for('learn') }}"
+        data-lesson-name="{{ name|default('Student', true) }}"
+        data-lesson-class="{{ student_class|default('', true) }}"
+        data-lesson-subject="{{ subject|default(lesson.subject if lesson else '', true) }}"
+        data-lesson-book="{{ book_name|default(lesson.book_name if lesson else '', true) }}">
+        {% if cached_explanation %}
+        <script type="application/json" data-diagram-explanation-json>{{ cached_explanation|tojson }}</script>
+        {% endif %}
+        <div class="diagram-explanation-status" data-diagram-explanation-status>
+            <span class="diagram-explanation-spinner" aria-hidden="true"></span>
+            <span>Preparing textbook explanation...</span>
+        </div>
+        <div class="diagram-explanation-grid" data-diagram-explanation-content hidden></div>
+    </section>
+    {% endif %}
     <div class="diagram-lightbox" role="dialog" aria-modal="true" aria-label="{{ topic }} full-size educational diagram" data-diagram-lightbox hidden>
         <button type="button" class="diagram-lightbox-close" data-diagram-lightbox-close>Close</button>
         <div class="diagram-lightbox-stage">

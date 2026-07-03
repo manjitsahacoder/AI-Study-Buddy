@@ -684,6 +684,10 @@ MEMORY_CHALLENGE_COLUMNS = {
 
 
 LEARNING_HISTORY_VISUALIZATION_COLUMNS = {
+    "diagram_explanation": {
+        "sqlite": "TEXT",
+        "postgresql": "TEXT",
+    },
     "visualization_required": {
         "sqlite": "BOOLEAN",
         "postgresql": "BOOLEAN",
@@ -1828,6 +1832,15 @@ def decode_json_list(value):
     return decoded_value if isinstance(decoded_value, list) else []
 
 
+def decode_json_dict(value):
+    try:
+        decoded_value = json.loads(value or "{}")
+    except json.JSONDecodeError:
+        return {}
+
+    return decoded_value if isinstance(decoded_value, dict) else {}
+
+
 def decode_diagram_payload(value, subject="", topic=""):
     try:
         decoded_value = json.loads(value or "{}")
@@ -1858,6 +1871,218 @@ def lesson_diagram_view(lesson, diagram_payload, student_class=""):
         app.logger.warning("diagram_library_lookup_failed topic=%s error=%s", getattr(lesson, "topic", ""), error)
         return None
     return diagram_record_to_view(diagram, diagram_static_url)
+
+
+DIAGRAM_EXPLANATION_DEFAULTS = {
+    "summary": "",
+    "steps": [],
+    "labels": [],
+    "key_points": [],
+    "exam_tip": "",
+    "related_topics": [],
+}
+
+
+def clean_short_text(value, max_length=220):
+    cleaned = re.sub(r"\s+", " ", str(value or "")).strip()
+    return cleaned[:max_length].rstrip()
+
+
+def clean_explanation_items(items, *, max_items=6, title_key="title", body_key="body"):
+    cleaned_items = []
+    if not isinstance(items, list):
+        return cleaned_items
+    for item in items:
+        if isinstance(item, dict):
+            title = clean_short_text(
+                item.get(title_key) or item.get("name") or item.get("label") or item.get("heading"),
+                80,
+            )
+            body = clean_short_text(
+                item.get(body_key) or item.get("description") or item.get("explanation") or item.get("text"),
+                220,
+            )
+        else:
+            title = ""
+            body = clean_short_text(item, 220)
+        if title or body:
+            cleaned_items.append({"title": title, "body": body})
+        if len(cleaned_items) >= max_items:
+            break
+    return cleaned_items
+
+
+def clean_explanation_list(items, *, max_items=6, max_length=180):
+    if isinstance(items, str):
+        items = [line for line in items.splitlines() if line.strip()]
+    if not isinstance(items, list):
+        return []
+    cleaned_items = []
+    for item in items:
+        cleaned = clean_short_text(item, max_length)
+        cleaned = re.sub(r"^[\-*\u2022]\s*", "", cleaned).strip()
+        if cleaned:
+            cleaned_items.append(cleaned)
+        if len(cleaned_items) >= max_items:
+            break
+    return cleaned_items
+
+
+def normalize_diagram_explanation_payload(payload):
+    if not isinstance(payload, dict):
+        payload = {}
+
+    explanation = {
+        **DIAGRAM_EXPLANATION_DEFAULTS,
+        "summary": clean_short_text(
+            payload.get("summary")
+            or payload.get("what_does_this_diagram_show")
+            or payload.get("overview"),
+            420,
+        ),
+        "steps": clean_explanation_items(
+            payload.get("steps")
+            or payload.get("step_by_step")
+            or payload.get("step_by_step_explanation"),
+            max_items=8,
+        ),
+        "labels": clean_explanation_items(
+            payload.get("labels")
+            or payload.get("important_labels")
+            or payload.get("important_parts"),
+            max_items=8,
+        ),
+        "key_points": clean_explanation_list(
+            payload.get("key_points") or payload.get("key_points_to_remember"),
+            max_items=6,
+        ),
+        "exam_tip": clean_short_text(
+            payload.get("exam_tip") or payload.get("ncert_exam_tip"),
+            260,
+        ),
+        "related_topics": clean_explanation_list(
+            payload.get("related_topics"),
+            max_items=5,
+            max_length=80,
+        ),
+    }
+    if not explanation["summary"]:
+        explanation["summary"] = "This diagram supports the lesson topic with a clear visual representation."
+    return explanation
+
+
+def decode_diagram_explanation(value):
+    if not value:
+        return None
+    payload = normalize_diagram_explanation_payload(decode_json_dict(value))
+    has_content = any(
+        payload.get(key)
+        for key in ("summary", "steps", "labels", "key_points", "exam_tip", "related_topics")
+    )
+    return payload if has_content else None
+
+
+def diagram_metadata_for_explanation(diagram_payload, diagram_view):
+    metadata = {
+        "title": diagram_payload.get("title") or "",
+        "type": diagram_payload.get("visualization_label")
+        or diagram_payload.get("visualization_type")
+        or diagram_payload.get("type")
+        or diagram_payload.get("diagram_type")
+        or "",
+        "labels": diagram_payload.get("labels") or [],
+        "notes": diagram_payload.get("notes") or [],
+        "provider": (diagram_view or {}).get("provider", ""),
+        "source_url": (diagram_view or {}).get("source_url", ""),
+        "author": (diagram_view or {}).get("author", ""),
+        "license": (diagram_view or {}).get("license", ""),
+        "attribution": (diagram_view or {}).get("attribution", ""),
+    }
+    return json.dumps(metadata, ensure_ascii=True, indent=2)
+
+
+def lesson_value(lesson, key, default=""):
+    if hasattr(lesson, key):
+        value = getattr(lesson, key)
+    elif isinstance(lesson, dict):
+        value = lesson.get(key)
+    else:
+        value = default
+    return value if value is not None else default
+
+
+def build_diagram_explanation_prompt(lesson, diagram_payload, diagram_view, student_class=""):
+    topic = lesson_value(lesson, "topic")
+    subject = lesson_value(lesson, "subject")
+    book_name = lesson_value(lesson, "book_name")
+    class_label = student_class or "the selected class"
+    metadata_json = diagram_metadata_for_explanation(diagram_payload, diagram_view)
+    return f"""
+You are creating NCERT-style textbook support for an educational diagram.
+
+Class: {class_label}
+Subject: {subject}
+Book Name: {book_name}
+Topic: {topic}
+Diagram Title: {diagram_payload.get("title") or topic}
+
+Diagram metadata:
+{metadata_json}
+
+Rules:
+- Use simple NCERT textbook language.
+- Match Class {class_label}.
+- Use the topic, selected class, diagram metadata, and diagram title only.
+- Do not use OCR or infer text from the image pixels.
+- Avoid unnecessary scientific jargon.
+- Keep explanations concise and educational, not conversational.
+- Never hallucinate labels that clearly do not belong to this topic or metadata.
+- If metadata labels are missing, infer only common textbook labels for the topic.
+- Suggest related topics that AI Study Buddy can teach as short lesson topics.
+
+Return only one valid JSON object with exactly this structure:
+{{
+  "summary": "2 to 3 simple sentences explaining what the diagram shows.",
+  "steps": [
+    {{"title": "Stage or part name", "body": "One short explanation."}}
+  ],
+  "labels": [
+    {{"title": "Important label", "body": "What it means or does."}}
+  ],
+  "key_points": [
+    "Important point 1",
+    "Important point 2",
+    "Important point 3",
+    "Important point 4"
+  ],
+  "exam_tip": "One NCERT exam-focused tip.",
+  "related_topics": [
+    "Related topic 1",
+    "Related topic 2",
+    "Related topic 3"
+  ]
+}}
+"""
+
+
+def get_or_create_diagram_explanation(lesson, diagram_payload, diagram_view, student_class="", user_id=None):
+    cached = decode_diagram_explanation(getattr(lesson, "diagram_explanation", None))
+    if cached:
+        return cached, False
+
+    response = gemini_request(
+        "Diagram Explanation",
+        build_diagram_explanation_prompt(lesson, diagram_payload, diagram_view, student_class),
+        user_id=user_id,
+        lesson_id=getattr(lesson, "id", None),
+        generation_config={"max_output_tokens": 1800},
+        request_options={"timeout": 35},
+    )
+    response_payload = extract_json_payload(getattr(response, "text", "") or "")
+    explanation = normalize_diagram_explanation_payload(response_payload)
+    lesson.diagram_explanation = json.dumps(explanation)
+    db.session.commit()
+    return explanation, True
 
 
 def diagram_view_image_path(diagram_view):
@@ -7559,6 +7784,7 @@ def view_learning_history(lesson_id):
     return render_template(
         "learning_history_detail.html",
         lesson=lesson,
+        student_class=preferred_class_for_user(current_user()),
         notes_html=markdown.markdown(lesson["notes"]),
         diagram_payload=diagram_payload,
         diagram_steps=diagram_payload.get("labels", []),
@@ -7566,6 +7792,8 @@ def view_learning_history(lesson_id):
         diagram_svg="",
         diagram_available=diagram_available,
         diagram_view=diagram_view,
+        diagram_explanation=decode_diagram_explanation(lesson.diagram_explanation),
+        diagram_explanation_url=url_for("diagram_explanation", lesson_id=lesson.id),
         diagram_json=json.dumps(diagram_payload),
         questions=questions,
         has_flashcards=has_flashcards,
@@ -7603,6 +7831,8 @@ def lesson_notes(lesson_id):
         diagram_svg="",
         diagram_available=diagram_available,
         diagram_view=diagram_view,
+        diagram_explanation=decode_diagram_explanation(lesson.diagram_explanation),
+        diagram_explanation_url=url_for("diagram_explanation", lesson_id=lesson.id),
         diagram_json=json.dumps(diagram_payload),
         questions=questions,
         lesson_id=lesson.id,
@@ -7969,6 +8199,47 @@ def update_flashcard_status(flashcard_id):
             "mastered": flashcard.mastered,
             "needs_revision": flashcard.needs_revision,
             "review_count": flashcard.review_count,
+        }
+    )
+
+
+@app.route("/learning-history/<int:lesson_id>/diagram-explanation")
+@login_required
+def diagram_explanation(lesson_id):
+    lesson = get_learning_history_entry(lesson_id, session["user_id"])
+    if not lesson:
+        abort(404)
+
+    diagram_payload = decode_diagram_payload(lesson.diagram_data, lesson.subject, lesson.topic)
+    diagram_view = lesson_diagram_view(lesson, diagram_payload, preferred_class_for_user(current_user()))
+    if not diagram_payload.get("available") or not diagram_view:
+        return jsonify({"error": "No educational diagram is available for this lesson."}), 404
+
+    try:
+        explanation, created = get_or_create_diagram_explanation(
+            lesson,
+            diagram_payload,
+            diagram_view,
+            preferred_class_for_user(current_user()),
+            user_id=session["user_id"],
+        )
+    except GeminiRequestError as error:
+        return gemini_json_error(error.error_info)
+    except Exception:
+        app.logger.exception("diagram_explanation_failed lesson_id=%s", lesson_id)
+        return jsonify({"error": "The diagram explanation is unavailable right now."}), 503
+
+    account = current_user()
+    return jsonify(
+        {
+            "cached": not created,
+            "explanation": explanation,
+            "lesson": {
+                "name": account["full_name"] if account else "Student",
+                "student_class": preferred_class_for_user(account),
+                "subject": lesson.subject,
+                "book_name": lesson.book_name or "",
+            },
         }
     )
 
@@ -8489,6 +8760,8 @@ Rules:
         diagram_svg="",
         diagram_available=diagram_available,
         diagram_view=diagram_view,
+        diagram_explanation=None,
+        diagram_explanation_url=url_for("diagram_explanation", lesson_id=lesson_id) if lesson_id else "",
         diagram_json=json.dumps(diagram_payload),
         questions=questions,
         lesson_id=lesson_id,

@@ -179,6 +179,118 @@
     font-weight: 800;
 }
 
+.diagram-explanation-panel {
+    width: min(100%, 980px);
+    margin: 18px auto 0;
+}
+
+.diagram-explanation-status {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px;
+    border: 1px solid var(--line);
+    border-radius: var(--card-radius, 8px);
+    color: var(--muted);
+    background: rgba(248, 250, 252, 0.82);
+    font-weight: 800;
+}
+
+.diagram-explanation-spinner {
+    width: 18px;
+    height: 18px;
+    border: 2px solid rgba(49, 87, 213, 0.18);
+    border-top-color: var(--primary);
+    border-radius: 999px;
+    animation: diagram-explanation-spin 0.8s linear infinite;
+}
+
+.diagram-explanation-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.diagram-explanation-card {
+    min-width: 0;
+    padding: clamp(14px, 2vw, 18px);
+    border: 1px solid var(--line);
+    border-radius: var(--card-radius, 8px);
+    background: rgba(248, 250, 252, 0.86);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+.diagram-explanation-card.is-wide {
+    grid-column: 1 / -1;
+}
+
+.diagram-explanation-card h3 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 10px;
+    color: var(--ink);
+    font-size: 1rem;
+    line-height: 1.3;
+}
+
+.diagram-explanation-card p,
+.diagram-explanation-card li {
+    color: var(--muted);
+    font-weight: 700;
+    line-height: 1.55;
+}
+
+.diagram-explanation-card p {
+    margin: 0;
+}
+
+.diagram-explanation-list {
+    display: grid;
+    gap: 10px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.diagram-explanation-list li {
+    padding: 10px;
+    border: 1px solid rgba(49, 87, 213, 0.12);
+    border-radius: var(--control-radius, 8px);
+    background: rgba(255, 255, 255, 0.7);
+}
+
+.diagram-explanation-list strong {
+    display: block;
+    margin-bottom: 3px;
+    color: var(--ink);
+}
+
+.diagram-key-points {
+    margin: 0;
+    padding-left: 20px;
+}
+
+.diagram-related-topics {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.diagram-related-topics form {
+    margin: 0;
+}
+
+.diagram-related-topics button {
+    min-height: 36px;
+    padding: 8px 11px;
+    border: 1px solid rgba(49, 87, 213, 0.2);
+    border-radius: var(--control-radius, 8px);
+    color: var(--primary);
+    background: var(--surface-strong);
+    font-weight: 850;
+}
+
 .diagram-lightbox[hidden] {
     display: none;
 }
@@ -306,6 +418,12 @@ body.diagram-lightbox-open {
     }
 }
 
+@keyframes diagram-explanation-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
 .dark-mode .visualization-card,
 .dark-mode .visualization-card.is-fullscreen {
     background: var(--surface);
@@ -314,7 +432,9 @@ body.diagram-lightbox-open {
 
 .dark-mode .visualization-type-pill,
 .dark-mode .visualization-insights div,
-.dark-mode .diagram-library-attribution span {
+.dark-mode .diagram-library-attribution span,
+.dark-mode .diagram-explanation-status,
+.dark-mode .diagram-explanation-card {
     background: var(--color-primary-soft, rgba(134, 161, 255, 0.1));
     border-color: rgba(134, 161, 255, 0.18);
 }
@@ -353,6 +473,12 @@ body.diagram-lightbox-open {
     border-color: rgba(134, 161, 255, 0.18);
 }
 
+.dark-mode .diagram-explanation-list li,
+.dark-mode .diagram-related-topics button {
+    background: var(--surface-strong);
+    border-color: rgba(134, 161, 255, 0.2);
+}
+
 .dark-mode .diagram-lightbox {
     background: rgba(15, 23, 42, 0.96);
 }
@@ -389,7 +515,8 @@ body.diagram-lightbox-open {
     }
 
     .visualization-insights,
-    .diagram-library-attribution {
+    .diagram-library-attribution,
+    .diagram-explanation-grid {
         grid-template-columns: 1fr;
     }
 
