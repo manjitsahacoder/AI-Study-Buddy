@@ -5435,7 +5435,197 @@ body.dashboard-page #theme-toggle {
     background: rgba(49, 87, 213, 0.06);
     text-align: center;
 }
+.downloads-main {
+    gap: 20px;
+}
 
+.download-center-hero {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    padding: clamp(22px, 4vw, 34px);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background:
+        linear-gradient(135deg, rgba(49, 87, 213, 0.1), rgba(4, 125, 135, 0.08), rgba(189, 138, 32, 0.1)),
+        rgba(255, 253, 248, 0.96);
+    box-shadow: var(--soft-shadow);
+}
+
+.download-center-hero h2 {
+    margin-bottom: 8px;
+    font-size: clamp(1.45rem, 2vw, 2rem);
+}
+
+.download-center-hero p {
+    max-width: 720px;
+    margin-bottom: 0;
+    color: var(--muted);
+    font-weight: 800;
+}
+
+.download-center-count {
+    display: grid;
+    place-items: center;
+    flex: 0 0 116px;
+    width: 116px;
+    min-height: 116px;
+    border: 1px solid rgba(49, 87, 213, 0.16);
+    border-radius: 8px;
+    color: var(--primary);
+    background: rgba(255, 255, 255, 0.72);
+}
+
+.download-center-count strong {
+    color: var(--primary);
+    font-size: 2.5rem;
+    line-height: 1;
+}
+
+.download-center-count span {
+    color: var(--muted);
+    font-weight: 900;
+}
+
+.download-report-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+}
+
+.download-report-card {
+    display: grid;
+    gap: 18px;
+    padding: 20px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: rgba(255, 253, 248, 0.96);
+    box-shadow: var(--soft-shadow);
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.download-report-card:hover {
+    transform: translateY(-3px);
+    border-color: rgba(49, 87, 213, 0.2);
+    box-shadow: 0 18px 38px rgba(30, 40, 58, 0.13);
+}
+
+.download-report-main {
+    display: grid;
+    grid-template-columns: 52px minmax(0, 1fr);
+    gap: 14px;
+    align-items: start;
+}
+
+.download-report-icon,
+.download-empty-icon {
+    display: grid;
+    place-items: center;
+    width: 52px;
+    height: 52px;
+    border-radius: 8px;
+    color: #ffffff;
+    background: var(--primary);
+    box-shadow: var(--soft-shadow);
+    font-size: 1.35rem;
+}
+
+.download-report-card h2 {
+    margin-bottom: 10px;
+    font-size: 1.15rem;
+    overflow-wrap: anywhere;
+}
+
+.download-report-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.download-report-meta span {
+    padding: 7px 10px;
+    border: 1px solid rgba(49, 87, 213, 0.13);
+    border-radius: 8px;
+    color: var(--muted);
+    background: rgba(49, 87, 213, 0.06);
+    font-size: 0.82rem;
+    font-weight: 900;
+}
+
+.download-report-details {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    margin: 0;
+}
+
+.download-report-details div {
+    min-width: 0;
+    padding: 12px;
+    border: 1px solid rgba(4, 125, 135, 0.12);
+    border-radius: 8px;
+    background: rgba(4, 125, 135, 0.06);
+}
+
+.download-report-details dt {
+    margin-bottom: 4px;
+    color: var(--muted);
+    font-size: 0.76rem;
+    font-weight: 900;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.download-report-details dd {
+    margin: 0;
+    color: var(--ink);
+    font-weight: 900;
+    overflow-wrap: anywhere;
+}
+
+.download-report-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.download-report-actions form {
+    display: inline-flex;
+}
+
+.download-empty-state {
+    display: grid;
+    place-items: center;
+    align-content: center;
+    min-height: 360px;
+    padding: clamp(26px, 5vw, 48px);
+    border: 1px dashed rgba(49, 87, 213, 0.32);
+    border-radius: 8px;
+    background:
+        linear-gradient(135deg, rgba(49, 87, 213, 0.07), rgba(31, 122, 77, 0.06)),
+        rgba(255, 253, 248, 0.92);
+    text-align: center;
+}
+
+.download-empty-state .download-empty-icon {
+    width: 76px;
+    height: 76px;
+    margin-bottom: 18px;
+    background: var(--teal);
+    font-size: 2rem;
+}
+
+.download-empty-state h2 {
+    margin-bottom: 8px;
+}
+
+.download-empty-state p {
+    max-width: 560px;
+    margin-bottom: 20px;
+    color: var(--muted);
+    font-weight: 800;
+}
 .quiz-box {
     margin-top: 26px;
     padding: clamp(18px, 3vw, 30px);
@@ -8265,6 +8455,33 @@ textarea:focus {
         0 10px 24px rgba(0, 0, 0, 0.18);
 }
 
+.dark-mode .download-center-hero,
+.dark-mode .download-report-card,
+.dark-mode .download-empty-state {
+    border-color: rgba(134, 161, 255, 0.18);
+    background:
+        linear-gradient(135deg, rgba(134, 161, 255, 0.08), rgba(35, 183, 166, 0.07), rgba(255, 207, 117, 0.06)),
+        rgba(21, 27, 41, 0.92);
+}
+
+.dark-mode .download-center-count,
+.dark-mode .download-report-meta span,
+.dark-mode .download-report-details div {
+    border-color: rgba(134, 161, 255, 0.16);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.dark-mode .download-center-hero p,
+.dark-mode .download-center-count span,
+.dark-mode .download-report-meta span,
+.dark-mode .download-report-details dt,
+.dark-mode .download-empty-state p {
+    color: var(--muted);
+}
+
+.dark-mode .download-report-details dd {
+    color: var(--ink);
+}
 /* Final design-system consistency layer */
 body {
     font-size: var(--font-size-base);
@@ -9557,6 +9774,47 @@ textarea[aria-invalid="true"] {
     }
 }
 
+@media (max-width: 900px) {
+    .download-center-hero,
+    .download-report-main {
+        align-items: stretch;
+    }
+
+    .download-center-hero {
+        display: grid;
+    }
+
+    .download-center-count {
+        width: 100%;
+        min-height: 92px;
+        grid-template-columns: auto auto;
+        justify-content: center;
+        gap: 10px;
+    }
+
+    .download-report-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 560px) {
+    .download-report-main,
+    .download-report-details {
+        grid-template-columns: 1fr;
+    }
+
+    .download-report-icon {
+        width: 46px;
+        height: 46px;
+    }
+
+    .download-report-actions,
+    .download-report-actions .button-link,
+    .download-report-actions form,
+    .download-report-actions button {
+        width: 100%;
+    }
+}
 @media print {
     body.mindmap-page {
         background: #ffffff;

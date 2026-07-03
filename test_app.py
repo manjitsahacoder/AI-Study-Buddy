@@ -4379,6 +4379,110 @@ Q5. What is question five?
             (1, "performance_report", "Biology", "Plants", "8/10", "A"),
         )
 
+    def test_downloaded_reports_empty_state_uses_download_center(self):
+        self.register_user()
+        self.login_user()
+
+        response = self.client.get("/downloaded-reports")
+
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        self.assertIn("Download Center", page)
+        self.assertIn("No downloaded reports yet.", page)
+        self.assertIn(
+            "Generate notes, revision sheets, quizzes, or performance reports and they will appear here.",
+            page,
+        )
+        self.assertIn("page-transition-overlay", page)
+        self.assertNotIn("Downloaded reports coming soon", page)
+
+    def test_downloaded_reports_lists_existing_downloads_from_database(self):
+        self.register_user()
+        self.login_user()
+
+        with app_module.app.app_context():
+            app_module.save_downloaded_file(1, "performance_report", "Science", "Plants", "8/10", "A")
+
+        response = self.client.get("/downloaded-reports")
+
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        self.assertIn("Plants Performance Report", page)
+        self.assertIn("Performance Report", page)
+        self.assertIn("Science", page)
+        self.assertIn("8/10", page)
+        self.assertIn("Download</a>", page)
+        self.assertIn("Delete</button>", page)
+        self.assertNotIn("No downloaded reports yet.", page)
+
+    def test_downloaded_report_download_reconstructs_saved_lesson_pdf(self):
+        self.register_user()
+        self.login_user()
+
+        with app_module.app.app_context():
+            lesson_id = app_module.save_learning_history(
+                1,
+                "Science",
+                "Biology",
+                "Photosynthesis",
+                "# Notes\nPlants make food.",
+                {"available": False},
+                ["What do plants make?"],
+            )
+            download_id = app_module.save_downloaded_file(
+                1,
+                "saved_lesson",
+                "Science",
+                "Photosynthesis",
+            )
+            before_count = DownloadedFile.query.count()
+
+        response = self.client.get(f"/downloaded-reports/{download_id}/download")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.mimetype, "application/pdf")
+        self.assertIn(
+            "attachment; filename=Photosynthesis_notes.pdf",
+            response.headers["Content-Disposition"],
+        )
+        self.assertTrue(response.data.startswith(b"%PDF"))
+        with app_module.app.app_context():
+            self.assertIsNotNone(db.session.get(LearningHistory, lesson_id))
+            self.assertEqual(DownloadedFile.query.count(), before_count)
+
+    def test_downloaded_report_delete_only_removes_download_history_row(self):
+        self.register_user()
+        self.login_user()
+
+        with app_module.app.app_context():
+            lesson_id = app_module.save_learning_history(
+                1,
+                "Science",
+                "Biology",
+                "Photosynthesis",
+                "Plants make food.",
+                {"available": False},
+                ["What do plants make?"],
+            )
+            download_id = app_module.save_downloaded_file(
+                1,
+                "saved_lesson",
+                "Science",
+                "Photosynthesis",
+            )
+
+        response = self.client.post(
+            f"/downloaded-reports/{download_id}/delete",
+            follow_redirects=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        self.assertIn("Downloaded report removed from your download center.", page)
+        self.assertIn("No downloaded reports yet.", page)
+        with app_module.app.app_context():
+            self.assertIsNone(db.session.get(DownloadedFile, download_id))
+            self.assertIsNotNone(db.session.get(LearningHistory, lesson_id))
     def test_profile_page_shows_account_and_gamification_sections(self):
         self.register_user()
         self.login_user()

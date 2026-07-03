@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Downloaded Reports - AI Study Buddy</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    {% include 'components/pwa_head.html' %}
+</head>
+
+<body class="dashboard-page downloads-page {% if account.theme_preference == 'dark' %}dark-mode{% endif %} {% if exhibition_mode %}exhibition-mode{% endif %}">
+{% set active_page = 'downloads' %}
+<div class="dashboard-shell">
+    {% include 'components/dashboard_sidebar.html' %}
+
+    <main class="dashboard-main downloads-main">
+        <header class="dashboard-topbar downloads-topbar">
+            <div>
+                <span class="eyebrow">Study Library</span>
+                <h1>Download Center</h1>
+                <p>All generated study documents you have downloaded are collected here.</p>
+            </div>
+            <div class="dashboard-topbar-actions">
+                <button id="theme-toggle" onclick="toggleTheme()">
+                    {% if account.theme_preference == 'dark' %}&#9728;&#65039; Light Mode{% else %}&#127769; Dark Mode{% endif %}
+                </button>
+                <a class="button-link secondary-link" href="{{ url_for('dashboard') }}">Back to Dashboard</a>
+                {% include 'components/auth_nav.html' %}
+            </div>
+        </header>
+
+        {% include 'components/flash_messages.html' %}
+
+        <section class="download-center-hero" aria-label="Download center overview">
+            <div>
+                <span class="eyebrow">Generated Documents</span>
+                <h2>Your reports, notes, and revision PDFs</h2>
+                <p>Download performance reports, AI notes, revision sheets, important questions, and other generated documents from one place.</p>
+            </div>
+            <div class="download-center-count" aria-label="{{ reports|length }} downloaded reports">
+                <strong>{{ reports|length }}</strong>
+                <span>file{% if reports|length != 1 %}s{% endif %}</span>
+            </div>
+        </section>
+
+        {% if reports %}
+        <section class="download-report-grid" aria-label="Downloaded reports">
+            {% for report in reports %}
+            <article class="download-report-card">
+                <div class="download-report-main">
+                    <span class="download-report-icon" aria-hidden="true">{{ report.icon|safe }}</span>
+                    <div>
+                        <h2>{{ report.title }}</h2>
+                        <div class="download-report-meta">
+                            <span>{{ report.type }}</span>
+                            <span>{{ report.subject }}</span>
+                            <span>{{ report.created_at }}</span>
+                        </div>
+                    </div>
+                </div>
+                <dl class="download-report-details">
+                    <div>
+                        <dt>Topic</dt>
+                        <dd>{{ report.topic }}</dd>
+                    </div>
+                    {% if report.score %}
+                    <div>
+                        <dt>Score</dt>
+                        <dd>{{ report.score }}</dd>
+                    </div>
+                    {% endif %}
+                    {% if report.grade %}
+                    <div>
+                        <dt>Grade</dt>
+                        <dd>{{ report.grade }}</dd>
+                    </div>
+                    {% endif %}
+                </dl>
+                <div class="download-report-actions">
+                    <a class="button-link" href="{{ report.download_url }}">Download</a>
+                    <form action="{{ report.delete_url }}" method="POST" onsubmit="return confirm('Remove this item from your download center?');">
+                        <button class="danger-link" type="submit">Delete</button>
+                    </form>
+                </div>
+            </article>
+            {% endfor %}
+        </section>
+        {% else %}
+        <section class="download-empty-state" aria-label="No downloaded reports">
+            <span class="download-empty-icon" aria-hidden="true">&#128196;</span>
+            <h2>No downloaded reports yet.</h2>
+            <p>Generate notes, revision sheets, quizzes, or performance reports and they will appear here.</p>
+            <a class="button-link" href="{{ url_for('home') }}#lesson-form">Generate Study Material</a>
+        </section>
+        {% endif %}
+
+        {% include 'components/footer.html' %}
+    </main>
+</div>
+
+<script>
+function toggleTheme() {
+    document.body.classList.toggle("dark-mode");
+
+    let btn = document.getElementById("theme-toggle");
+    if (document.body.classList.contains("dark-mode")) {
+        btn.innerHTML = "&#9728;&#65039; Light Mode";
+    } else {
+        btn.innerHTML = "&#127769; Dark Mode";
+    }
+}
+</script>
+</body>
+</html>

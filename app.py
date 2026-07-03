@@ -2264,6 +2264,126 @@ def save_downloaded_file(user_id, file_type, subject, topic, score="", grade="")
     return downloaded_file.id
 
 
+
+DOWNLOAD_FILE_TYPE_LABELS = {
+    "performance_report": "Performance Report",
+    "saved_lesson": "AI Notes PDF",
+    "notes": "AI Notes",
+    "revision_sheet": "Revision PDF",
+    "important_questions": "Important Questions PDF",
+    "diagram": "Diagram Image",
+}
+
+
+DOWNLOAD_FILE_TYPE_ICONS = {
+    "performance_report": "&#128200;",
+    "saved_lesson": "&#128218;",
+    "notes": "&#128221;",
+    "revision_sheet": "&#128214;",
+    "important_questions": "&#11088;",
+    "diagram": "&#128444;",
+}
+
+
+def download_file_type_label(file_type):
+    return DOWNLOAD_FILE_TYPE_LABELS.get(
+        file_type,
+        (file_type or "document").replace("_", " ").title(),
+    )
+
+
+def download_report_title(downloaded_file):
+    topic = (downloaded_file.topic or "").strip()
+    label = download_file_type_label(downloaded_file.file_type)
+    return f"{topic} {label}" if topic else label
+
+
+def matching_lesson_for_download(downloaded_file):
+    query = LearningHistory.query.filter_by(
+        user_id=downloaded_file.user_id,
+        topic=downloaded_file.topic,
+    )
+    if downloaded_file.subject:
+        query = query.filter(LearningHistory.subject == downloaded_file.subject)
+    if downloaded_file.created_at:
+        query = query.filter(LearningHistory.created_at <= downloaded_file.created_at)
+    return query.order_by(LearningHistory.created_at.desc(), LearningHistory.id.desc()).first()
+
+
+def matching_revision_for_download(downloaded_file):
+    query = (
+        db.session.query(LearningHistory, RevisionSheet)
+        .join(RevisionSheet, RevisionSheet.learning_history_id == LearningHistory.id)
+        .filter(
+            LearningHistory.user_id == downloaded_file.user_id,
+            RevisionSheet.user_id == downloaded_file.user_id,
+            LearningHistory.topic == downloaded_file.topic,
+        )
+    )
+    if downloaded_file.subject:
+        query = query.filter(LearningHistory.subject == downloaded_file.subject)
+    if downloaded_file.created_at:
+        query = query.filter(RevisionSheet.created_at <= downloaded_file.created_at)
+    return query.order_by(RevisionSheet.created_at.desc(), RevisionSheet.id.desc()).first()
+
+
+def matching_important_questions_for_download(downloaded_file):
+    query = (
+        db.session.query(LearningHistory, ImportantQuestionSet)
+        .join(ImportantQuestionSet, ImportantQuestionSet.learning_history_id == LearningHistory.id)
+        .filter(
+            LearningHistory.user_id == downloaded_file.user_id,
+            ImportantQuestionSet.user_id == downloaded_file.user_id,
+            LearningHistory.topic == downloaded_file.topic,
+        )
+    )
+    if downloaded_file.subject:
+        query = query.filter(LearningHistory.subject == downloaded_file.subject)
+    if downloaded_file.created_at:
+        query = query.filter(ImportantQuestionSet.created_at <= downloaded_file.created_at)
+    return query.order_by(ImportantQuestionSet.created_at.desc(), ImportantQuestionSet.id.desc()).first()
+
+
+def matching_quiz_for_download(downloaded_file):
+    query = QuizHistory.query.filter_by(
+        user_id=downloaded_file.user_id,
+        topic=downloaded_file.topic,
+    )
+    if downloaded_file.subject:
+        query = query.filter(QuizHistory.subject == downloaded_file.subject)
+    if downloaded_file.score:
+        query = query.filter(QuizHistory.score == downloaded_file.score)
+    if downloaded_file.grade:
+        query = query.filter(QuizHistory.grade == downloaded_file.grade)
+    if downloaded_file.created_at:
+        query = query.filter(QuizHistory.created_at <= downloaded_file.created_at)
+    return query.order_by(QuizHistory.created_at.desc(), QuizHistory.id.desc()).first()
+
+
+def downloaded_report_rows(user_id):
+    rows = (
+        DownloadedFile.query.filter_by(user_id=user_id)
+        .order_by(DownloadedFile.created_at.desc(), DownloadedFile.id.desc())
+        .all()
+    )
+    return [
+        {
+            "id": row.id,
+            "title": download_report_title(row),
+            "type": download_file_type_label(row.file_type),
+            "type_key": row.file_type,
+            "icon": DOWNLOAD_FILE_TYPE_ICONS.get(row.file_type, "&#128196;"),
+            "subject": row.subject or "N/A",
+            "topic": row.topic,
+            "score": row.score or "",
+            "grade": row.grade or "",
+            "created_at": format_admin_datetime(row.created_at),
+            "download_url": url_for("download_report_file", download_id=row.id),
+            "delete_url": url_for("delete_downloaded_report", download_id=row.id),
+        }
+        for row in rows
+    ]
+
 def save_quiz_history(name, student_class, subject, topic, score, grade, questions, answers, report_text, user_id=None):
     history = QuizHistory(
         user_id=user_id,
