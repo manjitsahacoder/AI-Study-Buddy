@@ -220,6 +220,8 @@ Q5. What is question five?
         prompt = generate_content.call_args.args[0]
         self.assertIn("Subject: Biology", prompt)
         self.assertIn("Topic: Plants", prompt)
+        self.assertIn("Adaptive Quiz Engine", prompt)
+        self.assertIn("Automatically classified educational category: Science", prompt)
         self.assertIn("## Diagram JSON", prompt)
         page = response.get_data(as_text=True)
         self.assertIn("Plant Notes", page)
@@ -241,6 +243,67 @@ Q5. What is question five?
         for index, question in enumerate(self.questions, start=1):
             self.assertIn(f'name="question{index}"', page)
             self.assertIn(question, page)
+
+    def test_adaptive_quiz_classifies_requested_subjects(self):
+        cases = [
+            ("English", "Grammar", "", "English Grammar"),
+            ("English", "Tenses", "", "English Grammar"),
+            ("English", "Articles", "", "English Grammar"),
+            ("English", "Active Passive Voice", "", "English Grammar"),
+            ("English", "Narration", "", "English Grammar"),
+            ("Mathematics", "Linear Equations", "", "Mathematics"),
+            ("Science", "Force and Motion", "", "Science"),
+            ("History", "Indian Freedom Movement", "", "History"),
+        ]
+
+        for subject, topic, book_name, expected_category in cases:
+            with self.subTest(subject=subject, topic=topic):
+                self.assertEqual(
+                    app_module.classify_lesson_category(subject, topic, book_name),
+                    expected_category,
+                )
+
+    def test_adaptive_quiz_prompt_makes_grammar_practice_oriented(self):
+        grammar_topics = ["Tenses", "Articles", "Active Passive Voice", "Narration"]
+
+        for topic in grammar_topics:
+            with self.subTest(topic=topic):
+                prompt = app_module.build_adaptive_quiz_prompt_section(
+                    "English",
+                    topic,
+                    "",
+                    "8",
+                )
+
+                self.assertIn("Automatically classified educational category: English Grammar", prompt)
+                self.assertIn("practice-oriented grammar questions", prompt)
+                self.assertIn("fill in the blanks", prompt)
+                self.assertIn("error correction", prompt)
+                self.assertIn("sentence transformation", prompt)
+                self.assertIn("Avoid definition-only questions", prompt)
+                self.assertIn("Make the student apply the grammar rule", prompt)
+                self.assertIn("Do not ask questions like", prompt)
+
+    def test_adaptive_quiz_prompt_uses_subject_specific_question_styles(self):
+        cases = [
+            ("Mathematics", "Algebra", "Numerical problems", "Do not ask \"What is Algebra?\""),
+            ("Science", "Photosynthesis", "cause/effect", "how a process works"),
+            ("History", "French Revolution", "chronology", "historical significance"),
+        ]
+
+        for subject, topic, expected_phrase, second_phrase in cases:
+            with self.subTest(subject=subject, topic=topic):
+                prompt = app_module.build_adaptive_quiz_prompt_section(
+                    subject,
+                    topic,
+                    "",
+                    "10",
+                )
+
+                self.assertIn(expected_phrase, prompt)
+                self.assertIn(second_phrase, prompt)
+                self.assertIn("Class 10 or above", prompt)
+                self.assertIn("Avoid repeating the same question format", prompt)
 
     def test_download_notes_returns_all_notes_as_attachment(self):
         response = self.client.post(

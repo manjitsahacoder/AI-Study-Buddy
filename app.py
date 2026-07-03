@@ -412,6 +412,152 @@ LEARN_MAX_PROMPT_CHARS = int(os.environ.get("LEARN_MAX_PROMPT_CHARS", "12000"))
 LEARN_MAX_RESPONSE_CHARS = int(os.environ.get("LEARN_MAX_RESPONSE_CHARS", "55000"))
 LEARN_MAX_OUTPUT_TOKENS = int(os.environ.get("LEARN_MAX_OUTPUT_TOKENS", "4500"))
 LEARN_GEMINI_TIMEOUT_SECONDS = int(os.environ.get("LEARN_GEMINI_TIMEOUT_SECONDS", "45"))
+EDUCATIONAL_CATEGORIES = (
+    "English Grammar",
+    "English Literature",
+    "Mathematics",
+    "Science",
+    "History",
+    "Geography",
+    "Computer Science",
+    "General Theory",
+)
+ENGLISH_GRAMMAR_KEYWORDS = (
+    "grammar",
+    "tense",
+    "tenses",
+    "article",
+    "articles",
+    "preposition",
+    "prepositions",
+    "conjunction",
+    "conjunctions",
+    "voice",
+    "active passive",
+    "active and passive",
+    "passive voice",
+    "active voice",
+    "direct speech",
+    "indirect speech",
+    "reported speech",
+    "narration",
+    "degree",
+    "degrees of comparison",
+    "comparison",
+    "sentence transformation",
+    "transformation",
+    "error correction",
+    "fill in the blanks",
+    "rearrange",
+    "rearranging",
+    "subject verb agreement",
+    "punctuation",
+    "parts of speech",
+    "noun",
+    "pronoun",
+    "verb",
+    "adjective",
+    "adverb",
+)
+ENGLISH_LITERATURE_KEYWORDS = (
+    "literature",
+    "poem",
+    "poetry",
+    "story",
+    "prose",
+    "chapter",
+    "play",
+    "drama",
+    "novel",
+    "character",
+    "theme",
+    "plot",
+    "moral",
+    "comprehension",
+    "extract",
+)
+MATHEMATICS_KEYWORDS = (
+    "math",
+    "maths",
+    "mathematics",
+    "algebra",
+    "geometry",
+    "arithmetic",
+    "trigonometry",
+    "mensuration",
+    "statistics",
+    "probability",
+    "equation",
+    "fraction",
+    "decimal",
+    "ratio",
+    "percentage",
+    "polynomial",
+    "linear",
+)
+SCIENCE_KEYWORDS = (
+    "science",
+    "physics",
+    "chemistry",
+    "biology",
+    "botany",
+    "zoology",
+    "photosynthesis",
+    "cell",
+    "force",
+    "motion",
+    "electricity",
+    "atom",
+    "acid",
+    "base",
+    "respiration",
+)
+HISTORY_KEYWORDS = (
+    "history",
+    "historical",
+    "revolution",
+    "civilization",
+    "empire",
+    "war",
+    "independence",
+    "freedom movement",
+    "medieval",
+    "ancient",
+    "modern india",
+)
+GEOGRAPHY_KEYWORDS = (
+    "geography",
+    "map",
+    "climate",
+    "river",
+    "mountain",
+    "plateau",
+    "earthquake",
+    "volcano",
+    "soil",
+    "resources",
+    "environment",
+    "monsoon",
+    "latitude",
+    "longitude",
+)
+COMPUTER_SCIENCE_KEYWORDS = (
+    "computer",
+    "computer science",
+    "coding",
+    "programming",
+    "python",
+    "java",
+    "javascript",
+    "algorithm",
+    "data structure",
+    "database",
+    "network",
+    "html",
+    "css",
+    "debugging",
+    "code",
+)
 
 
 class LearnServiceBusy(Exception):
@@ -7124,6 +7270,130 @@ def subject_matches(subject, subject_keywords):
     return any(subject_keyword in subject_key for subject_keyword in subject_keywords)
 
 
+def normalized_lesson_text(subject="", topic="", book_name=""):
+    return normalize_lookup_value(" ".join([subject or "", topic or "", book_name or ""]))
+
+
+def text_matches_any(text, keywords):
+    return any(
+        re.search(rf"(?<![a-z0-9]){re.escape(keyword)}(?![a-z0-9])", text)
+        for keyword in keywords
+    )
+
+
+def classify_lesson_category(subject="", topic="", book_name=""):
+    lesson_text = normalized_lesson_text(subject, topic, book_name)
+    subject_text = normalize_lookup_value(subject or "")
+
+    if not lesson_text:
+        return "General Theory"
+
+    if "english" in subject_text:
+        if text_matches_any(lesson_text, ENGLISH_GRAMMAR_KEYWORDS):
+            return "English Grammar"
+        return "English Literature"
+
+    if text_matches_any(subject_text, COMPUTER_SCIENCE_KEYWORDS):
+        return "Computer Science"
+    if text_matches_any(subject_text, MATHEMATICS_KEYWORDS):
+        return "Mathematics"
+    if text_matches_any(subject_text, SCIENCE_KEYWORDS):
+        return "Science"
+    if text_matches_any(subject_text, HISTORY_KEYWORDS):
+        return "History"
+    if text_matches_any(subject_text, GEOGRAPHY_KEYWORDS):
+        return "Geography"
+
+    if text_matches_any(lesson_text, ENGLISH_GRAMMAR_KEYWORDS):
+        return "English Grammar"
+    if text_matches_any(lesson_text, COMPUTER_SCIENCE_KEYWORDS):
+        return "Computer Science"
+    if text_matches_any(lesson_text, MATHEMATICS_KEYWORDS):
+        return "Mathematics"
+    if text_matches_any(lesson_text, SCIENCE_KEYWORDS):
+        return "Science"
+    if text_matches_any(lesson_text, HISTORY_KEYWORDS):
+        return "History"
+    if text_matches_any(lesson_text, GEOGRAPHY_KEYWORDS):
+        return "Geography"
+    if text_matches_any(lesson_text, ENGLISH_LITERATURE_KEYWORDS):
+        return "English Literature"
+
+    return "General Theory"
+
+
+def student_class_number(student_class):
+    match = re.search(r"\d+", str(student_class or ""))
+    return int(match.group()) if match else None
+
+
+def class_difficulty_instruction(student_class):
+    class_number = student_class_number(student_class)
+    if class_number is None:
+        return "Match the difficulty to the stated class level."
+    if class_number <= 6:
+        return "For Class 6 or below, use simple vocabulary, direct tasks, and one-step reasoning."
+    if class_number >= 10:
+        return "For Class 10 or above, include more application-based, reasoning, and multi-step questions."
+    return "Use moderate school-level difficulty with a mix of recall, understanding, and application."
+
+
+def build_adaptive_quiz_prompt_section(subject, topic, book_name, student_class):
+    category = classify_lesson_category(subject, topic, book_name)
+    difficulty_instruction = class_difficulty_instruction(student_class)
+
+    category_guidance = {
+        "English Grammar": """
+- Generate practice-oriented grammar questions.
+- Prefer fill in the blanks, error correction, sentence transformation, active/passive voice, direct/indirect speech, articles, prepositions, tenses, conjunctions, degrees of comparison, and rearranging sentences.
+- Avoid definition-only questions whenever possible.
+- Do not ask questions like "What is a tense?", "What is an article?", "Define active voice", or "What is narration?" unless absolutely necessary.
+- Make the student apply the grammar rule in a sentence.
+""",
+        "English Literature": """
+- Generate character, theme, moral, plot, comprehension, inference, and vocabulary-in-context questions.
+- Ask about meaning, motive, evidence from the text, and how events or characters develop.
+""",
+        "Mathematics": """
+- Generate Numerical problems, calculations, word problems, and equation solving.
+- Prefer questions that require working out an answer.
+- Do not ask "What is Algebra?" or definition-only questions unless absolutely necessary.
+""",
+        "Science": """
+- Generate conceptual understanding, application, diagram-based, cause/effect, and reasoning questions.
+- Ask why something happens, how a process works, or how the idea is used in daily life.
+""",
+        "History": """
+- Generate chronology, events, cause/effect, and historical significance questions.
+- Ask students to connect dates, causes, outcomes, people, and importance.
+""",
+        "Geography": """
+- Generate map-based, physical process, environmental reasoning, and application questions.
+- Ask how location, climate, resources, or human activity affect a place or process.
+""",
+        "Computer Science": """
+- Generate logic, code output, programming concepts, debugging, and algorithm questions.
+- Include small code snippets or pseudocode when suitable for the class level.
+""",
+        "General Theory": """
+- Continue the existing quiz behaviour with clear short-answer questions based on the notes.
+- Use simple recall and understanding questions when no specialized subject style fits.
+""",
+    }[category].strip()
+
+    return f"""
+Adaptive Quiz Engine:
+- Automatically classified educational category: {category}
+- Before writing the questions, behave like an experienced school teacher and verify that this is the best category from the subject, topic, book name, and lesson context.
+- Do not print the category in the answer.
+- {difficulty_instruction}
+{category_guidance}
+- Avoid repeating the same question format.
+- Mix appropriate formats such as MCQ, fill blanks, match, correct sentence, rewrite, true/false, identify, arrange, numerical, and application questions.
+- Keep each question compatible with a typed short-answer response field.
+"""
+
+
 def normalize_lookup_value(value):
     return re.sub(r"\s+", " ", value.strip().lower())
 
@@ -7366,6 +7636,7 @@ Q5. question
 
 Do not provide answers to the questions.
 Do not invent textbook chapter content.
+Follow the Adaptive Quiz Engine category and question-style rules from the original prompt.
 """
     base_prompt = trim_learn_prompt(
         original_prompt,
@@ -8541,6 +8812,12 @@ def learn():
         abort(400, description="Name, class, subject, and topic are required.")
 
     subject_prompt_section = learning_subject_prompt_section(subject)
+    adaptive_quiz_prompt_section = build_adaptive_quiz_prompt_section(
+        subject,
+        topic,
+        book_name,
+        student_class,
+    )
     textbook_context_section = local_textbook_context_section(
         student_class,
         subject,
@@ -8559,6 +8836,7 @@ Topic: {topic}
 
 {ai_preference_prompt_context(account)}
 {subject_prompt_section}
+{adaptive_quiz_prompt_section}
 {textbook_context_section}
 
 Rules:
@@ -8633,7 +8911,7 @@ If visualization_required is false, use "template": "generic", "type": "none", e
 
 ## Questions
 
-Create exactly 5 short-answer questions.
+Create exactly 5 teacher-style quiz questions using the Adaptive Quiz Engine rules above.
 
 Rules:
 - Number questions as Q1, Q2, Q3, Q4 and Q5.
@@ -8644,6 +8922,7 @@ Rules:
 - Always include the exact heading "## Questions".
 - Always include exactly 5 questions, even if the chapter is unknown.
 - If the chapter is unknown, questions must not include invented facts.
+- Keep the existing Q1 to Q5 plain-text format so the quiz, scoring, history, analytics, reports, and gamification continue to work.
 """
     prompt = trim_learn_prompt(prompt)
     log_learn_metric(
