@@ -1357,13 +1357,49 @@ Grade: A
         script = Path("static/motion.js").read_text(encoding="utf-8")
         self.assertIn("setupPageTransitionOverlay", script)
         self.assertIn('document.addEventListener("click", handlePageTransitionClick, true)', script)
+        self.assertIn("event.preventDefault();", script)
         self.assertIn("showPageTransitionOverlay(link)", script)
+        self.assertIn("navigateAfterOverlayPaint(link)", script)
+        self.assertIn("window.location.assign(destination)", script)
+        self.assertIn('document.readyState === "loading"', script)
         self.assertIn("Loading Dashboard...", script)
         self.assertIn("Opening Profile...", script)
         self.assertIn("Preparing Learning History...", script)
         self.assertIn("[data-developer-users-link]", script)
         self.assertIn("download-data", script)
         self.assertIn("download(?:", script)
+
+        auth_nav = Path("templates/components/auth_nav.html").read_text(encoding="utf-8")
+        self.assertIn("event.stopPropagation();", auth_nav)
+
+        css = Path("static/style.css").read_text(encoding="utf-8")
+        self.assertIn("z-index: 10000;", css)
+        self.assertIn(".page-transition-overlay[hidden]", css)
+        self.assertIn("display: none;", css)
+        self.assertIn(".page-transition-overlay.is-visible", css)
+        self.assertIn("opacity: 1;", css)
+        self.assertIn("pointer-events: auto;", css)
+
+    def test_full_page_templates_include_transition_overlay_runtime(self):
+        missing_overlay = []
+        missing_motion = []
+
+        for template_path in Path("templates").glob("*.html"):
+            source = template_path.read_text(encoding="utf-8")
+            if "<body" not in source or "</body>" not in source:
+                continue
+
+            has_footer = "components/footer.html" in source
+            has_overlay = "components/loading_overlay.html" in source
+            has_motion = "motion.js" in source
+
+            if not has_footer and not has_overlay:
+                missing_overlay.append(template_path.name)
+            if not has_footer and not has_motion:
+                missing_motion.append(template_path.name)
+
+        self.assertEqual([], missing_overlay)
+        self.assertEqual([], missing_motion)
 
     def test_pwa_manifest_contains_install_metadata_and_icons(self):
         response = self.client.get("/manifest.json")

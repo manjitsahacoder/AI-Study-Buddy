@@ -12,5 +12,7 @@
     {% set message = 'Your lesson is safe to request again in a moment.' %}
     {% include 'components/ai_error_card.html' %}
     {% include 'components/pwa_runtime.html' %}
+    {% include 'components/loading_overlay.html' %}
+    <script src="{{ url_for('static', filename='motion.js') }}" defer></script>
 </body>
 </html>

@@ -486,18 +486,24 @@
             });
         }
 
+        function navigateAfterOverlayPaint(link) {
+            const destination = link.href;
+            window.requestAnimationFrame(function () {
+                window.setTimeout(function () {
+                    window.location.assign(destination);
+                }, 0);
+            });
+        }
+
         function handlePageTransitionClick(event) {
             const link = event.target.closest("a[href]");
             if (!link || !shouldHandlePageTransition(event, link)) {
                 return;
             }
 
+            event.preventDefault();
             showPageTransitionOverlay(link);
-            pendingHideTimer = window.setTimeout(function () {
-                if (event.defaultPrevented) {
-                    hidePageTransitionOverlay();
-                }
-            }, 120);
+            navigateAfterOverlayPaint(link);
         }
 
         document.addEventListener("click", handlePageTransitionClick, true);
@@ -513,7 +519,7 @@
         });
     }
 
-    document.addEventListener("DOMContentLoaded", function () {
+    function initializeMotion() {
         setupReveal();
         setupCounters();
         setupLoadingStates();
@@ -522,5 +528,11 @@
         setupDemoButtons();
         setupExhibitionTour();
         setupPageTransitionOverlay();
-    });
+    }
+
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", initializeMotion);
+    } else {
+        initializeMotion();
+    }
 })();
