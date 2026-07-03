@@ -2197,6 +2197,18 @@ Grade: A
             css,
         )
 
+    def test_profile_menu_button_is_excluded_from_primary_button_reset(self):
+        css = Path("static/style.css").read_text(encoding="utf-8")
+
+        self.assertIn(
+            ":where(button:not(.profile-menu-button), .button-link, .back-btn):not(.secondary-link):not(.danger-link)",
+            css,
+        )
+        self.assertNotIn(
+            ":where(button, .button-link, .back-btn):not(.secondary-link):not(.danger-link)",
+            css,
+        )
+
     def test_login_session_persists_across_page_refreshes(self):
         self.register_user()
         self.login_user()
