@@ -295,6 +295,12 @@ Q5. What is question five?
                 self.assertIn("Do not ask questions like", prompt)
                 self.assertIn("A question may span multiple lines", prompt)
                 self.assertIn("She ____ (go) to school every day.", prompt)
+                self.assertIn("insert one blank line before the first sub-part", prompt)
+                self.assertIn("①", prompt)
+                self.assertIn("Never place multiple sub-parts on the same line", prompt)
+                self.assertFalse(
+                    any("a)" in line and "b)" in line for line in prompt.splitlines())
+                )
 
     @patch.object(app_module.model, "generate_content")
     def test_learn_preserves_multiline_grammar_question_body_through_storage(self, generate_content):
@@ -336,6 +342,18 @@ They are playing football.
         )
 
         self.assertEqual(response.status_code, 200)
+        prompt = generate_content.call_args.args[0]
+        self.assertIn("Q1. Fill in the blanks with the correct form of the verb.", prompt)
+        self.assertIn(
+            "Q1. Fill in the blanks with the correct form of the verb.\n\n"
+            "  ① My brother ____ (visit) London next month.",
+            prompt,
+        )
+        self.assertIn("\n\n  ② She ____ (write) a letter to her friend yesterday.", prompt)
+        self.assertIn("\n\n  ③ They ____ (play) football since morning.", prompt)
+        self.assertFalse(
+            any("a)" in line and "b)" in line for line in prompt.splitlines())
+        )
         page = response.get_data(as_text=True)
         self.assertIn("Fill in the blank with the correct form of the verb", page)
         self.assertIn("She ____ (go) to school every day.", page)

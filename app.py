@@ -7610,6 +7610,13 @@ Adaptive Quiz Engine:
 - Keep each question compatible with a typed short-answer response field.
 - A question may span multiple lines when the format needs an instruction plus a sentence, list, or code snippet.
 - For grammar questions, keep the practice sentence with the same question. Example: "She ____ (go) to school every day."
+- For grouped English grammar practice, write the main instruction on the Q line, then insert one blank line before the first sub-part.
+- Prefer exhibition-friendly circled sub-part markers such as ①, ②, and ③.
+- If you use lettered markers, each sub-part must start on its own new line:
+  a)
+  b)
+  c)
+- Never place multiple sub-parts on the same line.
 """
 
 
@@ -9265,6 +9272,20 @@ Rules:
 - For grammar questions, do not separate the practice sentence from its instruction. Example:
   Q1. Fill in the blank with the correct form of the verb given in the brackets:
   She ____ (go) to school every day.
+- For grouped grammar questions, write the main instruction on the Q line, insert one blank line, then put every sub-part on its own line.
+- Prefer exhibition-friendly circled sub-part markers:
+  Q1. Fill in the blanks with the correct form of the verb.
+
+  ① My brother ____ (visit) London next month.
+
+  ② She ____ (write) a letter to her friend yesterday.
+
+  ③ They ____ (play) football since morning.
+- If using lettered sub-parts, each one must start on its own new line:
+  a)
+  b)
+  c)
+- Never place multiple sub-parts on the same line.
 - Leave one blank line between questions.
 - Do NOT provide answers.
 - Do NOT put all questions in one paragraph.
