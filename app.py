@@ -60,6 +60,7 @@ from gemini_service import (
 from models import (
     DiagramLibrary,
     DownloadedFile,
+    FavouriteNote,
     Flashcard,
     FlashcardSet,
     ImportantQuestionSet,
@@ -332,6 +333,7 @@ def initialize_database():
         ensure_user_preference_schema_compatibility()
         ensure_memory_challenge_schema_compatibility()
         ensure_learning_history_schema_compatibility()
+        ensure_favourite_notes_schema_compatibility()
         ensure_user_roles()
         app.logger.info("Database tables are ready.")
 
@@ -926,6 +928,23 @@ def ensure_learning_history_schema_compatibility():
                 )
             )
         db.session.commit()
+
+
+def ensure_favourite_notes_schema_compatibility():
+    inspector = inspect(db.engine)
+    if "favourite_notes" not in inspector.get_table_names():
+        FavouriteNote.__table__.create(db.engine, checkfirst=True)
+        return
+
+    inspected_columns = {column["name"] for column in inspector.get_columns("favourite_notes")}
+    if "student_class" in inspected_columns:
+        return
+
+    if db.engine.dialect.name == "sqlite":
+        db.session.execute(text("ALTER TABLE favourite_notes ADD COLUMN student_class TEXT"))
+    elif db.engine.dialect.name == "postgresql":
+        db.session.execute(text("ALTER TABLE favourite_notes ADD COLUMN IF NOT EXISTS student_class TEXT"))
+    db.session.commit()
 
 
 def normalize_account_name(name):
@@ -1787,17 +1806,66 @@ def get_learning_history_entries(user_id, search="", subject_filter="all", sort_
     lesson_ids_with_revisions = revision_lesson_ids(user_id, [lesson.id for lesson in lessons])
     lesson_ids_with_mind_maps = mind_map_lesson_ids(user_id, [lesson.id for lesson in lessons])
     lesson_ids_with_important_questions = important_question_lesson_ids(user_id, [lesson.id for lesson in lessons])
+    lesson_ids_with_favourites = favourite_lesson_ids(user_id, [lesson.id for lesson in lessons])
     for lesson in lessons:
         lesson.has_flashcards = lesson.id in lesson_ids_with_flashcards
         lesson.has_revision = lesson.id in lesson_ids_with_revisions
         lesson.has_mind_map = lesson.id in lesson_ids_with_mind_maps
         lesson.has_important_questions = lesson.id in lesson_ids_with_important_questions
+        lesson.is_favourite = lesson.id in lesson_ids_with_favourites
         lesson.has_visualization = learning_history_lesson_has_visualization(lesson)
     return lessons
 
 
 def get_learning_history_entry(entry_id, user_id):
     return LearningHistory.query.filter_by(id=entry_id, user_id=user_id).first()
+
+
+def favourite_lesson_ids(user_id, lesson_ids):
+    if not lesson_ids:
+        return set()
+    rows = (
+        FavouriteNote.query.with_entities(FavouriteNote.learning_history_id)
+        .filter(
+            FavouriteNote.user_id == user_id,
+            FavouriteNote.learning_history_id.in_(lesson_ids),
+        )
+        .all()
+    )
+    return {row.learning_history_id for row in rows}
+
+
+def existing_favourite_note(lesson_id, user_id):
+    return FavouriteNote.query.filter_by(
+        user_id=user_id,
+        learning_history_id=lesson_id,
+    ).first()
+
+
+def favourite_note_rows(user_id):
+    account = current_user()
+    fallback_class = preferred_class_for_user(account)
+    rows = (
+        db.session.query(FavouriteNote, LearningHistory)
+        .join(LearningHistory, LearningHistory.id == FavouriteNote.learning_history_id)
+        .filter(FavouriteNote.user_id == user_id, LearningHistory.user_id == user_id)
+        .order_by(FavouriteNote.created_at.desc(), FavouriteNote.id.desc())
+        .all()
+    )
+    return [
+        {
+            "id": favourite.id,
+            "lesson_id": lesson.id,
+            "topic": lesson.topic,
+            "subject": lesson.subject,
+            "student_class": favourite.student_class or fallback_class,
+            "saved_at": format_model_datetime(favourite.created_at),
+            "open_url": url_for("lesson_notes", lesson_id=lesson.id),
+            "pdf_url": url_for("download_learning_history_pdf", lesson_id=lesson.id),
+            "remove_url": url_for("toggle_favourite_note", lesson_id=lesson.id),
+        }
+        for favourite, lesson in rows
+    ]
 
 
 def get_flashcard_lesson(entry_id, user_id):
@@ -2264,7 +2332,6 @@ def save_downloaded_file(user_id, file_type, subject, topic, score="", grade="")
     return downloaded_file.id
 
 
-
 DOWNLOAD_FILE_TYPE_LABELS = {
     "performance_report": "Performance Report",
     "saved_lesson": "AI Notes PDF",
@@ -2383,6 +2450,7 @@ def downloaded_report_rows(user_id):
         }
         for row in rows
     ]
+
 
 def save_quiz_history(name, student_class, subject, topic, score, grade, questions, answers, report_text, user_id=None):
     history = QuizHistory(
@@ -6261,23 +6329,52 @@ def split_learning_content(response_text):
     )
     raw_decision = extract_json_object(decision_text or "") if decision_text else {}
     notes, diagram_steps = split_notes_and_diagram(pre_questions)
-    questions = []
-
-    for line in response_text[marker.end():].strip().splitlines():
-        cleaned_line = re.sub(r"^\s*[-*]\s*", "", line).strip()
-        cleaned_line = cleaned_line.replace("**", "").replace("__", "")
-        match = re.match(
-            r"^Q([1-5])\s*[.):\-]\s*(.+)$",
-            cleaned_line,
-            re.IGNORECASE,
-        )
-        if match:
-            questions.append((int(match.group(1)), match.group(2).strip()))
+    questions = parse_numbered_quiz_questions(response_text[marker.end():])
 
     if [number for number, _ in questions] != list(range(1, 6)):
         raise ValueError("The AI response did not include exactly five numbered questions.")
 
     return notes, raw_decision or {}, diagram_steps, [question for _, question in questions]
+
+
+def parse_numbered_quiz_questions(questions_text):
+    questions = []
+    current_number = None
+    current_lines = []
+
+    def append_current_question():
+        if current_number is None:
+            return
+
+        while current_lines and not current_lines[0].strip():
+            current_lines.pop(0)
+        while current_lines and not current_lines[-1].strip():
+            current_lines.pop()
+
+        question_text = "\n".join(line.rstrip() for line in current_lines).strip()
+        if question_text:
+            questions.append((current_number, question_text))
+
+    for raw_line in questions_text.strip().splitlines():
+        marker_line = re.sub(r"^\s*[-*]\s*", "", raw_line).strip()
+        marker_line = marker_line.replace("**", "").replace("__", "")
+        match = re.match(
+            r"^Q([1-5])\s*[.):\-]\s*(.*)$",
+            marker_line,
+            re.IGNORECASE,
+        )
+        if match:
+            append_current_question()
+            current_number = int(match.group(1))
+            first_line = match.group(2).strip()
+            current_lines = [first_line] if first_line else []
+            continue
+
+        if current_number is not None:
+            current_lines.append(raw_line.rstrip())
+
+    append_current_question()
+    return questions
 
 
 def split_notes_and_diagram(notes_text):
@@ -7511,6 +7608,8 @@ Adaptive Quiz Engine:
 - Avoid repeating the same question format.
 - Mix appropriate formats such as MCQ, fill blanks, match, correct sentence, rewrite, true/false, identify, arrange, numerical, and application questions.
 - Keep each question compatible with a typed short-answer response field.
+- A question may span multiple lines when the format needs an instruction plus a sentence, list, or code snippet.
+- For grammar questions, keep the practice sentence with the same question. Example: "She ____ (go) to school every day."
 """
 
 
@@ -8191,6 +8290,7 @@ def view_learning_history(lesson_id):
         has_revision=bool(existing_revision_sheet(lesson.id, session["user_id"])),
         has_mind_map=bool(existing_mind_map(lesson.id, session["user_id"])),
         has_important_questions=bool(existing_important_question_set(lesson.id, session["user_id"])),
+        is_favourite=bool(existing_favourite_note(lesson.id, session["user_id"])),
         study_plan=build_study_plan(lesson, session["user_id"], current_page_url=current_page_url),
         current_page_url=current_page_url,
     )
@@ -8228,6 +8328,7 @@ def lesson_notes(lesson_id):
         questions=questions,
         lesson_id=lesson.id,
         has_flashcards=bool(existing_flashcard_set(lesson.id, session["user_id"])),
+        is_favourite=bool(existing_favourite_note(lesson.id, session["user_id"])),
         current_page_url=url_for("lesson_notes", lesson_id=lesson.id),
     )
 
@@ -8810,23 +8911,147 @@ def tutor_message(tutor_lesson_id):
 @app.route("/downloaded-reports")
 @login_required
 def downloaded_reports():
+    account = current_user()
     return render_template(
-        "placeholder.html",
-        page_title="Downloaded Reports",
-        heading="Downloaded reports coming soon",
-        message="Future downloaded performance reports will appear here.",
+        "downloaded_reports.html",
+        account=account,
+        reports=downloaded_report_rows(account["id"]),
     )
+
+
+@app.route("/downloaded-reports/<int:download_id>/download")
+@login_required
+def download_report_file(download_id):
+    downloaded_file = DownloadedFile.query.filter_by(
+        id=download_id,
+        user_id=session["user_id"],
+    ).first()
+    if not downloaded_file:
+        abort(404)
+
+    if downloaded_file.file_type in {"saved_lesson", "notes"}:
+        lesson = matching_lesson_for_download(downloaded_file)
+        if not lesson:
+            abort(404, description="The original saved lesson for this download could not be found.")
+        diagram_payload = decode_diagram_payload(lesson.diagram_data, lesson.subject, lesson.topic)
+        diagram_view = lesson_diagram_view(lesson, diagram_payload)
+        pdf_file = create_learning_history_pdf(
+            lesson,
+            diagram_payload,
+            decode_json_list(lesson.quiz_questions),
+            diagram_view=diagram_view,
+        )
+        return send_file(
+            pdf_file,
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name=safe_notes_filename(lesson.topic, extension="pdf"),
+        )
+
+    if downloaded_file.file_type == "revision_sheet":
+        match = matching_revision_for_download(downloaded_file)
+        if not match:
+            abort(404, description="The original revision sheet for this download could not be found.")
+        lesson, revision_sheet = match
+        return send_file(
+            create_revision_pdf(lesson, revision_sheet),
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name=safe_notes_filename(f"{lesson.topic}_revision", extension="pdf"),
+        )
+
+    if downloaded_file.file_type == "important_questions":
+        match = matching_important_questions_for_download(downloaded_file)
+        if not match:
+            abort(404, description="The original important questions set for this download could not be found.")
+        lesson, question_set = match
+        return send_file(
+            create_important_questions_pdf(lesson, question_set),
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name=safe_notes_filename(f"{lesson.topic}_important_questions", extension="pdf"),
+        )
+
+    if downloaded_file.file_type == "performance_report":
+        quiz = matching_quiz_for_download(downloaded_file)
+        if not quiz:
+            abort(404, description="The original quiz report for this download could not be found.")
+        evaluation_payload = extract_json_payload(quiz.report_text)
+        evaluation = evaluation_payload if isinstance(evaluation_payload, dict) else None
+        report_text = structured_evaluation_to_markdown(evaluation) if evaluation else quiz.report_text
+        return send_file(
+            create_performance_pdf(
+                quiz.name,
+                quiz.subject,
+                quiz.topic,
+                quiz.score,
+                quiz.grade,
+                report_text,
+                evaluation,
+            ),
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name=safe_report_filename(quiz.topic),
+        )
+
+    abort(404, description="This downloaded report type cannot be reconstructed.")
+
+
+@app.route("/downloaded-reports/<int:download_id>/delete", methods=["POST"])
+@login_required
+def delete_downloaded_report(download_id):
+    downloaded_file = DownloadedFile.query.filter_by(
+        id=download_id,
+        user_id=session["user_id"],
+    ).first()
+    if not downloaded_file:
+        abort(404)
+    db.session.delete(downloaded_file)
+    db.session.commit()
+    flash("Downloaded report removed from your download center.", "success")
+    return redirect(url_for("downloaded_reports"))
 
 
 @app.route("/favourite-notes")
 @login_required
 def favourite_notes():
+    account = current_user()
     return render_template(
-        "placeholder.html",
-        page_title="Favourite Notes",
-        heading="Favourite notes coming soon",
-        message="Saved and favourite notes will appear here.",
+        "favourite_notes.html",
+        account=account,
+        favourites=favourite_note_rows(account["id"]),
     )
+
+
+@app.route("/learning-history/<int:lesson_id>/favourite", methods=["POST"])
+@login_required
+def toggle_favourite_note(lesson_id):
+    lesson = get_learning_history_entry(lesson_id, session["user_id"])
+    if not lesson:
+        abort(404)
+
+    favourite = existing_favourite_note(lesson.id, session["user_id"])
+    if favourite:
+        db.session.delete(favourite)
+        flash("Removed from Favourite Notes.", "success")
+    else:
+        student_class = request.form.get("student_class", "").strip() or preferred_class_for_user(current_user())
+        db.session.add(
+            FavouriteNote(
+                user_id=session["user_id"],
+                learning_history_id=lesson.id,
+                student_class=student_class,
+            )
+        )
+        flash("Added to Favourite Notes.", "success")
+
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+
+    next_url = safe_internal_url(request.form.get("next"))
+    return redirect(next_url or url_for("favourite_notes"))
 
 
 @app.route("/settings")
@@ -9036,6 +9261,10 @@ Create exactly 5 teacher-style quiz questions using the Adaptive Quiz Engine rul
 Rules:
 - Number questions as Q1, Q2, Q3, Q4 and Q5.
 - Put each question on a new line.
+- A question may span multiple lines when needed. Keep every instruction, sentence, list, or code snippet that belongs to that question directly under the same Q number until the next Q number begins.
+- For grammar questions, do not separate the practice sentence from its instruction. Example:
+  Q1. Fill in the blank with the correct form of the verb given in the brackets:
+  She ____ (go) to school every day.
 - Leave one blank line between questions.
 - Do NOT provide answers.
 - Do NOT put all questions in one paragraph.
@@ -9165,6 +9394,7 @@ Rules:
         questions=questions,
         lesson_id=lesson_id,
         has_flashcards=False,
+        is_favourite=False,
         current_page_url=url_for("lesson_notes", lesson_id=lesson_id) if lesson_id else url_for("home"),
     )
 

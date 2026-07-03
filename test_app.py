@@ -16,6 +16,7 @@ from gemini_service import classify_gemini_exception
 from models import (
     DownloadedFile,
     DiagramLibrary,
+    FavouriteNote,
     Flashcard,
     FlashcardSet,
     ImportantQuestionSet,
@@ -33,6 +34,7 @@ from models import (
 )
 from diagram_library.metadata import DiagramCandidate, reusable_license
 from diagram_library.lookup import candidate_language_category, rank_diagram_candidates
+from diagram_library.providers import NcertProvider, ProviderRegistry
 from diagram_library.service import get_or_create_diagram
 from diagram_library.storage import download_and_store, repair_cached_image_extension, valid_cached_image
 
@@ -100,6 +102,14 @@ class RouteTests(unittest.TestCase):
             image_file.write(self.make_image_bytes("PNG"))
         self.addCleanup(lambda: os.path.exists(path) and os.remove(path))
         return f"diagram_cache/{filename}"
+
+    def write_ncert_diagram(self, subject_area="biology", filename="mitochondria.png"):
+        diagram_dir = Path(app_module.app.static_folder) / "textbook_diagrams" / subject_area
+        diagram_dir.mkdir(parents=True, exist_ok=True)
+        path = diagram_dir / filename
+        path.write_bytes(self.make_image_bytes("PNG"))
+        self.addCleanup(lambda: path.exists() and path.unlink())
+        return path
 
     def make_image_bytes(self, image_format):
         from io import BytesIO
@@ -283,6 +293,138 @@ Q5. What is question five?
                 self.assertIn("Avoid definition-only questions", prompt)
                 self.assertIn("Make the student apply the grammar rule", prompt)
                 self.assertIn("Do not ask questions like", prompt)
+                self.assertIn("A question may span multiple lines", prompt)
+                self.assertIn("She ____ (go) to school every day.", prompt)
+
+    @patch.object(app_module.model, "generate_content")
+    def test_learn_preserves_multiline_grammar_question_body_through_storage(self, generate_content):
+        self.register_user()
+        self.login_user()
+        generate_content.return_value = MockResponse(
+            """# Tenses
+Tenses show the time of an action.
+
+## Quick Revision
+- Use the simple present for habits.
+
+## Questions
+Q1. Fill in the blank with the correct form of the verb given in the brackets:
+She ____ (go) to school every day.
+
+Q2. Correct the error in the sentence:
+He go to market yesterday.
+
+Q3. Rearrange the words to make a meaningful sentence:
+school / goes / she / to / every day
+
+Q4. Rewrite the sentence in the past tense:
+I eat breakfast.
+
+Q5. Identify the tense:
+They are playing football.
+"""
+        )
+
+        response = self.client.post(
+            "/learn",
+            data={
+                "name": "Asha",
+                "student_class": "8",
+                "subject": "English",
+                "topic": "Tenses",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        self.assertIn("Fill in the blank with the correct form of the verb", page)
+        self.assertIn("She ____ (go) to school every day.", page)
+
+        with app_module.app.app_context():
+            lesson = LearningHistory.query.first()
+            saved_questions = json.loads(lesson.quiz_questions)
+
+        self.assertEqual(
+            saved_questions[0],
+            "Fill in the blank with the correct form of the verb given in the brackets:\n"
+            "She ____ (go) to school every day.",
+        )
+        self.assertIn("He go to market yesterday.", saved_questions[1])
+        self.assertIn("school / goes / she / to / every day", saved_questions[2])
+
+    def test_split_learning_content_preserves_grammar_question_blocks(self):
+        _, _, _, questions = app_module.split_learning_content(
+            """# Tenses
+Tenses show time.
+
+## Questions
+Q1. Fill in the blank with the correct form of the verb given in the brackets:
+She ____ (go) to school every day.
+
+Q2. Correct the error in the sentence:
+He go to market yesterday.
+
+Q3. Rearrange the words to make a meaningful sentence:
+school / goes / she / to / every day
+
+Q4. Change into passive voice:
+The teacher praised the student.
+
+Q5. Rewrite as indirect speech:
+She said, "I am tired."
+"""
+        )
+
+        self.assertEqual(
+            questions[0],
+            "Fill in the blank with the correct form of the verb given in the brackets:\n"
+            "She ____ (go) to school every day.",
+        )
+        self.assertEqual(
+            questions[1],
+            "Correct the error in the sentence:\nHe go to market yesterday.",
+        )
+        self.assertEqual(
+            questions[2],
+            "Rearrange the words to make a meaningful sentence:\n"
+            "school / goes / she / to / every day",
+        )
+
+    def test_split_learning_content_keeps_existing_subject_quizzes_unchanged(self):
+        cases = {
+            "Science": [
+                "Why do leaves look green?",
+                "How do roots help a plant?",
+                "What happens during photosynthesis?",
+                "Why is sunlight important for plants?",
+                "Name one product made during photosynthesis.",
+            ],
+            "Math": [
+                "Solve 2x + 3 = 9.",
+                "Find the area of a rectangle with length 8 cm and breadth 5 cm.",
+                "What is the value of 7 squared?",
+                "Simplify 3a + 2a.",
+                "Convert 0.75 into a fraction.",
+            ],
+            "History": [
+                "Why was the Salt March important?",
+                "Name one leader of the Indian freedom movement.",
+                "What was the main cause of the French Revolution?",
+                "How did newspapers help nationalist movements?",
+                "What does chronology mean in history?",
+            ],
+        }
+
+        for subject, expected_questions in cases.items():
+            with self.subTest(subject=subject):
+                response_text = "# Notes\nUseful notes.\n\n## Questions\n" + "\n\n".join(
+                    f"Q{index}. {question}"
+                    for index, question in enumerate(expected_questions, start=1)
+                )
+
+                _, _, _, questions = app_module.split_learning_content(response_text)
+
+                self.assertEqual(questions, expected_questions)
 
     def test_adaptive_quiz_prompt_uses_subject_specific_question_styles(self):
         cases = [
@@ -445,6 +587,171 @@ Q5. What is question five?
         self.assertEqual(author, "Commons Author")
         self.assertEqual(license_text, "CC BY 4.0")
         self.assertIn("Commons Author", attribution)
+
+    def test_diagram_library_default_registry_prioritizes_ncert_before_wikimedia(self):
+        from diagram_library.service import default_registry
+
+        registry = default_registry(static_folder=app_module.app.static_folder)
+
+        self.assertIsInstance(registry.providers[0], NcertProvider)
+        self.assertEqual(registry.providers[1].name, "wikimedia")
+
+    def test_diagram_library_tries_ncert_before_wikimedia(self):
+        stored_relative = self.write_test_diagram("fallback-provider-order.png")
+        stored_path = Path(app_module.app.static_folder) / stored_relative
+        calls = []
+
+        class EmptyNcertProvider:
+            name = "ncert"
+
+            def find(self, queries, *, topic="", subject="", limit_per_query=8):
+                calls.append(self.name)
+                return []
+
+        class FakeWikimediaProvider:
+            name = "wikimedia"
+
+            def find(self, queries, *, topic="", subject="", limit_per_query=8):
+                calls.append(self.name)
+                return [
+                    DiagramCandidate(
+                        provider="Wikimedia Commons",
+                        title="Unknown topic educational diagram",
+                        image_url="https://upload.wikimedia.org/test-fallback-order.png",
+                        source_url="https://commons.wikimedia.org/wiki/File:Fallback_order.png",
+                        author="Commons Author",
+                        license="CC BY 4.0",
+                        attribution="Unknown topic diagram by Commons Author, CC BY 4.0",
+                        mime_type="image/png",
+                    )
+                ]
+
+            def fetch(self, candidate, cache_dir, topic):
+                return stored_path
+
+        registry = ProviderRegistry([EmptyNcertProvider(), FakeWikimediaProvider()])
+        with app_module.app.app_context():
+            diagram = get_or_create_diagram(
+                lesson_id=1,
+                subject="Biology",
+                topic="Unknown Topic",
+                static_folder=app_module.app.static_folder,
+                provider_registry=registry,
+            )
+            provider = diagram.provider if diagram else ""
+
+        self.assertIsNotNone(diagram)
+        self.assertEqual(calls, ["ncert", "wikimedia"])
+        self.assertEqual(provider, "Wikimedia Commons")
+
+    def test_diagram_library_ncert_result_skips_wikimedia(self):
+        self.write_ncert_diagram("biology", "mitochondria.png")
+
+        class FailingWikimediaProvider:
+            name = "wikimedia"
+
+            def find(self, queries, *, topic="", subject="", limit_per_query=8):
+                raise AssertionError("Wikimedia should not be called when NCERT finds a diagram.")
+
+        registry = ProviderRegistry(
+            [
+                NcertProvider(static_folder=app_module.app.static_folder),
+                FailingWikimediaProvider(),
+            ]
+        )
+        with app_module.app.app_context():
+            diagram = get_or_create_diagram(
+                lesson_id=1,
+                subject="Biology",
+                topic="mitochondrion",
+                static_folder=app_module.app.static_folder,
+                provider_registry=registry,
+            )
+            provider = diagram.provider if diagram else ""
+            cached_image_exists = bool(diagram and (Path(app_module.app.static_folder) / diagram.image_path).exists())
+            diagram_count = DiagramLibrary.query.count()
+
+        self.assertIsNotNone(diagram)
+        self.assertEqual(provider, "NCERT Textbook Diagrams")
+        self.assertEqual(diagram_count, 1)
+        self.assertTrue(cached_image_exists)
+
+    def test_diagram_library_unknown_topic_falls_back_to_wikimedia(self):
+        stored_relative = self.write_test_diagram("fallback-wikimedia.png")
+        stored_path = Path(app_module.app.static_folder) / stored_relative
+        wikimedia_calls = []
+
+        class FakeWikimediaProvider:
+            name = "wikimedia"
+
+            def find(self, queries, *, topic="", subject="", limit_per_query=8):
+                wikimedia_calls.append(topic)
+                return [
+                    DiagramCandidate(
+                        provider="Wikimedia Commons",
+                        title="Refraction educational diagram",
+                        image_url="https://upload.wikimedia.org/test-refraction.png",
+                        source_url="https://commons.wikimedia.org/wiki/File:Refraction.png",
+                        author="Commons Author",
+                        license="CC BY 4.0",
+                        attribution="Refraction educational diagram by Commons Author, CC BY 4.0",
+                        mime_type="image/png",
+                    )
+                ]
+
+            def fetch(self, candidate, cache_dir, topic):
+                return stored_path
+
+        registry = ProviderRegistry(
+            [
+                NcertProvider(static_folder=app_module.app.static_folder),
+                FakeWikimediaProvider(),
+            ]
+        )
+        with app_module.app.app_context():
+            diagram = get_or_create_diagram(
+                lesson_id=1,
+                subject="Physics",
+                topic="Refraction",
+                static_folder=app_module.app.static_folder,
+                provider_registry=registry,
+            )
+            provider = diagram.provider if diagram else ""
+
+        self.assertIsNotNone(diagram)
+        self.assertEqual(wikimedia_calls, ["Refraction"])
+        self.assertEqual(provider, "Wikimedia Commons")
+
+    def test_diagram_library_ncert_cache_reuse_prevents_duplicate_entries(self):
+        self.write_ncert_diagram("biology", "photosynthesis.png")
+        registry = ProviderRegistry([NcertProvider(static_folder=app_module.app.static_folder)])
+
+        class FailingRegistry:
+            def search(self, queries, limit_per_query=8):
+                raise AssertionError("Provider should not be called after NCERT result is cached.")
+
+        with app_module.app.app_context():
+            first = get_or_create_diagram(
+                lesson_id=1,
+                subject="Biology",
+                topic="Photosynthesis",
+                static_folder=app_module.app.static_folder,
+                provider_registry=registry,
+            )
+            second = get_or_create_diagram(
+                lesson_id=1,
+                subject="Biology",
+                topic="Photosynthesis",
+                static_folder=app_module.app.static_folder,
+                provider_registry=FailingRegistry(),
+            )
+            diagram_count = DiagramLibrary.query.count()
+            first_id = first.id if first else None
+            second_id = second.id if second else None
+
+        self.assertIsNotNone(first)
+        self.assertEqual(first_id, second_id)
+        self.assertEqual(diagram_count, 1)
 
     def diagram_candidate(
         self,
@@ -1113,6 +1420,37 @@ Q5. What is question five?
             self.assertIn(question, page)
             self.assertIn(f'name="answer{index}"', page)
             self.assertIn(f'name="question{index}"', page)
+
+    def test_quiz_renders_multiline_grammar_question_types(self):
+        payload = self.quiz_payload()
+        payload["subject"] = "English"
+        payload["topic"] = "Tenses"
+        payload["question1"] = (
+            "Fill in the blank with the correct form of the verb given in the brackets:\n"
+            "She ____ (go) to school every day."
+        )
+        payload["question2"] = (
+            "Correct the error in the sentence:\n"
+            "He go to market yesterday."
+        )
+        payload["question3"] = (
+            "Rearrange the words to make a meaningful sentence:\n"
+            "school / goes / she / to / every day"
+        )
+
+        response = self.client.post("/quiz", data=payload)
+
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        self.assertIn("Fill in the blank with the correct form of the verb", page)
+        self.assertIn("She ____ (go) to school every day.", page)
+        self.assertIn("Correct the error in the sentence:", page)
+        self.assertIn("He go to market yesterday.", page)
+        self.assertIn("Rearrange the words to make a meaningful sentence:", page)
+        self.assertIn("school / goes / she / to / every day", page)
+        self.assertIn('name="answer1"', page)
+        self.assertIn('name="answer2"', page)
+        self.assertIn('name="answer3"', page)
 
     def test_quiz_rejects_missing_question(self):
         payload = self.quiz_payload()
@@ -3903,6 +4241,66 @@ Q5. What is question five?
         self.assertIn('data-lesson-subject="Biology"', detail_page)
         generate_content.assert_not_called()
 
+    @patch.object(app_module, "generate_content_with_fallback")
+    def test_ncert_diagram_view_download_and_explanation_continue_working(self, generate_content):
+        self.register_user()
+        self.login_user()
+        self.write_ncert_diagram("biology", "mitochondria.png")
+        generate_content.return_value = MockResponse(
+            json.dumps(
+                {
+                    "summary": "This diagram shows mitochondria as cell organelles.",
+                    "steps": [{"title": "Outer membrane", "body": "It covers the organelle."}],
+                    "labels": [{"title": "Mitochondria", "body": "They help release energy."}],
+                    "key_points": ["Mitochondria are found in cells."],
+                    "exam_tip": "Remember mitochondria as the powerhouse of the cell.",
+                    "related_topics": ["Cell Organelles", "Respiration"],
+                }
+            )
+        )
+
+        with app_module.app.app_context():
+            lesson_id = app_module.save_learning_history(
+                1,
+                "Biology",
+                "NCERT",
+                "Mitochondria",
+                "# Mitochondria\nThey release energy.",
+                {
+                    "available": True,
+                    "visualization_required": True,
+                    "visualization_type": "cell_diagram",
+                    "type": "cell",
+                    "title": "Mitochondria",
+                    "labels": ["Outer membrane", "Matrix"],
+                    "confidence": 0.95,
+                },
+                self.questions,
+            )
+            diagram = get_or_create_diagram(
+                lesson_id=lesson_id,
+                subject="Biology",
+                topic="Mitochondria",
+                static_folder=app_module.app.static_folder,
+                provider_registry=ProviderRegistry([NcertProvider(static_folder=app_module.app.static_folder)]),
+            )
+
+        detail_response = self.client.get(f"/learning-history/{lesson_id}")
+        download_response = self.client.get(f"/learning-history/{lesson_id}/diagram/download")
+        explanation_response = self.client.get(f"/learning-history/{lesson_id}/diagram-explanation")
+
+        self.assertIsNotNone(diagram)
+        self.assertEqual(detail_response.status_code, 200)
+        detail_page = detail_response.get_data(as_text=True)
+        self.assertIn("NCERT Textbook Diagrams", detail_page)
+        self.assertIn('class="diagram-library-image"', detail_page)
+        self.assertIn("Download PNG", detail_page)
+        self.assertEqual(download_response.status_code, 200)
+        self.assertEqual(download_response.mimetype, "image/png")
+        self.assertEqual(explanation_response.status_code, 200)
+        self.assertIn("Mitochondria", generate_content.call_args.args[0])
+        self.assertIn("NCERT Textbook Diagrams", generate_content.call_args.args[0])
+
     @patch.object(app_module.model, "generate_content")
     def test_existing_visualization_records_continue_working(self, generate_content):
         self.register_user()
@@ -4483,6 +4881,156 @@ Q5. What is question five?
         with app_module.app.app_context():
             self.assertIsNone(db.session.get(DownloadedFile, download_id))
             self.assertIsNotNone(db.session.get(LearningHistory, lesson_id))
+
+    def test_favourite_notes_empty_state_replaces_placeholder(self):
+        self.register_user()
+        self.login_user()
+
+        response = self.client.get("/favourite-notes")
+
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        self.assertIn("Favourite Notes", page)
+        self.assertIn("No favourite notes yet", page)
+        self.assertIn(
+            "Save your favourite AI-generated lessons for quick access later.",
+            page,
+        )
+        self.assertIn("Start Learning", page)
+        self.assertIn("page-transition-overlay", page)
+        self.assertNotIn("Favourite notes coming soon", page)
+
+    def test_favourite_toggle_persists_after_logout_and_login(self):
+        self.register_user()
+        self.login_user()
+
+        with app_module.app.app_context():
+            lesson_id = app_module.save_learning_history(
+                1,
+                "Science",
+                "Biology",
+                "Photosynthesis",
+                "Plants make food.",
+                {"available": False},
+                ["What do plants make?"],
+            )
+
+        response = self.client.post(
+            f"/learning-history/{lesson_id}/favourite",
+            data={"next": f"/notes/{lesson_id}"},
+            follow_redirects=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        self.assertIn("Added to Favourite Notes.", page)
+        self.assertIn("Saved Favourite", page)
+        with app_module.app.app_context():
+            self.assertEqual(FavouriteNote.query.count(), 1)
+
+        self.client.get("/logout")
+        self.login_user()
+        response = self.client.get("/favourite-notes")
+
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        self.assertIn("Photosynthesis", page)
+        self.assertIn("Open Lesson", page)
+        self.assertIn("Download PDF", page)
+
+    def test_favourite_notes_lists_saved_lessons_as_cards(self):
+        self.register_user()
+        self.login_user()
+
+        with app_module.app.app_context():
+            lesson_id = app_module.save_learning_history(
+                1,
+                "Science",
+                "Biology",
+                "Photosynthesis",
+                "# Notes\nPlants make food.",
+                {"available": False},
+                ["What do plants make?"],
+            )
+            db.session.add(FavouriteNote(user_id=1, learning_history_id=lesson_id))
+            db.session.commit()
+
+        response = self.client.get("/favourite-notes")
+
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        self.assertIn("favourite-note-card", page)
+        self.assertIn("Photosynthesis", page)
+        self.assertIn("Subject", page)
+        self.assertIn("Science", page)
+        self.assertIn("Class", page)
+        self.assertIn(">8<", page)
+        self.assertIn("Date saved", page)
+        self.assertIn(f'href="/notes/{lesson_id}"', page)
+        self.assertIn(f'href="/learning-history/{lesson_id}/download"', page)
+        self.assertIn("Remove from Favourites", page)
+        self.assertNotIn("No favourite notes yet", page)
+
+    def test_remove_from_favourites_keeps_saved_lesson(self):
+        self.register_user()
+        self.login_user()
+
+        with app_module.app.app_context():
+            lesson_id = app_module.save_learning_history(
+                1,
+                "Science",
+                "Biology",
+                "Photosynthesis",
+                "Plants make food.",
+                {"available": False},
+                ["What do plants make?"],
+            )
+            favourite = FavouriteNote(user_id=1, learning_history_id=lesson_id)
+            db.session.add(favourite)
+            db.session.commit()
+
+        response = self.client.post(
+            f"/learning-history/{lesson_id}/favourite",
+            data={"next": "/favourite-notes"},
+            follow_redirects=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        self.assertIn("Removed from Favourite Notes.", page)
+        self.assertIn("No favourite notes yet", page)
+        with app_module.app.app_context():
+            self.assertEqual(FavouriteNote.query.count(), 0)
+            self.assertIsNotNone(db.session.get(LearningHistory, lesson_id))
+
+    def test_favourite_toggle_requires_lesson_owner(self):
+        self.register_user()
+        self.login_user()
+
+        with app_module.app.app_context():
+            app_module.create_user(
+                "Other Student",
+                "otherstudent",
+                "other@example.com",
+                "8",
+                "password123",
+            )
+            lesson_id = app_module.save_learning_history(
+                2,
+                "Science",
+                "Biology",
+                "Other Photosynthesis",
+                "Other notes.",
+                {"available": False},
+                ["Question?"],
+            )
+
+        response = self.client.post(f"/learning-history/{lesson_id}/favourite")
+
+        self.assertEqual(response.status_code, 404)
+        with app_module.app.app_context():
+            self.assertEqual(FavouriteNote.query.count(), 0)
+
     def test_profile_page_shows_account_and_gamification_sections(self):
         self.register_user()
         self.login_user()

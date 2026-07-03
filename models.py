@@ -45,6 +45,7 @@ class User(ModelMappingMixin, db.Model):
     learning_history = db.relationship("LearningHistory", back_populates="user", lazy=True)
     learning_sessions = db.relationship("LearningSession", back_populates="user", lazy=True)
     downloaded_files = db.relationship("DownloadedFile", back_populates="user", lazy=True)
+    favourite_notes = db.relationship("FavouriteNote", back_populates="user", lazy=True)
     tutor_lessons = db.relationship("TutorLesson", back_populates="user", lazy=True)
     flashcard_sets = db.relationship("FlashcardSet", back_populates="user", lazy=True)
     memory_challenges = db.relationship("MemoryChallengeSession", back_populates="user", lazy=True)
@@ -52,6 +53,27 @@ class User(ModelMappingMixin, db.Model):
     mind_maps = db.relationship("MindMap", back_populates="user", lazy=True)
     important_question_sets = db.relationship("ImportantQuestionSet", back_populates="user", lazy=True)
     study_plan_progress = db.relationship("StudyPlanProgress", back_populates="user", lazy=True)
+
+
+class FavouriteNote(ModelMappingMixin, db.Model):
+    __tablename__ = "favourite_notes"
+    __table_args__ = (
+        db.UniqueConstraint("user_id", "learning_history_id", name="uq_favourite_note_user_history"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    learning_history_id = db.Column(
+        db.Integer,
+        db.ForeignKey("learning_history.id"),
+        nullable=False,
+        index=True,
+    )
+    student_class = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, nullable=False, default=utc_now, index=True)
+
+    user = db.relationship("User", back_populates="favourite_notes")
+    learning_history = db.relationship("LearningHistory", back_populates="favourite_notes")
 
 
 class QuizHistory(ModelMappingMixin, db.Model):
@@ -160,6 +182,12 @@ class LearningHistory(ModelMappingMixin, db.Model):
     )
     study_plan_progress = db.relationship(
         "StudyPlanProgress",
+        back_populates="learning_history",
+        cascade="all, delete-orphan",
+        lazy=True,
+    )
+    favourite_notes = db.relationship(
+        "FavouriteNote",
         back_populates="learning_history",
         cascade="all, delete-orphan",
         lazy=True,

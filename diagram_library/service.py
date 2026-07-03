@@ -7,13 +7,12 @@ from models import DiagramLibrary
 
 from .cache import cache_file_exists, utc_now
 from .lookup import acceptable_candidate_title, build_search_queries, rank_diagram_candidates
-from .providers import ProviderRegistry
+from .providers import NcertProvider, ProviderRegistry, WikimediaCommonsProvider
 from .storage import download_and_store, repair_cached_image_extension
-from .wikimedia import WikimediaCommonsProvider
 
 
-def default_registry():
-    return ProviderRegistry([WikimediaCommonsProvider()])
+def default_registry(static_folder="static"):
+    return ProviderRegistry([NcertProvider(static_folder=static_folder), WikimediaCommonsProvider()])
 
 
 def find_cached_diagram(static_folder, subject, topic):
@@ -61,7 +60,7 @@ def get_or_create_diagram(
     if testing:
         return None
 
-    registry = provider_registry or default_registry()
+    registry = provider_registry or default_registry(static_folder=static_folder)
     queries = build_search_queries(
         subject=subject,
         topic=topic,
@@ -71,40 +70,67 @@ def get_or_create_diagram(
     )
     cache_dir = Path(static_folder) / "diagram_cache"
     try:
-        candidates = rank_diagram_candidates(
-            registry.search(queries, limit_per_query=8),
+        for provider, provider_candidates in _provider_candidate_groups(
+            registry,
+            queries,
             topic=topic,
             subject=subject,
-            visualization_type=visualization_type,
-        )
-        for candidate in candidates:
-            if not acceptable_candidate_title(candidate.title):
-                continue
-            stored_path = download_and_store(candidate, cache_dir, topic)
-            if not stored_path:
-                continue
-            image_path = stored_path.relative_to(static_folder).as_posix()
-            diagram = DiagramLibrary(
-                lesson_id=lesson_id,
+            limit_per_query=8,
+        ):
+            candidates = rank_diagram_candidates(
+                provider_candidates,
                 topic=topic,
                 subject=subject,
-                image_path=image_path,
-                provider=candidate.provider,
-                source_url=candidate.source_url,
-                author=candidate.author,
-                license=candidate.license,
-                attribution=candidate.attribution,
-                verified=True,
-                cached_at=utc_now(),
-                last_used=utc_now(),
+                visualization_type=visualization_type,
             )
-            db.session.add(diagram)
-            db.session.commit()
-            return diagram
+            for candidate in candidates:
+                if not acceptable_candidate_title(candidate.title):
+                    continue
+                stored_path = _fetch_candidate(provider, candidate, cache_dir, topic)
+                if not stored_path:
+                    continue
+                image_path = stored_path.relative_to(static_folder).as_posix()
+                diagram = DiagramLibrary(
+                    lesson_id=lesson_id,
+                    topic=topic,
+                    subject=subject,
+                    image_path=image_path,
+                    provider=candidate.provider,
+                    source_url=candidate.source_url,
+                    author=candidate.author,
+                    license=candidate.license,
+                    attribution=candidate.attribution,
+                    verified=True,
+                    cached_at=utc_now(),
+                    last_used=utc_now(),
+                )
+                db.session.add(diagram)
+                db.session.commit()
+                return diagram
     except Exception:
         db.session.rollback()
         return None
     return None
+
+
+def _provider_candidate_groups(registry, queries, *, topic="", subject="", limit_per_query=8):
+    finder = getattr(registry, "find_by_provider", None)
+    if finder:
+        yield from finder(
+            queries,
+            topic=topic,
+            subject=subject,
+            limit_per_query=limit_per_query,
+        )
+        return
+    yield None, registry.search(queries, limit_per_query=limit_per_query)
+
+
+def _fetch_candidate(provider, candidate, cache_dir, topic):
+    fetcher = getattr(provider, "fetch", None) if provider else None
+    if fetcher:
+        return fetcher(candidate, cache_dir, topic)
+    return download_and_store(candidate, cache_dir, topic)
 
 
 def diagram_record_to_view(diagram, url_builder=None):

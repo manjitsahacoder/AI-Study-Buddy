@@ -47,6 +47,45 @@ def download_and_store(candidate, cache_dir, topic, timeout=10):
         content_type = _normalize_mime(response.headers.get("Content-Type", ""))
         data = response.read(MAX_IMAGE_BYTES + 1)
 
+    return store_candidate_bytes(
+        candidate,
+        cache_path,
+        topic,
+        data,
+        content_type=content_type,
+        candidate_mime=candidate_mime,
+    )
+
+
+def copy_local_candidate_to_cache(candidate, cache_dir, topic, source_path):
+    candidate_mime = _normalize_mime(candidate.mime_type)
+    if candidate_mime not in ALLOWED_MIME_EXTENSIONS:
+        return None
+    cache_path = Path(cache_dir)
+    cache_path.mkdir(parents=True, exist_ok=True)
+    cached = existing_cached_target(cache_path, topic, candidate.image_url)
+    if cached:
+        return cached
+
+    try:
+        source = Path(source_path)
+        if source.stat().st_size > MAX_IMAGE_BYTES:
+            return None
+        data = source.read_bytes()
+    except OSError:
+        return None
+
+    return store_candidate_bytes(
+        candidate,
+        cache_path,
+        topic,
+        data,
+        content_type=candidate_mime,
+        candidate_mime=candidate_mime,
+    )
+
+
+def store_candidate_bytes(candidate, cache_path, topic, data, *, content_type="", candidate_mime=""):
     if len(data) > MAX_IMAGE_BYTES:
         return None
 

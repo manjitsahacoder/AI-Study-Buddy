@@ -5435,6 +5435,7 @@ body.dashboard-page #theme-toggle {
     background: rgba(49, 87, 213, 0.06);
     text-align: center;
 }
+
 .downloads-main {
     gap: 20px;
 }
@@ -5626,6 +5627,154 @@ body.dashboard-page #theme-toggle {
     color: var(--muted);
     font-weight: 800;
 }
+
+.lesson-primary-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 18px 0 4px;
+}
+
+.lesson-primary-actions form {
+    display: inline-flex;
+}
+
+.favourite-toggle {
+    min-height: 44px;
+}
+
+.favourite-toggle.is-active {
+    color: #5d3d04;
+    border-color: rgba(189, 138, 32, 0.34);
+    background: rgba(255, 207, 117, 0.36);
+}
+
+.favourite-notes-main {
+    gap: 20px;
+}
+
+.favourite-notes-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+}
+
+.favourite-note-card {
+    display: grid;
+    gap: 18px;
+    padding: 20px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: rgba(255, 253, 248, 0.96);
+    box-shadow: var(--soft-shadow);
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.favourite-note-card:hover {
+    transform: translateY(-3px);
+    border-color: rgba(189, 138, 32, 0.28);
+    box-shadow: 0 18px 38px rgba(30, 40, 58, 0.13);
+}
+
+.favourite-note-card-header {
+    display: grid;
+    grid-template-columns: 52px minmax(0, 1fr);
+    gap: 14px;
+    align-items: start;
+}
+
+.favourite-note-icon,
+.favourite-empty-icon {
+    display: grid;
+    place-items: center;
+    width: 52px;
+    height: 52px;
+    border-radius: 8px;
+    color: #5d3d04;
+    background: rgba(255, 207, 117, 0.7);
+    box-shadow: var(--soft-shadow);
+    font-size: 1.35rem;
+}
+
+.favourite-note-card h2 {
+    margin-bottom: 0;
+    font-size: 1.16rem;
+    overflow-wrap: anywhere;
+}
+
+.favourite-note-meta {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    margin: 0;
+}
+
+.favourite-note-meta div {
+    min-width: 0;
+    padding: 12px;
+    border: 1px solid rgba(4, 125, 135, 0.12);
+    border-radius: 8px;
+    background: rgba(4, 125, 135, 0.06);
+}
+
+.favourite-note-meta dt {
+    margin-bottom: 4px;
+    color: var(--muted);
+    font-size: 0.76rem;
+    font-weight: 900;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.favourite-note-meta dd {
+    margin: 0;
+    color: var(--ink);
+    font-weight: 900;
+    overflow-wrap: anywhere;
+}
+
+.favourite-note-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.favourite-note-actions form {
+    display: inline-flex;
+}
+
+.favourite-empty-state {
+    display: grid;
+    place-items: center;
+    align-content: center;
+    min-height: 360px;
+    padding: clamp(26px, 5vw, 48px);
+    border: 1px dashed rgba(189, 138, 32, 0.36);
+    border-radius: 8px;
+    background:
+        linear-gradient(135deg, rgba(255, 207, 117, 0.16), rgba(4, 125, 135, 0.07)),
+        rgba(255, 253, 248, 0.92);
+    text-align: center;
+}
+
+.favourite-empty-state .favourite-empty-icon {
+    width: 76px;
+    height: 76px;
+    margin-bottom: 18px;
+    font-size: 2rem;
+}
+
+.favourite-empty-state h2 {
+    margin-bottom: 8px;
+}
+
+.favourite-empty-state p {
+    max-width: 560px;
+    margin-bottom: 20px;
+    color: var(--muted);
+    font-weight: 800;
+}
+
 .quiz-box {
     margin-top: 26px;
     padding: clamp(18px, 3vw, 30px);
@@ -8457,7 +8606,9 @@ textarea:focus {
 
 .dark-mode .download-center-hero,
 .dark-mode .download-report-card,
-.dark-mode .download-empty-state {
+.dark-mode .download-empty-state,
+.dark-mode .favourite-note-card,
+.dark-mode .favourite-empty-state {
     border-color: rgba(134, 161, 255, 0.18);
     background:
         linear-gradient(135deg, rgba(134, 161, 255, 0.08), rgba(35, 183, 166, 0.07), rgba(255, 207, 117, 0.06)),
@@ -8466,7 +8617,8 @@ textarea:focus {
 
 .dark-mode .download-center-count,
 .dark-mode .download-report-meta span,
-.dark-mode .download-report-details div {
+.dark-mode .download-report-details div,
+.dark-mode .favourite-note-meta div {
     border-color: rgba(134, 161, 255, 0.16);
     background: rgba(255, 255, 255, 0.05);
 }
@@ -8475,13 +8627,23 @@ textarea:focus {
 .dark-mode .download-center-count span,
 .dark-mode .download-report-meta span,
 .dark-mode .download-report-details dt,
-.dark-mode .download-empty-state p {
+.dark-mode .download-empty-state p,
+.dark-mode .favourite-note-meta dt,
+.dark-mode .favourite-empty-state p {
     color: var(--muted);
 }
 
-.dark-mode .download-report-details dd {
+.dark-mode .download-report-details dd,
+.dark-mode .favourite-note-meta dd {
     color: var(--ink);
 }
+
+.dark-mode .favourite-toggle.is-active {
+    color: #ffcf75;
+    border-color: rgba(255, 207, 117, 0.28);
+    background: rgba(255, 207, 117, 0.12);
+}
+
 /* Final design-system consistency layer */
 body {
     font-size: var(--font-size-base);
@@ -9792,18 +9954,22 @@ textarea[aria-invalid="true"] {
         gap: 10px;
     }
 
-    .download-report-grid {
+    .download-report-grid,
+    .favourite-notes-grid {
         grid-template-columns: 1fr;
     }
 }
 
 @media (max-width: 560px) {
     .download-report-main,
-    .download-report-details {
+    .download-report-details,
+    .favourite-note-card-header,
+    .favourite-note-meta {
         grid-template-columns: 1fr;
     }
 
-    .download-report-icon {
+    .download-report-icon,
+    .favourite-note-icon {
         width: 46px;
         height: 46px;
     }
@@ -9811,10 +9977,19 @@ textarea[aria-invalid="true"] {
     .download-report-actions,
     .download-report-actions .button-link,
     .download-report-actions form,
-    .download-report-actions button {
+    .download-report-actions button,
+    .lesson-primary-actions,
+    .lesson-primary-actions .button-link,
+    .lesson-primary-actions form,
+    .lesson-primary-actions button,
+    .favourite-note-actions,
+    .favourite-note-actions .button-link,
+    .favourite-note-actions form,
+    .favourite-note-actions button {
         width: 100%;
     }
 }
+
 @media print {
     body.mindmap-page {
         background: #ffffff;

@@ -37,6 +37,7 @@ class DiagramCandidate:
     description: str = ""
     categories: tuple = ()
     commons_metadata: dict = field(default_factory=dict)
+    provider_metadata: dict = field(default_factory=dict)
 
 
 def reusable_license(license_text):

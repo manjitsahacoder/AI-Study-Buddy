@@ -32,6 +32,7 @@
         <span><strong>Topic</strong> {{ lesson.topic }}</span>
         <span><strong>Saved</strong> {{ lesson.created_at }}</span>
     </div>
+    {% include 'components/flash_messages.html' %}
 
     <div class="content">
         {{ notes_html|safe }}
@@ -163,7 +164,13 @@
             <button type="submit">&#128104;&#8205;&#127979; Start AI Tutor</button>
         </form>
         <a class="button-link" href="{{ url_for('download_learning_history_pdf', lesson_id=lesson.id) }}">&#128196; Download PDF</a>
-        <button class="button-link secondary-link favourite-placeholder" type="button" disabled title="Favourite notes will be added later">&#11088; Favourite</button>
+        <form action="{{ url_for('toggle_favourite_note', lesson_id=lesson.id) }}" method="POST">
+            <input type="hidden" name="next" value="{{ current_page_url }}">
+            <input type="hidden" name="student_class" value="{{ student_class }}">
+            <button class="button-link secondary-link favourite-toggle {% if is_favourite %}is-active{% endif %}" type="submit" aria-pressed="{{ 'true' if is_favourite else 'false' }}">
+                {% if is_favourite %}&#11088; Favourited{% else %}&#9734; Favourite{% endif %}
+            </button>
+        </form>
         <form action="{{ url_for('delete_learning_history', lesson_id=lesson.id) }}" method="POST" onsubmit="return confirm('Delete this saved lesson?');">
             <button class="danger-link" type="submit">&#128465; Delete</button>
         </form>

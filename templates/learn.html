@@ -34,6 +34,20 @@
         {% endif %}
         <span><strong>Topic</strong> {{ topic }}</span>
     </div>
+    <div class="lesson-primary-actions">
+        {% if lesson_id %}
+        <form action="{{ url_for('toggle_favourite_note', lesson_id=lesson_id) }}" method="POST">
+            <input type="hidden" name="next" value="{{ current_page_url }}">
+            <input type="hidden" name="student_class" value="{{ student_class }}">
+            <button class="button-link secondary-link favourite-toggle {% if is_favourite %}is-active{% endif %}" type="submit" aria-pressed="{{ 'true' if is_favourite else 'false' }}">
+                {% if is_favourite %}&#11088; Saved Favourite{% else %}&#9734; Add Favourite{% endif %}
+            </button>
+        </form>
+        {% else %}
+        <a class="button-link secondary-link favourite-toggle" href="{{ url_for('login', next=url_for('home')) }}">&#9734; Login to Favourite</a>
+        {% endif %}
+    </div>
+    {% include 'components/flash_messages.html' %}
 
     <hr>
 
