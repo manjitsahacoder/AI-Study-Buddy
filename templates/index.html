@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>AI Study Buddy</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=home-ui-20260703">
     {% include 'components/pwa_head.html' %}
 </head>
 
@@ -81,8 +81,20 @@
 
     <section class="welcome-card">
         <span class="eyebrow">Smarter Learning</span>
-        <h2>Welcome to AI Study Buddy</h2>
-        <p>AI Study Buddy is an AI-powered educational platform designed to help students learn smarter through personalized notes, diagrams, quizzes, textbook support, and performance analysis.</p>
+        <div class="welcome-card-copy">
+            <h2>Welcome to AI Study Buddy</h2>
+            <p class="welcome-subtitle">Your complete AI-powered learning platform for smarter studying.</p>
+            <p>AI Study Buddy is an AI-powered educational platform designed to help students learn smarter through personalized notes, diagrams, quizzes, textbook support, and performance analysis.</p>
+        </div>
+        <div class="hero-feature-badges" aria-label="AI Study Buddy platform features">
+            <span>&#129302; AI Powered</span>
+            <span>&#128218; NCERT Support</span>
+            <span>&#129504; Personalized Learning</span>
+            <span>&#128202; Progress Tracking</span>
+            <span>&#128241; Installable PWA</span>
+            <span>&#127769; Dark Mode</span>
+            <span>&#9889; Fast &amp; Responsive</span>
+        </div>
     </section>
 
     {% if not user %}
@@ -103,43 +115,152 @@
     </section>
     {% endif %}
 
-    <div class="features" data-tour-title="Student Features" data-tour-body="These are the core features students use: notes, textbook support, quizzes, performance feedback, PDFs, and diagrams.">
-        <div class="feature-card exhibition-feature-highlight">
-            <div class="feature-icon">&#129302;</div>
-            <h3>AI Notes</h3>
-            <p>Generate easy-to-understand notes.</p>
+    <section class="feature-showcase-section" aria-labelledby="feature-showcase-title" data-tour-title="Student Features" data-tour-body="These are the core features students use: notes, tutor support, diagrams, quizzes, analytics, PDFs, and saved learning resources.">
+        <div class="section-heading feature-showcase-heading">
+            <div>
+                <span class="eyebrow">AI Learning Toolkit</span>
+                <h2 id="feature-showcase-title">Advanced study tools in one place</h2>
+            </div>
+            <p>Generate, practice, visualize, revise, and track progress from the same learning flow.</p>
         </div>
 
-        <div class="feature-card exhibition-feature-highlight">
-            <div class="feature-icon">&#128218;</div>
-            <h3>Textbook Support</h3>
-            <p>Learn directly from supported NCERT textbooks.</p>
-        </div>
+        <div class="features">
+            <article class="feature-card exhibition-feature-highlight">
+                <div class="feature-icon" aria-hidden="true">&#129302;</div>
+                <h3>AI Notes</h3>
+                <p>Generate detailed, student-friendly notes that turn any topic into a complete study pack.</p>
+                <ul class="feature-list">
+                    <li>AI explanations</li>
+                    <li>Diagrams</li>
+                    <li>Flashcards</li>
+                    <li>Quick Revision</li>
+                    <li>PDF Export</li>
+                </ul>
+            </article>
 
-        <div class="feature-card exhibition-feature-highlight">
-            <div class="feature-icon">&#128221;</div>
-            <h3>Smart Quiz</h3>
-            <p>Automatically generate chapter-based questions.</p>
-        </div>
+            <article class="feature-card exhibition-feature-highlight">
+                <div class="feature-icon" aria-hidden="true">&#128104;&#8205;&#127979;</div>
+                <h3>AI Tutor</h3>
+                <p>Learn interactively by asking questions and getting guidance that follows the lesson context.</p>
+                <ul class="feature-list">
+                    <li>Step-by-step explanations</li>
+                    <li>Personalized guidance</li>
+                    <li>Follow-up learning</li>
+                </ul>
+            </article>
 
-        <div class="feature-card exhibition-feature-highlight">
-            <div class="feature-icon">&#128200;</div>
-            <h3>Performance Analysis</h3>
-            <p>Receive AI-based evaluation and feedback.</p>
-        </div>
+            <article class="feature-card exhibition-feature-highlight">
+                <div class="feature-icon" aria-hidden="true">&#129504;</div>
+                <h3>AI Diagram Library</h3>
+                <p>Explore educational diagrams that make abstract concepts easier to inspect and explain.</p>
+                <ul class="feature-list">
+                    <li>Zoom</li>
+                    <li>Fullscreen</li>
+                    <li>AI explanations</li>
+                    <li>Download PNG</li>
+                </ul>
+            </article>
 
-        <div class="feature-card">
-            <div class="feature-icon">&#128196;</div>
-            <h3>PDF Downloads</h3>
-            <p>Download notes and performance reports.</p>
-        </div>
+            <article class="feature-card exhibition-feature-highlight">
+                <div class="feature-icon" aria-hidden="true">&#10067;</div>
+                <h3>AI Smart Quiz</h3>
+                <p>Generate intelligent practice quizzes that help students test recall and improve accuracy.</p>
+                <ul class="feature-list">
+                    <li>MCQs</li>
+                    <li>Instant scoring</li>
+                    <li>Performance tracking</li>
+                </ul>
+            </article>
 
-        <div class="feature-card">
-            <div class="feature-icon">&#127912;</div>
-            <h3>Diagram Generator</h3>
-            <p>Visual learning with AI-generated educational diagrams.</p>
+            <article class="feature-card">
+                <div class="feature-icon" aria-hidden="true">&#128200;</div>
+                <h3>Performance Analytics</h3>
+                <p>Track learning progress with clear performance signals and AI-supported study insights.</p>
+                <ul class="feature-list">
+                    <li>Grades</li>
+                    <li>Accuracy</li>
+                    <li>XP</li>
+                    <li>Learning insights</li>
+                </ul>
+            </article>
+
+            <article class="feature-card">
+                <div class="feature-icon" aria-hidden="true">&#128196;</div>
+                <h3>Reports &amp; Downloads</h3>
+                <p>Export learning resources and return to saved study work whenever revision time arrives.</p>
+                <ul class="feature-list">
+                    <li>Notes</li>
+                    <li>Reports</li>
+                    <li>PDFs</li>
+                    <li>Saved history</li>
+                </ul>
+            </article>
         </div>
-    </div>
+    </section>
+
+    <section class="platform-highlights-card" aria-labelledby="platform-highlights-title">
+        <div class="section-heading">
+            <div>
+                <span class="eyebrow">Platform Highlights</span>
+                <h2 id="platform-highlights-title">Everything You Need to Learn Smarter</h2>
+            </div>
+            <p>AI Study Buddy combines multiple AI learning tools into one platform.</p>
+        </div>
+        <div class="highlight-chip-grid" aria-label="AI Study Buddy capabilities">
+            <span>AI Notes</span>
+            <span>AI Tutor</span>
+            <span>Flashcards</span>
+            <span>Diagram Library</span>
+            <span>Smart Quiz</span>
+            <span>Memory Challenge</span>
+            <span>Study Planner</span>
+            <span>Learning History</span>
+            <span>Saved Notes</span>
+            <span>Performance Analytics</span>
+            <span>Gamification</span>
+            <span>Recommendation Engine</span>
+            <span>Responsive Design</span>
+            <span>Progressive Web App</span>
+            <span>Dark Mode</span>
+            <span>Exhibition Mode</span>
+        </div>
+    </section>
+
+    <section class="why-study-card" aria-labelledby="why-study-title">
+        <div class="section-heading">
+            <div>
+                <span class="eyebrow">Why Choose</span>
+                <h2 id="why-study-title">Why Choose AI Study Buddy</h2>
+            </div>
+        </div>
+        <div class="why-study-grid">
+            <article>
+                <span aria-hidden="true">&#127919;</span>
+                <h3>Personalized Learning</h3>
+                <p>AI adapts explanations according to the selected student class.</p>
+            </article>
+            <article>
+                <span aria-hidden="true">&#129504;</span>
+                <h3>Visual Learning</h3>
+                <p>Understand concepts using educational diagrams.</p>
+            </article>
+            <article>
+                <span aria-hidden="true">&#128218;</span>
+                <h3>Learn Faster</h3>
+                <p>Study notes, quizzes and flashcards are generated together.</p>
+            </article>
+            <article>
+                <span aria-hidden="true">&#128202;</span>
+                <h3>Track Progress</h3>
+                <p>Monitor performance with detailed analytics.</p>
+            </article>
+            <article>
+                <span aria-hidden="true">&#127942;</span>
+                <h3>Stay Motivated</h3>
+                <p>XP, achievements and gamification encourage regular study.</p>
+            </article>
+        </div>
+    </section>
 
     <section class="project-team-card" aria-labelledby="project-team-title">
         <div class="section-heading">

@@ -795,12 +795,48 @@ span.role-student {
 }
 
 .welcome-card {
+    position: relative;
+    overflow: hidden;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
     animation-delay: 0.04s;
+}
+
+.welcome-card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+        linear-gradient(120deg, rgba(49, 87, 213, 0.08), transparent 38%),
+        radial-gradient(circle at 92% 18%, rgba(4, 125, 135, 0.1), transparent 28%);
+}
+
+.welcome-card > * {
+    position: relative;
+    z-index: 1;
+}
+
+.welcome-card-copy {
+    display: grid;
+    gap: 8px;
 }
 
 .welcome-card h2,
 .about-card h2 {
     margin-bottom: 10px;
+}
+
+.welcome-card-copy h2,
+.welcome-card-copy p {
+    margin-bottom: 0;
+}
+
+.welcome-subtitle {
+    color: var(--primary);
+    font-size: clamp(1.08rem, 1.6vw, 1.26rem);
+    font-weight: 900;
 }
 
 .welcome-card p,
@@ -809,6 +845,27 @@ span.role-student {
     margin-bottom: 0;
     color: #445064;
     font-size: clamp(1rem, 1.4vw, 1.14rem);
+}
+
+.hero-feature-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.hero-feature-badges span {
+    display: inline-flex;
+    align-items: center;
+    min-height: 36px;
+    padding: 8px 12px;
+    border: 1px solid rgba(49, 87, 213, 0.16);
+    border-radius: var(--radius-pill);
+    color: var(--ink);
+    background: rgba(255, 255, 255, 0.7);
+    box-shadow: 0 8px 18px rgba(30, 40, 58, 0.06);
+    font-size: 0.88rem;
+    font-weight: 900;
+    line-height: 1.2;
 }
 
 .about-card {
@@ -1042,6 +1099,28 @@ body.modal-open {
     box-shadow: var(--soft-shadow);
 }
 
+.feature-showcase-section {
+    margin: 22px 0;
+    animation: fadeInUp 0.62s ease both;
+}
+
+.feature-showcase-heading {
+    align-items: flex-start;
+    margin-bottom: 18px;
+    padding-bottom: 16px;
+}
+
+.feature-showcase-heading h2 {
+    text-align: left;
+}
+
+.feature-showcase-heading p {
+    max-width: 430px;
+    margin: 0;
+    color: var(--muted);
+    font-weight: 800;
+}
+
 .features {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1049,6 +1128,10 @@ body.modal-open {
     margin: 22px 0;
     animation: fadeInUp 0.65s ease both;
     animation-delay: 0.08s;
+}
+
+.feature-showcase-section .features {
+    margin: 0;
 }
 
 .feature-card,
@@ -1066,9 +1149,31 @@ body.modal-open {
 }
 
 .feature-card {
+    position: relative;
+    overflow: hidden;
+    display: grid;
+    align-content: start;
+    gap: 12px;
     padding: 22px;
     animation: fadeInUp 0.55s ease both;
     transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease, background 0.22s ease;
+}
+
+.feature-card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0;
+    background:
+        linear-gradient(135deg, rgba(49, 87, 213, 0.08), transparent 42%),
+        radial-gradient(circle at 88% 16%, rgba(4, 125, 135, 0.1), transparent 28%);
+    transition: opacity 0.22s ease;
+}
+
+.feature-card > * {
+    position: relative;
+    z-index: 1;
 }
 
 .feature-card:hover {
@@ -1076,6 +1181,15 @@ body.modal-open {
     border-color: rgba(49, 87, 213, 0.18);
     background: rgba(255, 253, 248, 0.98);
     box-shadow: 0 18px 38px rgba(30, 40, 58, 0.13);
+}
+
+.feature-card:hover::before {
+    opacity: 1;
+}
+
+.feature-card:hover .feature-icon {
+    transform: scale(1.04);
+    box-shadow: 0 12px 26px rgba(49, 87, 213, 0.18);
 }
 
 .feature-card:nth-child(2) {
@@ -1103,11 +1217,11 @@ body.modal-open {
     place-items: center;
     width: 42px;
     height: 42px;
-    margin-bottom: 16px;
     border-radius: 8px;
     color: white;
     background: var(--primary);
     font-size: 1.2rem;
+    transition: transform 0.22s ease, box-shadow 0.22s ease;
 }
 
 .feature-card:nth-child(2) .feature-icon {
@@ -1136,6 +1250,213 @@ body.modal-open {
 .recommendation-card h3 {
     color: var(--ink);
     margin-bottom: 8px;
+}
+
+.feature-card h3 {
+    margin-bottom: 0;
+    font-size: 1.12rem;
+}
+
+.feature-card p {
+    margin-bottom: 0;
+    font-size: 0.96rem;
+    line-height: 1.6;
+}
+
+.feature-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 2px 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.feature-list li {
+    display: inline-flex;
+    align-items: center;
+    min-height: 30px;
+    padding: 6px 9px;
+    border: 1px solid rgba(49, 87, 213, 0.13);
+    border-radius: var(--radius-pill);
+    color: var(--primary);
+    background: rgba(49, 87, 213, 0.07);
+    font-size: 0.78rem;
+    font-weight: 900;
+    line-height: 1.2;
+}
+
+.platform-highlights-card,
+.why-study-card {
+    position: relative;
+    overflow: hidden;
+    margin-top: 22px;
+    animation: fadeInUp 0.62s ease both;
+}
+
+.platform-highlights-card {
+    padding: clamp(22px, 3.4vw, 34px);
+    border: 1px solid rgba(31, 122, 77, 0.14);
+    border-radius: var(--card-radius);
+    background:
+        linear-gradient(145deg, rgba(255, 255, 255, 0.62), rgba(255, 253, 248, 0.95)),
+        rgba(255, 253, 248, 0.94);
+    box-shadow: var(--soft-shadow);
+}
+
+.platform-highlights-card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+        linear-gradient(90deg, rgba(31, 122, 77, 0.08), transparent 34%),
+        linear-gradient(135deg, transparent 58%, rgba(49, 87, 213, 0.07));
+}
+
+.platform-highlights-card > * {
+    position: relative;
+    z-index: 1;
+}
+
+.platform-highlights-card .section-heading,
+.why-study-card .section-heading {
+    align-items: flex-start;
+    margin-bottom: 18px;
+    padding: 0;
+    border-bottom: 0;
+}
+
+.platform-highlights-card .section-heading h2,
+.why-study-card .section-heading h2 {
+    text-align: left;
+}
+
+.platform-highlights-card .section-heading p {
+    max-width: 430px;
+    margin: 0;
+    color: var(--muted);
+    font-weight: 800;
+}
+
+.highlight-chip-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.highlight-chip-grid span {
+    display: inline-flex;
+    align-items: center;
+    min-height: 38px;
+    padding: 8px 12px;
+    border: 1px solid rgba(31, 122, 77, 0.16);
+    border-radius: var(--radius-pill);
+    color: var(--ink);
+    background: rgba(255, 253, 248, 0.88);
+    box-shadow: var(--shadow-sm);
+    font-size: 0.88rem;
+    font-weight: 900;
+    line-height: 1.2;
+    transition: transform 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease, background 0.22s ease;
+}
+
+.highlight-chip-grid span::before {
+    content: "\2713";
+    display: inline-grid;
+    place-items: center;
+    width: 18px;
+    height: 18px;
+    margin-right: 8px;
+    border-radius: 999px;
+    color: #ffffff;
+    background: var(--green);
+    font-size: 0.74rem;
+    line-height: 1;
+}
+
+.highlight-chip-grid span:hover {
+    transform: translateY(-2px);
+    border-color: rgba(31, 122, 77, 0.24);
+    background: rgba(31, 122, 77, 0.08);
+    box-shadow: var(--soft-shadow);
+}
+
+.highlight-chip-grid span:nth-child(4n + 2)::before {
+    background: var(--primary);
+}
+
+.highlight-chip-grid span:nth-child(4n + 3)::before {
+    background: var(--teal);
+}
+
+.highlight-chip-grid span:nth-child(4n + 4)::before {
+    background: var(--amber);
+}
+
+.why-study-grid {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 14px;
+}
+
+.why-study-grid article {
+    display: grid;
+    align-content: start;
+    gap: 10px;
+    min-height: 190px;
+    padding: 18px;
+    border: 1px solid rgba(49, 87, 213, 0.14);
+    border-radius: var(--card-radius);
+    background: rgba(255, 253, 248, 0.9);
+    box-shadow: var(--soft-shadow);
+    transition: transform 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease, background 0.22s ease;
+}
+
+.why-study-grid article:hover {
+    transform: translateY(-4px);
+    border-color: rgba(49, 87, 213, 0.24);
+    background: rgba(255, 253, 248, 0.98);
+    box-shadow: var(--lift-shadow);
+}
+
+.why-study-grid span {
+    display: grid;
+    place-items: center;
+    width: 42px;
+    height: 42px;
+    border-radius: var(--radius-lg);
+    color: #ffffff;
+    background: var(--primary);
+    font-size: 1.1rem;
+}
+
+.why-study-grid article:nth-child(2) span {
+    background: var(--teal);
+}
+
+.why-study-grid article:nth-child(3) span {
+    background: var(--amber);
+}
+
+.why-study-grid article:nth-child(4) span {
+    background: var(--green);
+}
+
+.why-study-grid article:nth-child(5) span {
+    background: var(--coral);
+}
+
+.why-study-grid h3 {
+    margin-bottom: 0;
+    color: var(--ink);
+    font-size: 1rem;
+}
+
+.why-study-grid p {
+    margin-bottom: 0;
+    font-size: 0.94rem;
+    line-height: 1.55;
 }
 
 .lesson-preview {
@@ -5901,6 +6222,9 @@ textarea,
 .dashboard-stat-card,
 .activity-card,
 .feature-card,
+.why-study-grid article,
+.platform-highlights-card,
+.highlight-chip-grid span,
 .learning-history-card,
 .achievement-badge,
 .recommended-topic-card,
@@ -5953,6 +6277,7 @@ textarea,
 .exhibition-header,
 .project-team-card,
 .welcome-card,
+.platform-highlights-card,
 .about-card,
 .account-motivation-card,
 .guest-locked-card,
@@ -5988,6 +6313,8 @@ footer {
 }
 
 .feature-card,
+.why-study-grid article,
+.platform-highlights-card,
 .dashboard-stat-card,
 .dashboard-panel,
 .activity-card,
@@ -7109,6 +7436,8 @@ textarea:focus {
 .dark-mode #theme-toggle,
 .dark-mode .exhibition-header,
 .dark-mode .welcome-card,
+.dark-mode .hero-feature-badges span,
+.dark-mode .platform-highlights-card,
 .dark-mode .mode-banner,
 .dark-mode .account-motivation-card,
 .dark-mode .guest-locked-card,
@@ -7121,6 +7450,7 @@ textarea:focus {
 .dark-mode .lesson-preview,
 .dark-mode .study-form,
 .dark-mode .feature-card,
+.dark-mode .why-study-grid article,
 .dark-mode .flash-message,
 .dark-mode .profile-menu-button,
 .dark-mode .profile-dropdown,
@@ -7187,6 +7517,7 @@ textarea:focus {
 
 .dark-mode .subtitle,
 .dark-mode .welcome-card p,
+.dark-mode .welcome-subtitle,
 .dark-mode .about-card p {
     color: var(--muted);
 }
@@ -7241,6 +7572,8 @@ textarea:focus {
 
 .dark-mode .subject-hints span,
 .dark-mode .lesson-info-strip span,
+.dark-mode .feature-list li,
+.dark-mode .highlight-chip-grid span,
 .dark-mode .quick-actions-grid a,
 .dark-mode .dashboard-empty-state,
 .dark-mode .developer-results-summary,
@@ -7281,6 +7614,7 @@ textarea:focus {
 }
 
 .dark-mode .feature-card h3,
+.dark-mode .why-study-grid h3,
 .dark-mode .dashboard-stat-card strong,
 .dark-mode .activity-card strong,
 .dark-mode .performance-summary-grid strong,
@@ -7306,7 +7640,9 @@ textarea:focus {
 }
 
 .dark-mode .feature-card:hover,
-.dark-mode .team-member:hover {
+.dark-mode .team-member:hover,
+.dark-mode .why-study-grid article:hover,
+.dark-mode .highlight-chip-grid span:hover {
     background: rgba(134, 161, 255, 0.12);
 }
 
@@ -7972,6 +8308,9 @@ p + p {
 :where(
     .exhibition-header,
     .welcome-card,
+    .feature-showcase-section,
+    .platform-highlights-card,
+    .why-study-card,
     .account-motivation-card,
     .guest-locked-card,
     .project-team-card,
@@ -8068,6 +8407,7 @@ p + p {
     .learning-history-card,
     .learning-action-card,
     .feature-card,
+    .platform-highlights-card,
     .score-card,
     .card,
     .recommendation-card,
@@ -8575,6 +8915,7 @@ textarea[aria-invalid="true"] {
     .history-tools,
     .learning-history-grid,
     .evaluation-summary-grid,
+    .why-study-grid,
     .locked-feature-grid,
     .locked-dashboard-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -8802,6 +9143,7 @@ textarea[aria-invalid="true"] {
     .evaluation-summary-grid,
     .answer-grid,
     .teacher-report-grid,
+    .why-study-grid,
     .locked-feature-grid,
     .locked-dashboard-grid,
     .account-motivation-card ul {
