@@ -7617,6 +7617,7 @@ Adaptive Quiz Engine:
   b)
   c)
 - Never place multiple sub-parts on the same line.
+- Do NOT separate sub-parts using spaces. Always use newline characters between sub-parts.
 """
 
 
@@ -9286,6 +9287,7 @@ Rules:
   b)
   c)
 - Never place multiple sub-parts on the same line.
+- Do NOT separate sub-parts using spaces. Always use newline characters between sub-parts.
 - Leave one blank line between questions.
 - Do NOT provide answers.
 - Do NOT put all questions in one paragraph.

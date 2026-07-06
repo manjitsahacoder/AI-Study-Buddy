@@ -298,6 +298,8 @@ Q5. What is question five?
                 self.assertIn("insert one blank line before the first sub-part", prompt)
                 self.assertIn("①", prompt)
                 self.assertIn("Never place multiple sub-parts on the same line", prompt)
+                self.assertIn("Do NOT separate sub-parts using spaces", prompt)
+                self.assertIn("Always use newline characters between sub-parts", prompt)
                 self.assertFalse(
                     any("a)" in line and "b)" in line for line in prompt.splitlines())
                 )
@@ -351,6 +353,8 @@ They are playing football.
         )
         self.assertIn("\n\n  ② She ____ (write) a letter to her friend yesterday.", prompt)
         self.assertIn("\n\n  ③ They ____ (play) football since morning.", prompt)
+        self.assertIn("Do NOT separate sub-parts using spaces", prompt)
+        self.assertIn("Always use newline characters between sub-parts", prompt)
         self.assertFalse(
             any("a)" in line and "b)" in line for line in prompt.splitlines())
         )
