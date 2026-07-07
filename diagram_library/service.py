@@ -5,8 +5,14 @@ from sqlalchemy import func
 from database import db
 from models import DiagramLibrary
 
+from .ai_review import AI_REVIEW_BATCH_SIZE, review_diagram_candidates
 from .cache import cache_file_exists, utc_now
-from .lookup import acceptable_candidate_title, build_search_queries, rank_diagram_candidates
+from .lookup import (
+    acceptable_candidate_title,
+    build_search_queries,
+    candidate_language_category,
+    rank_diagram_candidates,
+)
 from .providers import NcertProvider, ProviderRegistry, WikimediaCommonsProvider
 from .storage import download_and_store, repair_cached_image_extension
 
@@ -52,6 +58,7 @@ def get_or_create_diagram(
     static_folder="static",
     testing=False,
     provider_registry=None,
+    reviewer=None,
 ):
     cached = find_cached_diagram(static_folder, subject, topic)
     if cached:
@@ -83,34 +90,119 @@ def get_or_create_diagram(
                 subject=subject,
                 visualization_type=visualization_type,
             )
-            for candidate in candidates:
-                if not acceptable_candidate_title(candidate.title):
-                    continue
-                stored_path = _fetch_candidate(provider, candidate, cache_dir, topic)
-                if not stored_path:
-                    continue
-                image_path = stored_path.relative_to(static_folder).as_posix()
-                diagram = DiagramLibrary(
+            candidates = [
+                candidate for candidate in candidates if acceptable_candidate_title(candidate.title)
+            ]
+            for candidate in _reviewed_candidate_order(
+                candidates,
+                topic=topic,
+                subject=subject,
+                student_class=student_class,
+                visualization_type=visualization_type,
+                reviewer=reviewer,
+            ):
+                diagram = _store_reviewed_candidate(
+                    provider,
+                    candidate,
+                    cache_dir,
+                    static_folder,
                     lesson_id=lesson_id,
                     topic=topic,
                     subject=subject,
-                    image_path=image_path,
-                    provider=candidate.provider,
-                    source_url=candidate.source_url,
-                    author=candidate.author,
-                    license=candidate.license,
-                    attribution=candidate.attribution,
-                    verified=True,
-                    cached_at=utc_now(),
-                    last_used=utc_now(),
                 )
-                db.session.add(diagram)
-                db.session.commit()
-                return diagram
+                if diagram:
+                    return diagram
     except Exception:
         db.session.rollback()
         return None
     return None
+
+
+def _reviewed_candidate_order(
+    candidates,
+    *,
+    topic="",
+    subject="",
+    student_class="",
+    visualization_type="",
+    reviewer=None,
+):
+    candidates = list(candidates or [])
+    for start in range(0, len(candidates), AI_REVIEW_BATCH_SIZE):
+        batch = candidates[start : start + AI_REVIEW_BATCH_SIZE]
+        if not batch:
+            continue
+        decision = _review_batch(
+            batch,
+            topic=topic,
+            subject=subject,
+            student_class=student_class,
+            visualization_type=visualization_type,
+            reviewer=reviewer,
+        )
+        if decision.accepted:
+            yield batch[decision.selected_index]
+            continue
+        if decision.unavailable:
+            yield from _fallback_candidate_order(batch)
+
+
+def _review_batch(batch, *, topic="", subject="", student_class="", visualization_type="", reviewer=None):
+    if reviewer is not None:
+        return reviewer(
+            topic=topic,
+            subject=subject,
+            student_class=student_class,
+            visualization_type=visualization_type,
+            candidates=batch,
+        )
+    return review_diagram_candidates(
+        topic=topic,
+        subject=subject,
+        student_class=student_class,
+        visualization_type=visualization_type,
+        candidates=batch,
+    )
+
+
+def _fallback_candidate_order(candidates):
+    for language_category in ("english_or_neutral", "unknown"):
+        for candidate in candidates:
+            if candidate_language_category(candidate) == language_category:
+                yield candidate
+
+
+def _store_reviewed_candidate(
+    provider,
+    candidate,
+    cache_dir,
+    static_folder,
+    *,
+    lesson_id,
+    topic,
+    subject,
+):
+    stored_path = _fetch_candidate(provider, candidate, cache_dir, topic)
+    if not stored_path:
+        return None
+    image_path = stored_path.relative_to(static_folder).as_posix()
+    diagram = DiagramLibrary(
+        lesson_id=lesson_id,
+        topic=topic,
+        subject=subject,
+        image_path=image_path,
+        provider=candidate.provider,
+        source_url=candidate.source_url,
+        author=candidate.author,
+        license=candidate.license,
+        attribution=candidate.attribution,
+        verified=True,
+        cached_at=utc_now(),
+        last_used=utc_now(),
+    )
+    db.session.add(diagram)
+    db.session.commit()
+    return diagram
 
 
 def _provider_candidate_groups(registry, queries, *, topic="", subject="", limit_per_query=8):

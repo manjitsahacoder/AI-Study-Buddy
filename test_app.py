@@ -9,6 +9,7 @@ from unittest.mock import patch
 TEST_DB_FD, TEST_DB_PATH = tempfile.mkstemp(suffix=".db")
 os.close(TEST_DB_FD)
 os.environ["QUIZ_HISTORY_DB"] = TEST_DB_PATH
+os.environ.setdefault("DIAGRAM_AI_REVIEW_ENABLED", "0")
 
 import app as app_module
 from database import db
@@ -35,6 +36,11 @@ from models import (
 from diagram_library.metadata import DiagramCandidate, reusable_license
 from diagram_library.lookup import candidate_language_category, rank_diagram_candidates
 from diagram_library.providers import NcertProvider, ProviderRegistry
+from diagram_library.ai_review import (
+    DiagramReviewDecision,
+    clear_review_cache,
+    review_diagram_candidates,
+)
 from diagram_library.service import get_or_create_diagram
 from diagram_library.storage import download_and_store, repair_cached_image_extension, valid_cached_image
 
@@ -1021,6 +1027,200 @@ She said, "I am tired."
 
         self.assertIsNotNone(diagram)
         self.assertEqual(downloaded_titles, [mitosis.title])
+
+    def test_diagram_service_uses_ai_review_selected_candidate_before_download(self):
+        stored_relative = self.write_test_diagram("ai-reviewed-selection.png")
+        stored_path = Path(app_module.app.static_folder) / stored_relative
+        plant_photo = self.diagram_candidate(
+            "Photosynthesis plant photo English.png",
+            mime_type="image/png",
+            width=1600,
+            height=1200,
+            description="A photograph of a plant in sunlight.",
+        )
+        textbook_diagram = self.diagram_candidate(
+            "Photosynthesis process labelled diagram English.svg",
+            description="Clean textbook diagram showing sunlight, water, carbon dioxide, glucose, and oxygen.",
+            categories=("Photosynthesis diagrams", "Biology education"),
+        )
+
+        class FakeRegistry:
+            def search(self, queries, limit_per_query=8):
+                return [plant_photo, textbook_diagram]
+
+        def fake_reviewer(**kwargs):
+            candidates = kwargs["candidates"]
+            return DiagramReviewDecision(
+                selected_index=next(
+                    index for index, candidate in enumerate(candidates) if candidate.title == textbook_diagram.title
+                ),
+                confidence=0.96,
+                reason="Best English educational diagram with clear labels.",
+            )
+
+        downloaded_titles = []
+
+        def fake_download(candidate, cache_dir, topic):
+            downloaded_titles.append(candidate.title)
+            return stored_path
+
+        with patch("diagram_library.service.download_and_store", side_effect=fake_download):
+            with app_module.app.app_context():
+                diagram = get_or_create_diagram(
+                    lesson_id=1,
+                    subject="Biology",
+                    topic="Photosynthesis",
+                    static_folder=app_module.app.static_folder,
+                    provider_registry=FakeRegistry(),
+                    reviewer=fake_reviewer,
+                )
+
+        self.assertIsNotNone(diagram)
+        self.assertEqual(downloaded_titles, [textbook_diagram.title])
+
+    def test_diagram_service_tries_next_ranked_group_when_ai_confidence_is_low(self):
+        stored_relative = self.write_test_diagram("ai-reviewed-second-group.png")
+        stored_path = Path(app_module.app.static_folder) / stored_relative
+        candidates = [
+            self.diagram_candidate(
+                f"Decorative photosynthesis image {index} English.png",
+                mime_type="image/png",
+                description="Decorative plant artwork.",
+            )
+            for index in range(8)
+        ]
+        selected = self.diagram_candidate(
+            "Photosynthesis labelled process diagram English.svg",
+            description="School diagram explaining photosynthesis inputs and outputs.",
+        )
+        candidates.append(selected)
+
+        class FakeRegistry:
+            def search(self, queries, limit_per_query=8):
+                return candidates
+
+        reviewer_calls = []
+        reviewer_selected_titles = []
+
+        def fake_reviewer(**kwargs):
+            reviewer_calls.append([candidate.title for candidate in kwargs["candidates"]])
+            if len(reviewer_calls) == 1:
+                return DiagramReviewDecision(selected_index=0, confidence=0.62, reason="Not confident.")
+            reviewer_selected_titles.append(kwargs["candidates"][0].title)
+            return DiagramReviewDecision(selected_index=0, confidence=0.91, reason="Clear English textbook diagram.")
+
+        downloaded_titles = []
+
+        def fake_download(candidate, cache_dir, topic):
+            downloaded_titles.append(candidate.title)
+            return stored_path
+
+        with patch("diagram_library.service.download_and_store", side_effect=fake_download):
+            with app_module.app.app_context():
+                diagram = get_or_create_diagram(
+                    lesson_id=1,
+                    subject="Biology",
+                    topic="Photosynthesis",
+                    static_folder=app_module.app.static_folder,
+                    provider_registry=FakeRegistry(),
+                    reviewer=fake_reviewer,
+                )
+
+        self.assertIsNotNone(diagram)
+        self.assertEqual(len(reviewer_calls), 2)
+        self.assertEqual(downloaded_titles, reviewer_selected_titles)
+        self.assertNotIn(downloaded_titles[0], reviewer_calls[0])
+
+    def test_diagram_service_returns_none_when_ai_finds_no_acceptable_diagram(self):
+        candidate = self.diagram_candidate(
+            "Photosynthesis decorative forest photo English.png",
+            mime_type="image/png",
+            description="Decorative forest photograph.",
+        )
+
+        class FakeRegistry:
+            def search(self, queries, limit_per_query=8):
+                return [candidate]
+
+        def rejecting_reviewer(**kwargs):
+            return DiagramReviewDecision(selected_index=None, confidence=0.0, reason="No suitable educational diagram found.")
+
+        with patch("diagram_library.service.download_and_store") as download:
+            with app_module.app.app_context():
+                diagram = get_or_create_diagram(
+                    lesson_id=1,
+                    subject="Biology",
+                    topic="Photosynthesis",
+                    static_folder=app_module.app.static_folder,
+                    provider_registry=FakeRegistry(),
+                    reviewer=rejecting_reviewer,
+                )
+
+        self.assertIsNone(diagram)
+        download.assert_not_called()
+
+    def test_diagram_service_unavailable_ai_fallback_never_downloads_known_foreign_language(self):
+        arabic = self.diagram_candidate("Mitochondrion diagram ar.svg", width=1800, height=1200)
+        russian = self.diagram_candidate("Mitochondrion structure ru.svg", width=1600, height=1000)
+
+        class FakeRegistry:
+            def search(self, queries, limit_per_query=8):
+                return [arabic, russian]
+
+        def unavailable_reviewer(**kwargs):
+            return DiagramReviewDecision(unavailable=True, reason="Gemini unavailable.")
+
+        with patch("diagram_library.service.download_and_store") as download:
+            with app_module.app.app_context():
+                diagram = get_or_create_diagram(
+                    lesson_id=1,
+                    subject="Biology",
+                    topic="mitochondria",
+                    static_folder=app_module.app.static_folder,
+                    provider_registry=FakeRegistry(),
+                    reviewer=unavailable_reviewer,
+                )
+
+        self.assertIsNone(diagram)
+        download.assert_not_called()
+
+    def test_diagram_ai_review_caches_same_topic_and_candidate_set(self):
+        clear_review_cache()
+        candidate = self.diagram_candidate(
+            "Photosynthesis process labelled diagram English.svg",
+            description="Clean school diagram explaining photosynthesis.",
+        )
+        calls = []
+
+        class FakeResponse:
+            text = '{"selected_index": 0, "confidence": 0.95, "reason": "Clear English educational diagram."}'
+
+        class FakeModel:
+            def generate_content(self, prompt, **kwargs):
+                calls.append(prompt)
+                return FakeResponse()
+
+        with patch.dict(os.environ, {"DIAGRAM_AI_REVIEW_ENABLED": "1"}):
+            first = review_diagram_candidates(
+                topic="Photosynthesis",
+                subject="Biology",
+                student_class="8",
+                candidates=[candidate],
+                model_factory=FakeModel,
+            )
+            second = review_diagram_candidates(
+                topic="Photosynthesis",
+                subject="Biology",
+                student_class="8",
+                candidates=[candidate],
+                model_factory=FakeModel,
+            )
+
+        self.assertTrue(first.accepted)
+        self.assertTrue(second.accepted)
+        self.assertTrue(second.from_cache)
+        self.assertEqual(len(calls), 1)
+        clear_review_cache()
 
     def test_wikimedia_svg_thumbnail_is_saved_with_actual_png_extension(self):
         class FakeDownloadResponse:
