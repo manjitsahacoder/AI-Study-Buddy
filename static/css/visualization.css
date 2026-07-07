@@ -338,6 +338,7 @@
     border-radius: var(--control-radius, 8px);
     color: var(--primary);
     background: var(--surface-strong);
+    box-shadow: none;
     font-weight: 850;
 }
 

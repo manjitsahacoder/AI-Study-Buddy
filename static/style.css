@@ -9307,7 +9307,11 @@ textarea[aria-invalid="true"] {
         opacity var(--transition-base);
 }
 
-:where(button:not(.profile-menu-button), .button-link, .back-btn):not(.secondary-link):not(.danger-link):not(.learning-card-plain-button) {
+:where(
+    button:not(.profile-menu-button):not(.secondary-link):not(.danger-link):not(.learning-card-plain-button):not(.diagram-related-topics button),
+    .button-link:not(.secondary-link):not(.danger-link),
+    .back-btn:not(.secondary-link):not(.danger-link)
+) {
     background: var(--primary);
 }
 
