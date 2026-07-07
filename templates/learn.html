@@ -4,19 +4,22 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ topic }} - AI Study Buddy</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/visualization.css', v='diagram-fit-2') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=learning-ui-20260707">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/visualization.css', v='learning-ui-20260707') }}">
     {% include 'components/pwa_head.html' %}
 </head>
 
 <body class="learn-page {% if exhibition_mode %}exhibition-mode{% endif %}">
+<div class="reading-progress" aria-hidden="true">
+    <span data-reading-progress></span>
+</div>
 <div class="page-illustrations learn-illustrations" aria-hidden="true">
     <img class="bg-illustration bg-illustration-large bg-top-left" src="{{ url_for('static', filename='images/backgrounds/learn-doodles.svg') }}" alt="">
     <img class="bg-illustration bg-illustration-medium bg-top-right" src="{{ url_for('static', filename='images/backgrounds/ai-brain-circuit.svg') }}" alt="">
     <img class="bg-illustration bg-illustration-small bg-mid-left" src="{{ url_for('static', filename='images/backgrounds/pencil.svg') }}" alt="">
     <img class="bg-illustration bg-illustration-medium bg-bottom-right" src="{{ url_for('static', filename='images/backgrounds/learn-doodles.svg') }}" alt="">
 </div>
-<button id="theme-toggle" onclick="toggleTheme()">
+<button id="theme-toggle" onclick="toggleTheme()" aria-label="Switch to dark mode">
     &#127769; Dark Mode
 </button>
 
@@ -24,8 +27,22 @@
     {% set exhibition_step = 'notes' %}
     {% include 'components/exhibition_flow.html' %}
 
-    <h1>&#128218; {{ topic }}</h1>
-    <div class="lesson-info-strip">
+    <nav class="lesson-navigator" aria-label="Lesson sections">
+        <a href="#lesson-start" data-lesson-nav>Introduction</a>
+        <a href="#lesson-notes" data-lesson-nav>Main Notes</a>
+        <a href="#diagram-section" data-lesson-nav>Diagram</a>
+        <a href="#revision-tools" data-lesson-nav>Revision</a>
+        <a href="#ai-tutor-step" data-lesson-nav>Tutor</a>
+        <a href="#quiz-step" data-lesson-nav>Quiz</a>
+        <a href="#flashcards-step" data-lesson-nav>Flashcards</a>
+        <a href="#mindmap-step" data-lesson-nav>Mind Map</a>
+        <a href="#memory-step" data-lesson-nav>Memory Challenge</a>
+    </nav>
+
+    <header class="lesson-hero" id="lesson-start">
+        <span class="eyebrow">&#128218; AI Lesson</span>
+        <h1>{{ topic }}</h1>
+        <div class="lesson-info-strip" aria-label="Lesson information">
         <span><strong>Student</strong> {{ name }}</span>
         <span><strong>Class</strong> {{ student_class }}</span>
         <span><strong>Subject</strong> {{ subject }}</span>
@@ -33,7 +50,9 @@
         <span><strong>Book</strong> {{ book_name }}</span>
         {% endif %}
         <span><strong>Topic</strong> {{ topic }}</span>
-    </div>
+        </div>
+    </header>
+
     <div class="lesson-primary-actions">
         {% if lesson_id %}
         <form action="{{ url_for('toggle_favourite_note', lesson_id=lesson_id) }}" method="POST">
@@ -51,11 +70,11 @@
 
     <hr>
 
-    <div class="content">
+    <div class="content" id="lesson-notes">
         {{ explanation|safe }}
     </div>
 
-    <section class="revision-tools-section" aria-labelledby="revision-tools-title">
+    <section class="revision-tools-section" id="revision-tools" aria-labelledby="revision-tools-title">
         <div class="continue-learning-heading">
             <span class="eyebrow">&#127183; Revision Tools</span>
             <h2 id="revision-tools-title">Revision Tools</h2>
@@ -76,7 +95,7 @@
                 {% endif %}
             </article>
 
-            <article class="learning-action-card learning-card-mindmap">
+            <article class="learning-action-card learning-card-mindmap" id="mindmap-step">
                 <span class="learning-card-icon" aria-hidden="true">&#129504;</span>
                 <div class="learning-card-copy">
                     <h3>AI Mind Map</h3>
@@ -102,7 +121,7 @@
                 {% endif %}
             </article>
 
-            <article class="learning-action-card learning-card-flashcards">
+            <article class="learning-action-card learning-card-flashcards" id="flashcards-step">
                 <span class="learning-card-icon" aria-hidden="true">&#127183;</span>
                 <div class="learning-card-copy">
                     <h3>AI Flashcards</h3>
@@ -115,7 +134,7 @@
                 {% endif %}
             </article>
 
-            <article class="learning-action-card learning-card-memory">
+            <article class="learning-action-card learning-card-memory" id="memory-step">
                 <span class="learning-card-icon" aria-hidden="true">&#129504;</span>
                 <div class="learning-card-copy">
                     <h3>AI Memory Challenge</h3>
@@ -135,7 +154,9 @@
         </div>
     </section>
 
-    {% include 'visualization.html' %}
+    <div id="diagram-section">
+        {% include 'visualization.html' %}
+    </div>
 
     <hr>
 
@@ -147,7 +168,7 @@
         </div>
 
         <div class="continue-learning-grid">
-            <article class="learning-action-card learning-card-tutor">
+            <article class="learning-action-card learning-card-tutor" id="ai-tutor-step">
                 <span class="learning-card-icon" aria-hidden="true">&#128104;&#8205;&#127979;</span>
                 <div class="learning-card-copy">
                     <h3>Learn with AI Tutor</h3>
@@ -166,7 +187,7 @@
                 {% endif %}
             </article>
 
-            <form action="{{ url_for('quiz') }}" method="POST" class="learning-action-card learning-card-quiz">
+            <form action="{{ url_for('quiz') }}" method="POST" class="learning-action-card learning-card-quiz" id="quiz-step">
                 <input type="hidden" name="name" value="{{ name }}">
                 <input type="hidden" name="student_class" value="{{ student_class }}">
                 <input type="hidden" name="subject" value="{{ subject }}">
@@ -238,9 +259,92 @@ function toggleTheme() {
     let btn = document.getElementById("theme-toggle");
     if (document.body.classList.contains("dark-mode")) {
         btn.innerHTML = "&#9728;&#65039; Light Mode";
+        btn.setAttribute("aria-label", "Switch to light mode");
     } else {
         btn.innerHTML = "&#127769; Dark Mode";
+        btn.setAttribute("aria-label", "Switch to dark mode");
     }
+}
+
+function initializeLearningPagePolish() {
+    const progressBar = document.querySelector("[data-reading-progress]");
+    const navLinks = Array.from(document.querySelectorAll("[data-lesson-nav]"));
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    function updateReadingProgress() {
+        if (!progressBar) {
+            return;
+        }
+        const scrollable = document.documentElement.scrollHeight - window.innerHeight;
+        const progress = scrollable > 0 ? Math.min(window.scrollY / scrollable, 1) : 0;
+        progressBar.style.transform = `scaleX(${progress})`;
+    }
+
+    function updateActiveNavigator() {
+        if (!navLinks.length) {
+            return;
+        }
+        let activeLink = navLinks[0];
+        navLinks.forEach(function (link) {
+            const section = document.querySelector(link.getAttribute("href"));
+            if (!section) {
+                return;
+            }
+            if (section.getBoundingClientRect().top <= 160) {
+                activeLink = link;
+            }
+        });
+        navLinks.forEach(function (link) {
+            link.classList.toggle("is-active", link === activeLink);
+        });
+    }
+
+    navLinks.forEach(function (link) {
+        link.addEventListener("click", function (event) {
+            const section = document.querySelector(link.getAttribute("href"));
+            if (!section) {
+                return;
+            }
+            event.preventDefault();
+            section.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
+        });
+    });
+
+    const calloutRules = [
+        { pattern: /^(definition|meaning)\b/i, className: "lesson-callout-definition" },
+        { pattern: /^(remember|key point|note)\b/i, className: "lesson-callout-remember" },
+        { pattern: /^(important|exam tip|tip)\b/i, className: "lesson-callout-important" },
+        { pattern: /^(example|for example)\b/i, className: "lesson-callout-example" },
+    ];
+    let calloutCount = 0;
+    document.querySelectorAll(".content p, .content li, .content blockquote").forEach(function (item) {
+        if (calloutCount >= 10 || item.closest(".lesson-callout")) {
+            return;
+        }
+        const text = (item.textContent || "").trim();
+        const rule = calloutRules.find(function (entry) {
+            return entry.pattern.test(text);
+        });
+        if (!rule) {
+            return;
+        }
+        item.classList.add("lesson-callout", rule.className);
+        calloutCount += 1;
+    });
+
+    updateReadingProgress();
+    updateActiveNavigator();
+    window.addEventListener("scroll", function () {
+        updateReadingProgress();
+        updateActiveNavigator();
+    }, { passive: true });
+    window.addEventListener("resize", updateReadingProgress);
+}
+
+if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initializeLearningPagePolish);
+} else {
+    initializeLearningPagePolish();
 }
 
 </script>

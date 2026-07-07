@@ -1,12 +1,16 @@
 .visualization-card {
     margin: 30px 0;
-    padding: clamp(16px, 2.6vw, 24px);
+    padding: clamp(18px, 2.8vw, 28px);
     max-width: 100%;
     overflow: hidden;
-    border: 1px solid var(--line);
+    border: 1px solid rgba(49, 87, 213, 0.15);
     border-radius: var(--card-radius, 8px);
-    background: var(--surface);
-    box-shadow: var(--soft-shadow);
+    background:
+        linear-gradient(145deg, rgba(255, 255, 255, 0.72), rgba(255, 253, 248, 0.96)),
+        var(--surface);
+    box-shadow:
+        0 1px 0 rgba(255, 255, 255, 0.72) inset,
+        var(--soft-shadow);
 }
 
 .visualization-header {
@@ -14,12 +18,13 @@
     align-items: flex-start;
     justify-content: space-between;
     gap: 16px;
-    margin-bottom: 16px;
+    margin-bottom: 18px;
 }
 
 .visualization-header h2 {
     margin: 4px 0 0;
     color: var(--primary);
+    line-height: 1.15;
 }
 
 .visualization-type-pill {
@@ -36,33 +41,35 @@
 }
 
 .visualization-insights {
-    display: grid;
-    grid-template-columns: minmax(140px, 0.9fr) minmax(120px, 0.6fr) minmax(220px, 2fr);
-    gap: 10px;
-    margin-bottom: 14px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 16px;
 }
 
 .visualization-insights div {
     margin: 0;
-    padding: 12px;
-    border: 1px solid var(--line);
-    border-radius: var(--card-radius, 8px);
-    background: rgba(248, 250, 252, 0.82);
+    min-height: 36px;
+    padding: 7px 11px;
+    border: 1px solid rgba(49, 87, 213, 0.14);
+    border-radius: var(--radius-pill, 999px);
+    background: rgba(255, 255, 255, 0.72);
+    box-shadow: 0 6px 16px rgba(30, 40, 58, 0.05);
 }
 
 .visualization-insights span,
 .diagram-library-attribution strong {
-    display: block;
-    margin-bottom: 4px;
+    display: inline;
+    margin: 0 6px 0 0;
     color: var(--muted);
-    font-size: 0.76rem;
+    font-size: 0.72rem;
     font-weight: 850;
     text-transform: uppercase;
 }
 
 .visualization-insights strong {
     color: var(--ink);
-    font-size: 0.96rem;
+    font-size: 0.88rem;
     line-height: 1.35;
 }
 
@@ -70,8 +77,20 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
+    justify-content: center;
     gap: 10px;
-    margin-bottom: 14px;
+    margin-bottom: 16px;
+    padding: 10px;
+    border: 1px solid rgba(49, 87, 213, 0.1);
+    border-radius: var(--card-radius, 8px);
+    background: rgba(49, 87, 213, 0.045);
+}
+
+.diagram-library-toolbar .button-link,
+.diagram-library-toolbar button {
+    min-height: 42px;
+    padding: 10px 14px;
+    border-radius: var(--control-radius, 8px);
 }
 
 .diagram-library-figure {
@@ -87,11 +106,22 @@
     width: 100%;
     height: clamp(320px, 52vw, 620px);
     overflow: hidden;
-    border: 1px solid var(--line);
+    border: 1px solid rgba(49, 87, 213, 0.14);
     border-radius: var(--card-radius, 8px);
     background:
         linear-gradient(135deg, var(--color-primary-soft, rgba(49, 87, 213, 0.08)), var(--color-secondary-soft, rgba(4, 125, 135, 0.08))),
         var(--surface-strong);
+}
+
+.diagram-library-image-shell::after {
+    content: "Loading educational diagram...";
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    color: var(--muted);
+    font-size: 0.94rem;
+    font-weight: 850;
 }
 
 .diagram-library-image-shell::before {
@@ -105,6 +135,10 @@
 }
 
 .diagram-library-image-shell:has(.diagram-library-image.is-loaded)::before {
+    display: none;
+}
+
+.diagram-library-image-shell:has(.diagram-library-image.is-loaded)::after {
     display: none;
 }
 
@@ -158,7 +192,7 @@
 .diagram-library-attribution {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 10px;
+    gap: 8px;
     margin-top: 12px;
     color: var(--muted);
     font-size: 0.9rem;
@@ -167,10 +201,10 @@
 
 .diagram-library-attribution span {
     min-width: 0;
-    padding: 10px 12px;
-    border: 1px solid var(--line);
-    border-radius: var(--card-radius, 8px);
-    background: rgba(248, 250, 252, 0.76);
+    padding: 9px 11px;
+    border: 1px solid rgba(49, 87, 213, 0.12);
+    border-radius: var(--control-radius, 8px);
+    background: rgba(255, 255, 255, 0.72);
     overflow-wrap: anywhere;
 }
 
@@ -216,8 +250,10 @@
     padding: clamp(14px, 2vw, 18px);
     border: 1px solid var(--line);
     border-radius: var(--card-radius, 8px);
-    background: rgba(248, 250, 252, 0.86);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+    background: rgba(255, 255, 255, 0.76);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.72),
+        0 8px 20px rgba(30, 40, 58, 0.05);
 }
 
 .diagram-explanation-card.is-wide {
@@ -432,6 +468,7 @@ body.diagram-lightbox-open {
 
 .dark-mode .visualization-type-pill,
 .dark-mode .visualization-insights div,
+.dark-mode .diagram-library-toolbar,
 .dark-mode .diagram-library-attribution span,
 .dark-mode .diagram-explanation-status,
 .dark-mode .diagram-explanation-card {
@@ -452,6 +489,10 @@ body.diagram-lightbox-open {
 
 .dark-mode .diagram-library-image-shell::before {
     background: linear-gradient(90deg, transparent, rgba(134, 161, 255, 0.18), transparent);
+}
+
+.dark-mode .diagram-library-image-shell::after {
+    color: var(--muted);
 }
 
 .dark-mode .visualization-info-card {
