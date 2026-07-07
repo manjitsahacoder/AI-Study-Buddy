@@ -236,15 +236,27 @@
             { ...panelLessonContext(panel), ...(lesson || {}) }
         );
         if (!content.children.length) {
-            status.hidden = false;
-            status.textContent = "The diagram explanation is unavailable right now.";
+            panel.classList.remove("is-loaded");
+            if (status) {
+                status.hidden = false;
+                status.removeAttribute("aria-hidden");
+                status.textContent = "The diagram explanation is unavailable right now.";
+            }
             content.hidden = true;
+            content.classList.remove("is-visible");
             return;
         }
-        if (status) {
-            status.hidden = true;
-        }
+        panel.classList.add("is-loaded");
         content.hidden = false;
+        content.classList.add("is-visible");
+        if (status) {
+            status.setAttribute("aria-hidden", "true");
+            window.setTimeout(function () {
+                if (panel.classList.contains("is-loaded")) {
+                    status.hidden = true;
+                }
+            }, 220);
+        }
     }
 
     function initDiagramExplanation(panel) {
@@ -265,6 +277,7 @@
             }
             return;
         }
+        panel.classList.add("is-loading");
         fetch(endpoint, { headers: { "Accept": "application/json" } })
             .then(function (response) {
                 return response.json().then(function (body) {
@@ -275,10 +288,15 @@
                 });
             })
             .then(function (body) {
+                panel.classList.remove("is-loading");
                 renderDiagramExplanation(panel, body.explanation, body.lesson || {});
             })
             .catch(function (error) {
+                panel.classList.remove("is-loading");
+                panel.classList.remove("is-loaded");
                 if (status) {
+                    status.hidden = false;
+                    status.removeAttribute("aria-hidden");
                     status.textContent = error.message || "The diagram explanation is unavailable right now.";
                 }
             });

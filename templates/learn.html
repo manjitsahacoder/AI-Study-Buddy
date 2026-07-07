@@ -4,8 +4,8 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ topic }} - AI Study Buddy</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=learning-ui-20260707">
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/visualization.css', v='learning-ui-20260707') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=learning-ux-fix-20260707">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/visualization.css', v='learning-ux-fix-20260707') }}">
     {% include 'components/pwa_head.html' %}
 </head>
 
@@ -269,7 +269,18 @@ function toggleTheme() {
 function initializeLearningPagePolish() {
     const progressBar = document.querySelector("[data-reading-progress]");
     const navLinks = Array.from(document.querySelectorAll("[data-lesson-nav]"));
+    const navSections = navLinks
+        .map(function (link) {
+            return {
+                link: link,
+                section: document.querySelector(link.getAttribute("href")),
+            };
+        })
+        .filter(function (item) {
+            return item.section;
+        });
     const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    let scrollFrame = null;
 
     function updateReadingProgress() {
         if (!progressBar) {
@@ -281,22 +292,33 @@ function initializeLearningPagePolish() {
     }
 
     function updateActiveNavigator() {
-        if (!navLinks.length) {
+        if (!navSections.length) {
             return;
         }
-        let activeLink = navLinks[0];
-        navLinks.forEach(function (link) {
-            const section = document.querySelector(link.getAttribute("href"));
-            if (!section) {
-                return;
-            }
-            if (section.getBoundingClientRect().top <= 160) {
-                activeLink = link;
+        const activationLine = window.scrollY + Math.min(180, Math.round(window.innerHeight * 0.28));
+        let activeLink = navSections[0].link;
+        navSections.forEach(function (item) {
+            const sectionTop = item.section.getBoundingClientRect().top + window.scrollY;
+            if (sectionTop <= activationLine) {
+                activeLink = item.link;
             }
         });
         navLinks.forEach(function (link) {
             link.classList.toggle("is-active", link === activeLink);
         });
+    }
+
+    function updateScrollState() {
+        scrollFrame = null;
+        updateReadingProgress();
+        updateActiveNavigator();
+    }
+
+    function requestScrollUpdate() {
+        if (scrollFrame) {
+            return;
+        }
+        scrollFrame = window.requestAnimationFrame(updateScrollState);
     }
 
     navLinks.forEach(function (link) {
@@ -334,11 +356,8 @@ function initializeLearningPagePolish() {
 
     updateReadingProgress();
     updateActiveNavigator();
-    window.addEventListener("scroll", function () {
-        updateReadingProgress();
-        updateActiveNavigator();
-    }, { passive: true });
-    window.addEventListener("resize", updateReadingProgress);
+    window.addEventListener("scroll", requestScrollUpdate, { passive: true });
+    window.addEventListener("resize", updateScrollState);
 }
 
 if (document.readyState === "loading") {
@@ -348,6 +367,6 @@ if (document.readyState === "loading") {
 }
 
 </script>
-<script src="{{ url_for('static', filename='js/visualization.js', v='diagram-fit-2') }}"></script>
+<script src="{{ url_for('static', filename='js/visualization.js', v='learning-ux-fix-20260707') }}"></script>
 </body>
 </html>

@@ -3366,7 +3366,7 @@ body.dashboard-page #theme-toggle {
     left: 0;
     z-index: 5000;
     width: 100%;
-    height: 4px;
+    height: 5px;
     pointer-events: none;
     background: rgba(49, 87, 213, 0.08);
 }
@@ -3379,7 +3379,7 @@ body.dashboard-page #theme-toggle {
     transform-origin: left;
     background: linear-gradient(90deg, var(--primary), var(--teal), var(--green));
     box-shadow: 0 0 18px rgba(49, 87, 213, 0.24);
-    transition: transform 0.12s linear;
+    transition: transform 0.18s ease-out;
 }
 
 .lesson-navigator {
@@ -3859,14 +3859,28 @@ body.dashboard-page #theme-toggle {
     transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease;
 }
 
-.learning-action-card:hover,
 .learning-action-card:focus-within {
-    transform: translateY(-3px);
-    border-color: rgba(49, 87, 213, 0.26);
-    background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 253, 248, 0.99)),
-        rgba(255, 253, 248, 0.98);
-    box-shadow: 0 16px 34px rgba(30, 40, 58, 0.12);
+    border-color: rgba(49, 87, 213, 0.28);
+    box-shadow:
+        var(--focus-ring),
+        0 12px 28px rgba(30, 40, 58, 0.08);
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .learning-action-card:hover {
+        transform: translateY(-3px);
+        border-color: rgba(49, 87, 213, 0.26);
+        background:
+            linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(255, 253, 248, 0.99)),
+            rgba(255, 253, 248, 0.98);
+        box-shadow: 0 16px 34px rgba(30, 40, 58, 0.12);
+    }
+}
+
+@media (hover: none) {
+    .learning-action-card:hover {
+        transform: none;
+    }
 }
 
 .learning-card-tutor,
@@ -4490,11 +4504,18 @@ body.dashboard-page #theme-toggle {
     transition: transform 0.18s ease, color 0.18s ease, background 0.18s ease;
 }
 
-.learning-action-card:hover .learning-card-arrow,
-.learning-action-card:focus-within .learning-card-arrow {
+.learning-action-card:hover .learning-card-arrow {
     transform: translateX(3px);
     color: #ffffff;
     background: var(--primary);
+}
+
+@media (hover: none) {
+    .learning-action-card:hover .learning-card-arrow {
+        transform: none;
+        color: var(--primary);
+        background: rgba(49, 87, 213, 0.1);
+    }
 }
 
 .is-coming-soon {
@@ -7355,6 +7376,12 @@ textarea:focus {
     transform: translate3d(0, -2px, 0) scale(1.03);
 }
 
+@media (hover: none) {
+    .learning-action-card:hover .learning-card-icon {
+        transform: none;
+    }
+}
+
 @media (min-width: 901px) {
     .student-sidebar.is-ready {
         animation: sidebarSettle 0.38s var(--ease-premium) both;
@@ -8526,11 +8553,12 @@ textarea:focus {
     background: rgba(134, 161, 255, 0.16);
 }
 
-.dark-mode .learning-action-card:hover,
-.dark-mode .learning-action-card:focus-within {
-    background:
-        linear-gradient(180deg, rgba(39, 49, 73, 0.96), rgba(21, 27, 41, 0.99)),
-        rgba(21, 27, 41, 0.96);
+@media (hover: hover) and (pointer: fine) {
+    .dark-mode .learning-action-card:hover {
+        background:
+            linear-gradient(180deg, rgba(39, 49, 73, 0.96), rgba(21, 27, 41, 0.99)),
+            rgba(21, 27, 41, 0.96);
+    }
 }
 
 .dark-mode .learning-card-copy h3,
@@ -9828,7 +9856,7 @@ textarea[aria-invalid="true"] {
 
 @media (max-width: 560px) {
     .reading-progress {
-        height: 3px;
+        height: 4px;
     }
 
     .lesson-hero {
