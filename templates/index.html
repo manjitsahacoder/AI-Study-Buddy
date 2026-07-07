@@ -84,8 +84,8 @@
         <span class="eyebrow">Smarter Learning</span>
         <div class="welcome-card-copy">
             <h2>Welcome to AI Study Buddy</h2>
-            <p class="welcome-subtitle">Your complete AI-powered learning platform for smarter studying.</p>
-            <p>AI Study Buddy is an AI-powered educational platform designed to help students learn smarter through personalized notes, diagrams, quizzes, textbook support, and performance analysis.</p>
+            <p class="welcome-subtitle">Your complete AI-powered learning platform for Classes 6-10.</p>
+            <p>AI Study Buddy is an AI-powered educational platform designed to help students from Classes 6-10 learn smarter through personalized notes, diagrams, quizzes, textbook support, and performance analysis.</p>
         </div>
         <div class="hero-feature-badges" aria-label="AI Study Buddy platform features">
             <span>&#129302; AI Powered</span>
@@ -360,13 +360,9 @@
                 <select id="student_class" name="student_class" required>
                     <option value="">Select class</option>
                     {% set selected_class = (current_user.default_class or current_user.student_class) if current_user else '' %}
-                    <option value="6" {% if selected_class == '6' %}selected{% endif %}>Class 6</option>
-                    <option value="7" {% if selected_class == '7' %}selected{% endif %}>Class 7</option>
-                    <option value="8" {% if selected_class == '8' %}selected{% endif %}>Class 8</option>
-                    <option value="9" {% if selected_class == '9' %}selected{% endif %}>Class 9</option>
-                    <option value="10" {% if selected_class == '10' %}selected{% endif %}>Class 10</option>
-                    <option value="11" {% if selected_class == '11' %}selected{% endif %}>Class 11</option>
-                    <option value="12" {% if selected_class == '12' %}selected{% endif %}>Class 12</option>
+                    {% for class_number in class_options %}
+                    <option value="{{ class_number }}" {% if selected_class == class_number %}selected{% endif %}>Class {{ class_number }}</option>
+                    {% endfor %}
                 </select>
             </div>
 
@@ -461,7 +457,8 @@
         <div class="about-intro">
             <span class="eyebrow">About</span>
             <h2>Project Overview</h2>
-            <p>AI Study Buddy is an AI-powered educational platform developed for IT-FESTIVAL 2026-27 to help students learn through personalized explanations, textbook support, quizzes, diagrams, and performance analysis.</p>
+            <p>AI Study Buddy is an AI-powered educational platform developed for IT-FESTIVAL 2026-27 to help students from Classes 6-10 learn through personalized explanations, textbook support, quizzes, diagrams, and performance analysis.</p>
+            <p>Future versions will include dedicated support for Classes 11-12 with stream-specific learning.</p>
         </div>
         <div class="project-overview-grid">
             <article class="overview-panel">

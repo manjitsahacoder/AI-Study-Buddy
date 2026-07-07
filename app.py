@@ -1072,8 +1072,26 @@ EXPLANATION_STYLE_LABELS = {
 }
 
 
+SUPPORTED_CLASS_MESSAGE = (
+    "AI Study Buddy currently supports students from Classes 6 to 10. "
+    "Support for Classes 11 and 12 is planned in a future update."
+)
+
+
 def class_options():
-    return [str(class_number) for class_number in range(6, 13)]
+    return [str(class_number) for class_number in range(6, 11)]
+
+
+def unsupported_class_message():
+    return SUPPORTED_CLASS_MESSAGE
+
+
+def validate_supported_class(student_class, required=True):
+    if not student_class:
+        return "Class is required." if required else ""
+    if student_class not in class_options():
+        return unsupported_class_message()
+    return ""
 
 
 def find_account_update_conflicts(user_id, username, email):
@@ -1101,10 +1119,9 @@ def validate_profile_settings_form(form, user_id):
         errors.append("Email is required.")
     elif not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
         errors.append("Please enter a valid email address.")
-    if not student_class:
-        errors.append("Class is required.")
-    elif student_class not in class_options():
-        errors.append("Please select a valid class.")
+    class_error = validate_supported_class(student_class)
+    if class_error:
+        errors.append(class_error)
 
     conflicts = find_account_update_conflicts(user_id, username, email) if not errors else []
     normalized_username = username.lower()
@@ -1187,8 +1204,9 @@ def update_ai_preference_settings(user, form):
 
     if explanation_style not in ALLOWED_EXPLANATION_STYLES:
         errors.append("Please select a valid explanation style.")
-    if default_class and default_class not in class_options():
-        errors.append("Please select a valid default class.")
+    default_class_error = validate_supported_class(default_class, required=False)
+    if default_class_error:
+        errors.append(default_class_error)
 
     if errors:
         return errors
@@ -1554,8 +1572,9 @@ def validate_registration_form(form):
         errors.append("Email is required.")
     elif not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
         errors.append("Please enter a valid email address.")
-    if not student_class:
-        errors.append("Class is required.")
+    class_error = validate_supported_class(student_class)
+    if class_error:
+        errors.append(class_error)
     if not password:
         errors.append("Password is required.")
     elif len(password) < 8:
@@ -7551,7 +7570,7 @@ def class_difficulty_instruction(student_class):
     if class_number <= 6:
         return "For Class 6 or below, use simple vocabulary, direct tasks, and one-step reasoning."
     if class_number >= 10:
-        return "For Class 10 or above, include more application-based, reasoning, and multi-step questions."
+        return "For Class 10, include more application-based, reasoning, and multi-step questions."
     return "Use moderate school-level difficulty with a mix of recall, understanding, and application."
 
 
@@ -7922,7 +7941,7 @@ def learning_subject_prompt_section(subject):
 
 @app.route("/")
 def home():
-    return render_template("index.html")
+    return render_template("index.html", class_options=class_options())
 
 
 @app.route("/manifest.json")
@@ -7982,7 +8001,11 @@ def register():
         if errors:
             for error in errors:
                 flash(error, "error")
-            return render_template("register.html", form_data=form_data), 400
+            return render_template(
+                "register.html",
+                form_data=form_data,
+                class_options=class_options(),
+            ), 400
 
         try:
             create_user(
@@ -8000,7 +8023,11 @@ def register():
         flash("Registration successful. Please log in.", "success")
         return redirect(url_for("login"))
 
-    return render_template("register.html", form_data=form_data)
+    return render_template(
+        "register.html",
+        form_data=form_data,
+        class_options=class_options(),
+    )
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -8348,11 +8375,16 @@ def revision(lesson_id):
     if not lesson:
         abort(404)
 
+    student_class = preferred_class_for_user(current_user())
+    class_error = validate_supported_class(student_class)
+    if class_error:
+        abort(400, description=class_error)
+
     try:
         revision_sheet, created = get_or_create_revision_sheet(
             lesson,
             session["user_id"],
-            preferred_class_for_user(current_user()),
+            student_class,
         )
     except GeminiRequestError as error:
         return render_gemini_error(error.error_info)
@@ -8433,11 +8465,16 @@ def important_questions(lesson_id):
     if not lesson:
         abort(404)
 
+    student_class = preferred_class_for_user(current_user())
+    class_error = validate_supported_class(student_class)
+    if class_error:
+        abort(400, description=class_error)
+
     try:
         question_set, created = get_or_create_important_question_set(
             lesson,
             session["user_id"],
-            preferred_class_for_user(current_user()),
+            student_class,
         )
     except GeminiRequestError as error:
         return render_gemini_error(error.error_info)
@@ -8492,11 +8529,16 @@ def mindmap(lesson_id):
     if not lesson:
         abort(404)
 
+    student_class = preferred_class_for_user(current_user())
+    class_error = validate_supported_class(student_class)
+    if class_error:
+        abort(400, description=class_error)
+
     try:
         mind_map, created = get_or_create_mind_map(
             lesson,
             session["user_id"],
-            preferred_class_for_user(current_user()),
+            student_class,
         )
     except GeminiRequestError as error:
         return render_gemini_error(error.error_info)
@@ -8528,11 +8570,16 @@ def flashcards(lesson_id):
     if not lesson:
         abort(404)
 
+    student_class = preferred_class_for_user(current_user())
+    class_error = validate_supported_class(student_class)
+    if class_error:
+        abort(400, description=class_error)
+
     try:
         flashcard_set, created = get_or_create_flashcard_set(
             lesson,
             session["user_id"],
-            preferred_class_for_user(current_user()),
+            student_class,
         )
     except GeminiRequestError as error:
         return render_gemini_error(error.error_info)
@@ -8710,8 +8757,13 @@ def diagram_explanation(lesson_id):
     if not lesson:
         abort(404)
 
+    student_class = preferred_class_for_user(current_user())
+    class_error = validate_supported_class(student_class)
+    if class_error:
+        return jsonify({"error": class_error}), 400
+
     diagram_payload = decode_diagram_payload(lesson.diagram_data, lesson.subject, lesson.topic)
-    diagram_view = lesson_diagram_view(lesson, diagram_payload, preferred_class_for_user(current_user()))
+    diagram_view = lesson_diagram_view(lesson, diagram_payload, student_class)
     if not diagram_payload.get("available") or not diagram_view:
         return jsonify({"error": "No educational diagram is available for this lesson."}), 404
 
@@ -8720,7 +8772,7 @@ def diagram_explanation(lesson_id):
             lesson,
             diagram_payload,
             diagram_view,
-            preferred_class_for_user(current_user()),
+            student_class,
             user_id=session["user_id"],
         )
     except GeminiRequestError as error:
@@ -8818,6 +8870,9 @@ def start_ai_tutor():
     account = current_user()
     name = request.values.get("name", "").strip() or account["full_name"]
     student_class = request.values.get("student_class", "").strip() or preferred_class_for_user(account)
+    class_error = validate_supported_class(student_class)
+    if class_error:
+        abort(400, description=class_error)
     next_url = safe_internal_url(request.values.get("next"))
     tutor_lesson = get_or_create_tutor_lesson(
         session["user_id"],
@@ -8872,6 +8927,9 @@ def tutor_message(tutor_lesson_id):
     tutor_lesson = get_tutor_lesson_for_user(tutor_lesson_id, session["user_id"])
     if not tutor_lesson:
         abort(404)
+    class_error = validate_supported_class(tutor_lesson.student_class)
+    if class_error:
+        return jsonify({"error": class_error}), 400
 
     payload = request.get_json(silent=True) or {}
     student_message = (payload.get("message") or "").strip()
@@ -9044,6 +9102,9 @@ def toggle_favourite_note(lesson_id):
         flash("Removed from Favourite Notes.", "success")
     else:
         student_class = request.form.get("student_class", "").strip() or preferred_class_for_user(current_user())
+        class_error = validate_supported_class(student_class)
+        if class_error:
+            abort(400, description=class_error)
         db.session.add(
             FavouriteNote(
                 user_id=session["user_id"],
@@ -9163,6 +9224,9 @@ def learn():
 
     if not name or not student_class or not subject or not topic:
         abort(400, description="Name, class, subject, and topic are required.")
+    class_error = validate_supported_class(student_class)
+    if class_error:
+        abort(400, description=class_error)
 
     subject_prompt_section = learning_subject_prompt_section(subject)
     adaptive_quiz_prompt_section = build_adaptive_quiz_prompt_section(
@@ -9438,6 +9502,9 @@ def download_notes():
 
     if not topic or not notes:
         abort(400, description="Topic and notes are required.")
+    class_error = validate_supported_class(student_class, required=False)
+    if class_error:
+        abort(400, description=class_error)
 
     notes_html = markdown.markdown(notes)
     diagram_html = ""
@@ -9537,6 +9604,9 @@ def quiz():
 
     if not name or not student_class or not subject or not topic:
         abort(400, description="Name, class, subject, and topic are required.")
+    class_error = validate_supported_class(student_class)
+    if class_error:
+        abort(400, description=class_error)
 
     return render_template(
         "quiz.html",
@@ -9559,6 +9629,9 @@ def submit_answers():
 
     if not name or not student_class or not subject or not topic:
         abort(400, description="Name, class, subject, and topic are required.")
+    class_error = validate_supported_class(student_class)
+    if class_error:
+        abort(400, description=class_error)
 
     question_and_answer_text = "\n".join(
         f"Q{index}: {question}\nStudent answer: {answer}"

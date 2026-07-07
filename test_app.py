@@ -189,6 +189,74 @@ class RouteTests(unittest.TestCase):
             },
         )
 
+    def test_supported_classes_are_limited_to_6_through_10(self):
+        self.assertEqual(app_module.class_options(), ["6", "7", "8", "9", "10"])
+
+        response = self.client.get("/")
+
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        self.assertIn("Classes 6-10", page)
+        self.assertIn("Future versions will include dedicated support for Classes 11-12", page)
+        self.assertIn('value="10"', page)
+        self.assertNotIn('value="11"', page)
+        self.assertNotIn('value="12"', page)
+        self.assertNotIn(">Class 11<", page)
+        self.assertNotIn(">Class 12<", page)
+
+    def test_registration_rejects_unsupported_class(self):
+        response = self.register_user(extra_data={"student_class": "11"})
+
+        self.assertEqual(response.status_code, 400)
+        page = response.get_data(as_text=True)
+        self.assertIn(app_module.SUPPORTED_CLASS_MESSAGE, page)
+        self.assertNotIn('value="11"', page)
+        with app_module.app.app_context():
+            self.assertEqual(User.query.count(), 0)
+
+    @patch.object(app_module.model, "generate_content")
+    def test_learn_rejects_unsupported_class_before_ai_generation(self, generate_content):
+        response = self.client.post(
+            "/learn",
+            data={
+                "name": "Asha",
+                "student_class": "12",
+                "subject": "Biology",
+                "topic": "Plants",
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn(app_module.SUPPORTED_CLASS_MESSAGE, response.get_data(as_text=True))
+        generate_content.assert_not_called()
+
+    @patch.object(app_module.model, "generate_content")
+    def test_saved_ai_tools_reject_legacy_unsupported_account_class(self, generate_content):
+        with app_module.app.app_context():
+            app_module.create_user(
+                "Legacy Student",
+                "legacy",
+                "legacy@example.com",
+                "11",
+                "password123",
+            )
+            lesson_id = app_module.save_learning_history(
+                1,
+                "Science",
+                "",
+                "Photosynthesis",
+                "Plants make food.",
+                {"available": False},
+                ["What do plants make?"],
+            )
+
+        self.login_user(identifier="legacy", password="password123")
+        response = self.client.get(f"/flashcards/{lesson_id}")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn(app_module.SUPPORTED_CLASS_MESSAGE, response.get_data(as_text=True))
+        generate_content.assert_not_called()
+
     @patch.object(app_module.model, "generate_content")
     def test_learn_displays_notes_and_carries_five_questions(self, generate_content):
         generate_content.return_value = MockResponse(
@@ -466,7 +534,7 @@ She said, "I am tired."
 
                 self.assertIn(expected_phrase, prompt)
                 self.assertIn(second_phrase, prompt)
-                self.assertIn("Class 10 or above", prompt)
+                self.assertIn("For Class 10, include more application-based", prompt)
                 self.assertIn("Avoid repeating the same question format", prompt)
 
     def test_download_notes_returns_all_notes_as_attachment(self):
@@ -1442,6 +1510,15 @@ Q5. What is question five?
             self.assertIn(question, page)
             self.assertIn(f'name="answer{index}"', page)
             self.assertIn(f'name="question{index}"', page)
+
+    def test_quiz_rejects_unsupported_class(self):
+        payload = self.quiz_payload()
+        payload["student_class"] = "11"
+
+        response = self.client.post("/quiz", data=payload)
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn(app_module.SUPPORTED_CLASS_MESSAGE, response.get_data(as_text=True))
 
     def test_quiz_renders_multiline_grammar_question_types(self):
         payload = self.quiz_payload()

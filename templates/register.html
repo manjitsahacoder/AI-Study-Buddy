@@ -69,7 +69,7 @@
                 <label for="student_class">&#127891; Class</label>
                 <select id="student_class" name="student_class" required>
                     <option value="">Select class</option>
-                    {% for class_number in range(6, 13) %}
+                    {% for class_number in class_options %}
                     <option value="{{ class_number }}" {% if form_data.student_class == class_number|string %}selected{% endif %}>
                         Class {{ class_number }}
                     </option>
