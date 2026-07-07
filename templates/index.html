@@ -48,6 +48,7 @@
             <p class="school-motto">Service Before Self</p>
             <h1>AI Study Buddy</h1>
             <p class="subtitle">AI-Powered Learning Companion</p>
+            <p class="hero-tagline">AI Notes &bull; Diagrams &bull; Quiz &bull; AI Tutor</p>
             <div class="exhibition-badge">&#127942; IT-FESTIVAL 2026-27</div>
         </div>
 
@@ -408,7 +409,7 @@
             </div>
         </div>
 
-        <button class="start-learning-btn" type="submit">
+        <button class="start-learning-btn" type="submit" aria-label="Start learning with AI Study Buddy">
             Start Learning
         </button>
     </form>
@@ -457,20 +458,33 @@
     {% endif %}
 
     <section class="about-card">
-        <div>
+        <div class="about-intro">
             <span class="eyebrow">About</span>
-            <h2>About AI Study Buddy</h2>
+            <h2>Project Overview</h2>
             <p>AI Study Buddy is an AI-powered educational platform developed for IT-FESTIVAL 2026-27 to help students learn through personalized explanations, textbook support, quizzes, diagrams, and performance analysis.</p>
         </div>
-        <div class="tech-badges" aria-label="Technologies used">
-            <span>Python</span>
-            <span>Flask</span>
-            <span>Google Gemini AI</span>
-            <span>HTML</span>
-            <span>CSS</span>
-            <span>JavaScript</span>
-            <span>SQLite</span>
-            <span>ReportLab</span>
+        <div class="project-overview-grid">
+            <article class="overview-panel">
+                <h3>Purpose</h3>
+                <p>Support students with fast, personalized study material for classroom learning and revision.</p>
+            </article>
+            <article class="overview-panel">
+                <h3>AI Capabilities</h3>
+                <p>Generates explanations, diagrams, quizzes, flashcards, and performance insights from one workflow.</p>
+            </article>
+            <article class="overview-panel overview-panel-wide">
+                <h3>Technology Stack</h3>
+                <div class="tech-badges" aria-label="Technologies used">
+                    <span>Python</span>
+                    <span>Flask</span>
+                    <span>Google Gemini AI</span>
+                    <span>HTML</span>
+                    <span>CSS</span>
+                    <span>JavaScript</span>
+                    <span>SQLite</span>
+                    <span>ReportLab</span>
+                </div>
+            </article>
         </div>
     </section>
 

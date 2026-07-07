@@ -282,10 +282,10 @@ body.home-page #theme-toggle:hover {
     position: relative;
     z-index: 80;
     display: grid;
-    grid-template-columns: 170px minmax(0, 1fr) 170px;
+    grid-template-columns: 142px minmax(0, 1fr) 170px;
     align-items: center;
-    gap: clamp(24px, 4vw, 44px);
-    padding: clamp(22px, 4vw, 40px);
+    gap: clamp(18px, 3vw, 34px);
+    padding: clamp(18px, 3vw, 32px);
     border: 1px solid rgba(231, 223, 210, 0.9);
     border-radius: 8px;
     background:
@@ -304,9 +304,9 @@ body.home-page #theme-toggle:hover {
     display: grid;
     place-items: center;
     justify-self: start;
-    width: clamp(118px, 13vw, 154px);
+    width: clamp(104px, 10vw, 132px);
     aspect-ratio: 1;
-    padding: 12px;
+    padding: 10px;
     border: 1px solid rgba(49, 87, 213, 0.16);
     border-radius: 8px;
     background: rgba(255, 255, 255, 0.78);
@@ -321,8 +321,8 @@ body.home-page #theme-toggle:hover {
 
 .school-logo {
     display: block;
-    width: min(130px, 100%);
-    height: min(130px, 100%);
+    width: min(108px, 100%);
+    height: min(108px, 100%);
     object-fit: contain;
 }
 
@@ -332,9 +332,9 @@ body.home-page #theme-toggle:hover {
 }
 
 .school-name {
-    margin-bottom: 7px;
+    margin-bottom: 5px;
     color: var(--primary);
-    font-size: clamp(0.98rem, 1.7vw, 1.34rem);
+    font-size: clamp(0.92rem, 1.5vw, 1.18rem);
     font-weight: 900;
     letter-spacing: 0.08em;
     line-height: 1.35;
@@ -346,26 +346,40 @@ body.home-page #theme-toggle:hover {
     justify-content: center;
     width: fit-content;
     max-width: 100%;
-    margin: 0 auto 18px;
-    padding: 6px 12px;
+    margin: 0 auto 12px;
+    padding: 5px 11px;
     border: 1px solid rgba(189, 138, 32, 0.28);
     border-radius: 999px;
     color: var(--amber);
     background: rgba(189, 138, 32, 0.09);
-    font-size: 0.92rem;
+    font-size: 0.86rem;
     font-weight: 800;
 }
 
 .header-center h1 {
-    margin-bottom: 10px;
-    font-size: clamp(2.35rem, 5vw, 5.1rem);
+    margin-bottom: 8px;
+    font-size: clamp(2.35rem, 4.65vw, 4.65rem);
 }
 
 .subtitle {
-    margin-bottom: 18px;
+    margin-bottom: 8px;
     color: #445064;
-    font-size: clamp(1.02rem, 1.6vw, 1.32rem);
+    font-size: clamp(1rem, 1.45vw, 1.2rem);
     font-weight: 700;
+}
+
+.hero-tagline {
+    width: fit-content;
+    max-width: 100%;
+    margin: 0 auto 14px;
+    padding: 7px 12px;
+    border: 1px solid rgba(4, 125, 135, 0.16);
+    border-radius: var(--radius-pill);
+    color: var(--teal);
+    background: rgba(4, 125, 135, 0.07);
+    font-size: clamp(0.84rem, 1.2vw, 0.94rem);
+    font-weight: 900;
+    line-height: 1.25;
 }
 
 .exhibition-badge {
@@ -374,9 +388,9 @@ body.home-page #theme-toggle:hover {
     justify-content: center;
     width: fit-content;
     max-width: 100%;
-    min-height: 42px;
+    min-height: 38px;
     margin: 0 auto;
-    padding: 9px 16px;
+    padding: 8px 15px;
     border: 1px solid rgba(189, 138, 32, 0.36);
     border-radius: 999px;
     color: #6b4607;
@@ -681,7 +695,7 @@ span.role-student {
 
 .project-team-card {
     margin-top: 22px;
-    padding: clamp(20px, 3.4vw, 34px);
+    padding: clamp(20px, 3vw, 30px);
     border: 1px solid rgba(231, 223, 210, 0.92);
     border-radius: 8px;
     background: rgba(255, 253, 248, 0.93);
@@ -694,10 +708,15 @@ span.role-student {
     display: flex;
     align-items: end;
     justify-content: space-between;
-    gap: 18px;
-    margin-bottom: 22px;
+    gap: 22px;
+    margin-bottom: 24px;
     border-bottom: 1px solid var(--line);
     padding-bottom: 18px;
+}
+
+.section-heading > div {
+    display: grid;
+    gap: 9px;
 }
 
 .section-heading .eyebrow {
@@ -707,43 +726,45 @@ span.role-student {
 .section-heading h2 {
     margin: 0;
     text-align: right;
+    line-height: 1.15;
 }
 
 .team-grid {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 0;
+    gap: 1px;
+    overflow: hidden;
+    border: 1px solid rgba(231, 223, 210, 0.7);
+    border-radius: var(--card-radius);
+    background: var(--line);
 }
 
 .team-member {
     display: grid;
-    grid-template-columns: 48px minmax(0, 1fr);
-    gap: 14px;
+    grid-template-columns: 44px minmax(0, 1fr);
+    gap: 13px;
     min-width: 0;
-    padding: 18px;
-    border-right: 1px solid var(--line);
-    transition: transform 0.2s ease, background 0.2s ease;
-}
-
-.team-member:nth-child(3),
-.team-member:last-child {
+    padding: 17px;
     border-right: 0;
+    background: rgba(255, 253, 248, 0.94);
+    transition: transform 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
 }
 
 .team-member:hover {
     transform: translateY(-2px);
     background: rgba(49, 87, 213, 0.045);
+    box-shadow: 0 12px 24px rgba(30, 40, 58, 0.08);
 }
 
 .team-icon {
     display: grid;
     place-items: center;
-    width: 46px;
-    height: 46px;
+    width: 42px;
+    height: 42px;
     border-radius: 8px;
     color: #ffffff;
     background: var(--primary);
-    font-size: 1.2rem;
+    font-size: 1.12rem;
 }
 
 .team-member:nth-child(2) .team-icon {
@@ -760,8 +781,11 @@ span.role-student {
 
 .team-member h3 {
     margin-bottom: 4px;
-    color: var(--ink);
-    font-size: 0.96rem;
+    color: var(--muted);
+    font-size: 0.84rem;
+    font-weight: 900;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
 }
 
 .team-member p {
@@ -772,21 +796,22 @@ span.role-student {
 
 .member-name {
     color: var(--ink);
-    font-size: 1.08rem;
+    font-size: 1.12rem;
     font-weight: 900;
+    line-height: 1.25;
 }
 
 .class-card {
     grid-column: 1 / -1;
-    margin-top: 6px;
-    border-top: 1px solid var(--line);
+    margin-top: 0;
+    border-top: 0;
     border-right: 0;
 }
 
 .welcome-card,
 .about-card {
     margin-top: 22px;
-    padding: clamp(22px, 3.4vw, 34px);
+    padding: clamp(20px, 3vw, 30px);
     border: 1px solid rgba(231, 223, 210, 0.92);
     border-radius: 8px;
     background: rgba(255, 253, 248, 0.94);
@@ -799,7 +824,7 @@ span.role-student {
     overflow: hidden;
     display: grid;
     grid-template-columns: minmax(0, 1fr);
-    gap: 20px;
+    gap: 18px;
     animation-delay: 0.04s;
 }
 
@@ -820,12 +845,12 @@ span.role-student {
 
 .welcome-card-copy {
     display: grid;
-    gap: 8px;
+    gap: 7px;
 }
 
 .welcome-card h2,
 .about-card h2 {
-    margin-bottom: 10px;
+    margin-bottom: 8px;
 }
 
 .welcome-card-copy h2,
@@ -835,7 +860,7 @@ span.role-student {
 
 .welcome-subtitle {
     color: var(--primary);
-    font-size: clamp(1.08rem, 1.6vw, 1.26rem);
+    font-size: clamp(1.02rem, 1.45vw, 1.18rem);
     font-weight: 900;
 }
 
@@ -844,7 +869,8 @@ span.role-student {
     max-width: 860px;
     margin-bottom: 0;
     color: #445064;
-    font-size: clamp(1rem, 1.4vw, 1.14rem);
+    font-size: clamp(0.96rem, 1.25vw, 1.04rem);
+    line-height: 1.65;
 }
 
 .hero-feature-badges {
@@ -870,9 +896,47 @@ span.role-student {
 
 .about-card {
     display: grid;
-    grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
+    grid-template-columns: minmax(0, 0.85fr) minmax(300px, 1.15fr);
     gap: 24px;
-    align-items: center;
+    align-items: start;
+}
+
+.about-intro {
+    display: grid;
+    gap: 10px;
+}
+
+.about-intro h2 {
+    margin-bottom: 0;
+}
+
+.project-overview-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.overview-panel {
+    min-width: 0;
+    padding: 16px;
+    border: 1px solid rgba(49, 87, 213, 0.13);
+    border-radius: var(--card-radius);
+    background: rgba(255, 255, 255, 0.68);
+}
+
+.overview-panel-wide {
+    grid-column: 1 / -1;
+}
+
+.overview-panel h3 {
+    margin-bottom: 8px;
+    color: var(--ink);
+    font-size: 0.96rem;
+    font-weight: 900;
+}
+
+.overview-panel p {
+    font-size: 0.93rem;
 }
 
 .account-motivation-card,
@@ -1021,19 +1085,19 @@ body.modal-open {
 .tech-badges {
     display: flex;
     flex-wrap: wrap;
-    gap: 10px;
+    gap: 8px;
 }
 
 .tech-badges span {
     display: inline-flex;
     align-items: center;
-    min-height: 34px;
-    padding: 7px 11px;
+    min-height: 32px;
+    padding: 6px 10px;
     border: 1px solid rgba(49, 87, 213, 0.16);
     border-radius: 999px;
     color: var(--primary);
     background: rgba(49, 87, 213, 0.07);
-    font-size: 0.86rem;
+    font-size: 0.82rem;
     font-weight: 800;
 }
 
@@ -1100,14 +1164,14 @@ body.modal-open {
 }
 
 .feature-showcase-section {
-    margin: 22px 0;
+    margin: 24px 0;
     animation: fadeInUp 0.62s ease both;
 }
 
 .feature-showcase-heading {
     align-items: flex-start;
-    margin-bottom: 18px;
-    padding-bottom: 16px;
+    margin-bottom: 20px;
+    padding-bottom: 18px;
 }
 
 .feature-showcase-heading h2 {
@@ -1118,14 +1182,15 @@ body.modal-open {
     max-width: 430px;
     margin: 0;
     color: var(--muted);
-    font-weight: 800;
+    font-weight: 700;
+    line-height: 1.6;
 }
 
 .features {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 18px;
-    margin: 22px 0;
+    gap: 14px;
+    margin: 20px 0;
     animation: fadeInUp 0.65s ease both;
     animation-delay: 0.08s;
 }
@@ -1153,10 +1218,11 @@ body.modal-open {
     overflow: hidden;
     display: grid;
     align-content: start;
-    gap: 12px;
-    padding: 22px;
+    gap: 10px;
+    padding: 18px;
+    min-height: 0;
     animation: fadeInUp 0.55s ease both;
-    transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease, background 0.22s ease;
+    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease;
 }
 
 .feature-card::before {
@@ -1177,10 +1243,10 @@ body.modal-open {
 }
 
 .feature-card:hover {
-    transform: translateY(-5px);
+    transform: translateY(-3px);
     border-color: rgba(49, 87, 213, 0.18);
     background: rgba(255, 253, 248, 0.98);
-    box-shadow: 0 18px 38px rgba(30, 40, 58, 0.13);
+    box-shadow: 0 14px 30px rgba(30, 40, 58, 0.12);
 }
 
 .feature-card:hover::before {
@@ -1188,8 +1254,8 @@ body.modal-open {
 }
 
 .feature-card:hover .feature-icon {
-    transform: scale(1.04);
-    box-shadow: 0 12px 26px rgba(49, 87, 213, 0.18);
+    transform: translateY(-1px) scale(1.03);
+    box-shadow: 0 10px 22px rgba(49, 87, 213, 0.16);
 }
 
 .feature-card:nth-child(2) {
@@ -1215,13 +1281,13 @@ body.modal-open {
 .feature-icon {
     display: grid;
     place-items: center;
-    width: 42px;
-    height: 42px;
+    width: 40px;
+    height: 40px;
     border-radius: 8px;
     color: white;
     background: var(--primary);
-    font-size: 1.2rem;
-    transition: transform 0.22s ease, box-shadow 0.22s ease;
+    font-size: 1.12rem;
+    transition: transform 0.18s ease, box-shadow 0.18s ease;
 }
 
 .feature-card:nth-child(2) .feature-icon {
@@ -1254,19 +1320,20 @@ body.modal-open {
 
 .feature-card h3 {
     margin-bottom: 0;
-    font-size: 1.12rem;
+    font-size: 1.06rem;
+    line-height: 1.25;
 }
 
 .feature-card p {
     margin-bottom: 0;
-    font-size: 0.96rem;
-    line-height: 1.6;
+    font-size: 0.92rem;
+    line-height: 1.55;
 }
 
 .feature-list {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: 7px;
     margin: 2px 0 0;
     padding: 0;
     list-style: none;
@@ -1275,13 +1342,13 @@ body.modal-open {
 .feature-list li {
     display: inline-flex;
     align-items: center;
-    min-height: 30px;
-    padding: 6px 9px;
+    min-height: 28px;
+    padding: 5px 9px;
     border: 1px solid rgba(49, 87, 213, 0.13);
     border-radius: var(--radius-pill);
     color: var(--primary);
     background: rgba(49, 87, 213, 0.07);
-    font-size: 0.78rem;
+    font-size: 0.76rem;
     font-weight: 900;
     line-height: 1.2;
 }
@@ -1295,7 +1362,7 @@ body.modal-open {
 }
 
 .platform-highlights-card {
-    padding: clamp(22px, 3.4vw, 34px);
+    padding: clamp(20px, 3vw, 30px);
     border: 1px solid rgba(31, 122, 77, 0.14);
     border-radius: var(--card-radius);
     background:
@@ -1336,50 +1403,51 @@ body.modal-open {
     max-width: 430px;
     margin: 0;
     color: var(--muted);
-    font-weight: 800;
+    font-weight: 700;
+    line-height: 1.6;
 }
 
 .highlight-chip-grid {
     display: flex;
     flex-wrap: wrap;
-    gap: 10px;
+    gap: 8px;
 }
 
 .highlight-chip-grid span {
     display: inline-flex;
     align-items: center;
-    min-height: 38px;
-    padding: 8px 12px;
+    min-height: 34px;
+    padding: 7px 11px;
     border: 1px solid rgba(31, 122, 77, 0.16);
     border-radius: var(--radius-pill);
     color: var(--ink);
     background: rgba(255, 253, 248, 0.88);
-    box-shadow: var(--shadow-sm);
-    font-size: 0.88rem;
+    box-shadow: 0 5px 14px rgba(30, 40, 58, 0.05);
+    font-size: 0.84rem;
     font-weight: 900;
     line-height: 1.2;
-    transition: transform 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease, background 0.22s ease;
+    transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
 }
 
 .highlight-chip-grid span::before {
     content: "\2713";
     display: inline-grid;
     place-items: center;
-    width: 18px;
-    height: 18px;
-    margin-right: 8px;
+    width: 16px;
+    height: 16px;
+    margin-right: 7px;
     border-radius: 999px;
     color: #ffffff;
     background: var(--green);
-    font-size: 0.74rem;
+    font-size: 0.68rem;
     line-height: 1;
 }
 
 .highlight-chip-grid span:hover {
-    transform: translateY(-2px);
+    transform: translateY(-1px);
     border-color: rgba(31, 122, 77, 0.24);
     background: rgba(31, 122, 77, 0.08);
-    box-shadow: var(--soft-shadow);
+    box-shadow: 0 10px 22px rgba(30, 40, 58, 0.08);
 }
 
 .highlight-chip-grid span:nth-child(4n + 2)::before {
@@ -1397,15 +1465,15 @@ body.modal-open {
 .why-study-grid {
     display: grid;
     grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: 14px;
+    gap: 12px;
 }
 
 .why-study-grid article {
     display: grid;
     align-content: start;
-    gap: 10px;
-    min-height: 190px;
-    padding: 18px;
+    gap: 9px;
+    min-height: 166px;
+    padding: 16px;
     border: 1px solid rgba(49, 87, 213, 0.14);
     border-radius: var(--card-radius);
     background: rgba(255, 253, 248, 0.9);
@@ -1414,21 +1482,21 @@ body.modal-open {
 }
 
 .why-study-grid article:hover {
-    transform: translateY(-4px);
+    transform: translateY(-3px);
     border-color: rgba(49, 87, 213, 0.24);
     background: rgba(255, 253, 248, 0.98);
-    box-shadow: var(--lift-shadow);
+    box-shadow: 0 14px 30px rgba(30, 40, 58, 0.12);
 }
 
 .why-study-grid span {
     display: grid;
     place-items: center;
-    width: 42px;
-    height: 42px;
+    width: 38px;
+    height: 38px;
     border-radius: var(--radius-lg);
     color: #ffffff;
     background: var(--primary);
-    font-size: 1.1rem;
+    font-size: 1rem;
 }
 
 .why-study-grid article:nth-child(2) span {
@@ -1450,12 +1518,12 @@ body.modal-open {
 .why-study-grid h3 {
     margin-bottom: 0;
     color: var(--ink);
-    font-size: 1rem;
+    font-size: 0.96rem;
 }
 
 .why-study-grid p {
     margin-bottom: 0;
-    font-size: 0.94rem;
+    font-size: 0.9rem;
     line-height: 1.55;
 }
 
@@ -1464,8 +1532,8 @@ body.modal-open {
     align-items: center;
     justify-content: center;
     gap: 12px;
-    margin: 0 0 16px;
-    padding: 14px 18px;
+    margin: 0 0 14px;
+    padding: 12px 16px;
     border: 1px solid rgba(4, 125, 135, 0.2);
     border-radius: 8px;
     color: var(--ink);
@@ -1490,12 +1558,16 @@ body.modal-open {
 .study-form {
     display: flex;
     flex-direction: column;
-    gap: 22px;
-    padding: clamp(18px, 2.5vw, 24px);
-    border: 1px solid var(--line);
+    gap: 20px;
+    padding: clamp(20px, 3vw, 30px);
+    border: 1px solid rgba(49, 87, 213, 0.16);
     border-radius: 8px;
-    background: rgba(255, 253, 248, 0.95);
-    box-shadow: var(--soft-shadow);
+    background:
+        linear-gradient(145deg, rgba(255, 255, 255, 0.74), rgba(255, 253, 248, 0.96)),
+        rgba(255, 253, 248, 0.96);
+    box-shadow:
+        0 1px 0 rgba(255, 255, 255, 0.72) inset,
+        0 18px 40px rgba(30, 40, 58, 0.1);
     animation: fadeInUp 0.7s ease both;
     animation-delay: 0.22s;
 }
@@ -1503,42 +1575,42 @@ body.modal-open {
 .form-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 22px;
+    gap: 18px;
 }
 
 .form-field {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 7px;
     min-width: 0;
 }
 
 .form-field label {
     display: inline-flex;
     align-items: center;
-    gap: 7px;
+    gap: 6px;
     color: var(--ink);
-    font-size: 0.94rem;
+    font-size: 0.9rem;
     font-weight: 800;
 }
 
 .subject-hints {
     display: flex;
     flex-wrap: wrap;
-    gap: 6px;
-    min-height: 28px;
+    gap: 5px;
+    min-height: 26px;
 }
 
 .subject-hints span {
     display: inline-flex;
     align-items: center;
-    min-height: 26px;
-    padding: 4px 8px;
+    min-height: 24px;
+    padding: 4px 7px;
     border: 1px solid rgba(49, 87, 213, 0.14);
     border-radius: 999px;
     color: var(--muted);
     background: rgba(49, 87, 213, 0.06);
-    font-size: 0.78rem;
+    font-size: 0.74rem;
     font-weight: 700;
 }
 
@@ -1546,15 +1618,15 @@ input,
 select,
 textarea {
     width: 100%;
-    min-height: 50px;
-    padding: 13px 14px;
+    min-height: 48px;
+    padding: 12px 14px;
     border: 1px solid #d8cfbf;
     border-radius: 8px;
     color: var(--ink);
     background: #ffffff;
     font: inherit;
     outline: none;
-    transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+    transition: border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease, transform 0.18s ease;
 }
 
 textarea {
@@ -1567,7 +1639,10 @@ input:focus,
 select:focus,
 textarea:focus {
     border-color: var(--primary);
-    box-shadow: 0 0 0 4px rgba(49, 87, 213, 0.14);
+    box-shadow:
+        0 0 0 4px rgba(49, 87, 213, 0.14),
+        0 10px 24px rgba(49, 87, 213, 0.1);
+    transform: translateY(-1px);
 }
 
 button,
@@ -1619,11 +1694,11 @@ button:hover,
 }
 
 .study-form button {
-    min-width: 220px;
-    min-height: 56px;
+    min-width: min(100%, 250px);
+    min-height: 54px;
     align-self: center;
-    padding-inline: 30px;
-    font-size: 1.04rem;
+    padding-inline: 32px;
+    font-size: 1.02rem;
 }
 
 .start-learning-btn {
@@ -1634,7 +1709,7 @@ button:hover,
 }
 
 .start-learning-btn:hover {
-    transform: translateY(-3px) scale(1.025);
+    transform: translateY(-2px) scale(1.015);
     background: linear-gradient(135deg, var(--primary-dark), #5e84ff 54%, var(--teal));
     box-shadow:
         0 18px 34px rgba(49, 87, 213, 0.34),
@@ -6116,8 +6191,8 @@ body.dashboard-page #theme-toggle {
 }
 
 footer {
-    margin-top: 34px;
-    padding: clamp(20px, 3vw, 28px);
+    margin-top: 30px;
+    padding: clamp(20px, 3vw, 26px);
     border: 1px solid var(--line);
     border-radius: 8px;
     background: rgba(255, 253, 248, 0.86);
@@ -6126,22 +6201,22 @@ footer {
 }
 
 footer p {
-    margin: 8px 0 0;
+    margin: 7px 0 0;
     color: var(--muted);
-    font-size: 0.94rem;
+    font-size: 0.9rem;
 }
 
 .footer-grid {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 14px;
-    margin-bottom: 18px;
+    gap: 10px;
+    margin-bottom: 16px;
     text-align: left;
 }
 
 .footer-grid div {
     min-width: 0;
-    padding: 14px;
+    padding: 12px;
     border: 1px solid rgba(49, 87, 213, 0.12);
     border-radius: 8px;
     background: rgba(49, 87, 213, 0.05);
@@ -6153,9 +6228,9 @@ footer p {
 }
 
 .footer-grid span {
-    margin-bottom: 5px;
+    margin-bottom: 4px;
     color: var(--muted);
-    font-size: 0.78rem;
+    font-size: 0.74rem;
     font-weight: 800;
     letter-spacing: 0.06em;
     text-transform: uppercase;
@@ -6163,7 +6238,7 @@ footer p {
 
 .footer-grid strong {
     color: var(--ink);
-    font-size: 0.98rem;
+    font-size: 0.94rem;
     line-height: 1.35;
 }
 
@@ -7776,6 +7851,7 @@ textarea:focus {
 .dark-mode .exhibition-header,
 .dark-mode .welcome-card,
 .dark-mode .hero-feature-badges span,
+.dark-mode .hero-tagline,
 .dark-mode .platform-highlights-card,
 .dark-mode .mode-banner,
 .dark-mode .account-motivation-card,
@@ -7840,7 +7916,9 @@ textarea:focus {
 .dark-mode .verified-badge,
 .dark-mode .role-badge,
 .dark-mode .footer-grid div,
-.dark-mode .tech-badges span {
+.dark-mode .tech-badges span,
+.dark-mode .overview-panel,
+.dark-mode .team-member {
     background: rgba(134, 161, 255, 0.1);
     border-color: rgba(134, 161, 255, 0.18);
 }
@@ -7855,6 +7933,7 @@ textarea:focus {
 }
 
 .dark-mode .subtitle,
+.dark-mode .hero-tagline,
 .dark-mode .welcome-card p,
 .dark-mode .welcome-subtitle,
 .dark-mode .about-card p {
@@ -9377,6 +9456,10 @@ textarea[aria-invalid="true"] {
         grid-template-columns: 1fr;
     }
 
+    .project-overview-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
     .section-heading {
         display: block;
     }
@@ -9389,7 +9472,7 @@ textarea[aria-invalid="true"] {
     .team-member,
     .team-member:nth-child(3) {
         border-right: 0;
-        border-bottom: 1px solid var(--line);
+        border-bottom: 0;
     }
 
     .team-member:last-child {
@@ -9865,6 +9948,11 @@ textarea[aria-invalid="true"] {
         font-size: 0.96rem;
     }
 
+    .hero-tagline {
+        width: 100%;
+        text-align: center;
+    }
+
     .school-mark {
         width: 118px;
         padding: 10px;
@@ -9894,6 +9982,14 @@ textarea[aria-invalid="true"] {
     .features,
     .footer-grid {
         grid-template-columns: 1fr;
+    }
+
+    .project-overview-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .overview-panel-wide {
+        grid-column: auto;
     }
 
     .tech-badges span {
