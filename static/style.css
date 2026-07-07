@@ -9307,7 +9307,7 @@ textarea[aria-invalid="true"] {
         opacity var(--transition-base);
 }
 
-:where(button:not(.profile-menu-button), .button-link, .back-btn):not(.secondary-link):not(.danger-link) {
+:where(button:not(.profile-menu-button), .button-link, .back-btn):not(.secondary-link):not(.danger-link):not(.learning-card-plain-button) {
     background: var(--primary);
 }
 
