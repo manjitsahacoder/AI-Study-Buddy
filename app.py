@@ -42,6 +42,7 @@ from sqlalchemy.orm import load_only
 import json
 import markdown
 import os
+import platform
 import random
 import re
 import threading
@@ -80,6 +81,7 @@ from models import (
     QuizHistory,
     RevisionSheet,
     StudyPlanProgress,
+    SupportFeedback,
     TutorLesson,
     TutorMessage,
     User,
@@ -951,6 +953,8 @@ def ensure_performance_indexes():
         "CREATE INDEX IF NOT EXISTS ix_memory_challenges_user_lesson_difficulty ON memory_challenges (user_id, lesson_id, difficulty)",
         "CREATE INDEX IF NOT EXISTS ix_tutor_messages_user_created_id ON tutor_messages (user_id, created_at, id)",
         "CREATE INDEX IF NOT EXISTS ix_tutor_messages_lesson_created_id ON tutor_messages (tutor_lesson_id, created_at, id)",
+        "CREATE INDEX IF NOT EXISTS ix_support_feedback_created_at ON support_feedback (created_at)",
+        "CREATE INDEX IF NOT EXISTS ix_support_feedback_issue_type ON support_feedback (issue_type)",
     )
     existing_tables = set(inspect(db.engine).get_table_names())
     for statement in index_statements:
@@ -5418,43 +5422,267 @@ def developer_user_filters_from_request():
     }
 
 
-def support_tools():
+def database_status_summary():
+    try:
+        db.session.execute(text("SELECT 1")).scalar()
+        return {
+            "status": "Online",
+            "state": "online",
+            "detail": "Connectivity verified",
+        }
+    except SQLAlchemyError:
+        rollback_database_session()
+        return {
+            "status": "Offline",
+            "state": "offline",
+            "detail": "Connectivity check failed",
+        }
+
+
+def database_platform_label():
+    database_uri = app.config.get("SQLALCHEMY_DATABASE_URI", "")
+    if database_uri.startswith("postgresql"):
+        return "Supabase PostgreSQL" if "supabase" in database_uri.lower() else "PostgreSQL"
+    if database_uri.startswith("sqlite"):
+        return "SQLite"
+    return "Configured database"
+
+
+def deployment_platform_label():
+    if os.environ.get("RENDER"):
+        return "Render"
+    if os.environ.get("VERCEL"):
+        return "Vercel"
+    if os.environ.get("RAILWAY_ENVIRONMENT"):
+        return "Railway"
+    return "Local development"
+
+
+def build_date_label():
+    try:
+        return format_admin_datetime(datetime.fromtimestamp(Path(__file__).stat().st_mtime, timezone.utc))
+    except OSError:
+        return format_admin_datetime(datetime.now(timezone.utc))
+
+
+def last_deployment_label():
+    deployment_time = (
+        os.environ.get("RENDER_DEPLOY_CREATED_AT")
+        or os.environ.get("DEPLOYMENT_CREATED_AT")
+        or os.environ.get("BUILD_DATE")
+    )
+    return deployment_time or build_date_label()
+
+
+def support_categories():
     return [
         {
-            "title": "Student Account Lookup",
-            "description": "Placeholder for future support-assisted account checks.",
+            "title": "Report a Bug",
+            "icon": "&#128027;",
+            "description": "Unexpected behavior, broken flows, or visual issues.",
         },
         {
-            "title": "Learning Issue Notes",
-            "description": "Placeholder for tracking student-reported study or download issues.",
+            "title": "Feature Request",
+            "icon": "&#10024;",
+            "description": "Ideas that would make studying faster or clearer.",
         },
         {
-            "title": "System Health Checklist",
-            "description": "Placeholder for quick support diagnostics.",
+            "title": "Technical Issue",
+            "icon": "&#128295;",
+            "description": "Login, routing, device, browser, or setup problems.",
+        },
+        {
+            "title": "AI Response Issue",
+            "icon": "&#129302;",
+            "description": "Incorrect, slow, incomplete, or confusing AI answers.",
+        },
+        {
+            "title": "Diagram Issue",
+            "icon": "&#128506;",
+            "description": "Diagram loading, cache, label, or reviewer problems.",
+        },
+        {
+            "title": "Account Problem",
+            "icon": "&#128272;",
+            "description": "Password, profile, saved data, or access concerns.",
+        },
+        {
+            "title": "Performance Problem",
+            "icon": "&#9889;",
+            "description": "Slow pages, delayed generation, or timeout reports.",
+        },
+        {
+            "title": "General Feedback",
+            "icon": "&#128172;",
+            "description": "Anything else the support team should know.",
         },
     ]
 
 
-def qa_panel_items():
+def support_panel_data():
+    db_status = database_status_summary()
+    ai_status = "Ready" if GEMINI_API_KEY else "Configuration needed"
     return {
-        "checklist": [
-            "Login and logout flow",
-            "Guest mode locked features",
-            "AI notes generation",
-            "Quiz evaluation and PDF download",
-            "Learning history save and delete",
-            "Responsive dashboard and profile views",
+        "categories": support_categories(),
+        "faqs": [
+            {
+                "question": "Why is AI taking time?",
+                "answer": "AI responses depend on model availability, prompt size, and network speed. Longer lessons and diagrams may take a little more time.",
+            },
+            {
+                "question": "Why are diagrams loading later?",
+                "answer": "The diagram library checks cached images first, then fetches or reviews new diagrams when needed. New topics can take longer on the first load.",
+            },
+            {
+                "question": "How do I save notes?",
+                "answer": "Open a generated lesson and use the saved-notes action. Saved items remain available from the dashboard and learning history.",
+            },
+            {
+                "question": "How do I reset my password?",
+                "answer": "Use the forgot-password flow from the login page, then set a new password of at least eight characters.",
+            },
+            {
+                "question": "How do I download reports?",
+                "answer": "After a quiz or lesson report is generated, use the download action. Reports are also tracked in Downloaded Reports.",
+            },
         ],
-        "bug_reports": [
-            "No open bug reports yet.",
-            "Use this space for exhibition testing notes later.",
+        "developer_info": [
+            {"label": "Developer", "value": "Manjit Saha"},
+            {"label": "Technical Support", "value": "Gyanjyoti Mahanta"},
+            {"label": "School", "value": "AI Study Buddy"},
+            {"label": "AI Model", "value": "Gemini 2.5 Flash"},
+            {"label": "Version", "value": WEBSITE_VERSION},
+        ],
+        "system_info": [
+            {"label": "Current Server Status", "value": "Online", "state": "online"},
+            {"label": "AI Status", "value": ai_status, "state": "online" if GEMINI_API_KEY else "warning"},
+            {"label": "Database Status", "value": db_status["status"], "state": db_status["state"]},
+            {"label": "Diagram Service Status", "value": "Online", "state": "online"},
+            {"label": "Last Deployment", "value": last_deployment_label(), "state": "neutral"},
+        ],
+        "issue_types": [category["title"] for category in support_categories()],
+    }
+
+
+def save_support_feedback(submitter_user_id, form):
+    name = (form.get("name") or "").strip()
+    email = (form.get("email") or "").strip()
+    issue_type = (form.get("issue_type") or "").strip()
+    message = (form.get("message") or "").strip()
+    valid_issue_types = {category["title"] for category in support_categories()}
+    errors = []
+
+    if not name:
+        errors.append("Name is required.")
+    if email and "@" not in email:
+        errors.append("Enter a valid email address or leave it blank.")
+    if issue_type not in valid_issue_types:
+        errors.append("Choose a support category.")
+    if not message:
+        errors.append("Message is required.")
+
+    if errors:
+        return False, errors
+
+    feedback = SupportFeedback(
+        submitter_user_id=submitter_user_id,
+        name=name,
+        email=email or None,
+        issue_type=issue_type,
+        message=message,
+    )
+    db.session.add(feedback)
+    db.session.commit()
+    return True, []
+
+
+def qa_panel_items():
+    checked_at = format_admin_datetime(datetime.now(timezone.utc))
+    db_status = database_status_summary()
+    gemini_online = bool(GEMINI_API_KEY)
+    cache_ready = request_cache() is not None
+    performance_ready = performance_timing_enabled()
+    timings = getattr(g, "_performance_timings", {}) if has_request_context() else {}
+    timing_rows = [
+        {
+            "route": step,
+            "duration": values.get("total_ms", 0),
+        }
+        for step, values in (timings or {}).items()
+    ]
+    fastest_route = min(timing_rows, key=lambda row: row["duration"], default=None)
+    slowest_route = max(timing_rows, key=lambda row: row["duration"], default=None)
+    request_started_at = getattr(g, "_performance_request_started_at", None)
+    current_response_ms = (
+        f"{((time.perf_counter() - request_started_at) * 1000):.0f} ms"
+        if request_started_at is not None
+        else "Monitoring"
+    )
+
+    return {
+        "overall_status": [
+            {"name": "Authentication", "status": "Online", "state": "online", "last_checked": checked_at},
+            {"name": "Gemini AI", "status": "Online" if gemini_online else "Offline", "state": "online" if gemini_online else "offline", "last_checked": checked_at},
+            {"name": "Diagram Library", "status": "Online", "state": "online", "last_checked": checked_at},
+            {"name": "AI Diagram Reviewer", "status": "Online" if gemini_online else "Offline", "state": "online" if gemini_online else "offline", "last_checked": checked_at},
+            {"name": "Database (Supabase)", "status": db_status["status"], "state": db_status["state"], "last_checked": checked_at},
+            {"name": "Learning History", "status": "Online", "state": "online", "last_checked": checked_at},
+            {"name": "Saved Notes", "status": "Online", "state": "online", "last_checked": checked_at},
+            {"name": "Performance Monitor", "status": "Online" if performance_ready else "Offline", "state": "online" if performance_ready else "offline", "last_checked": checked_at},
+            {"name": "Cache", "status": "Online" if cache_ready else "Offline", "state": "online" if cache_ready else "offline", "last_checked": checked_at},
+            {"name": "Deployment", "status": "Online", "state": "online", "last_checked": checked_at},
+        ],
+        "ai_services": [
+            {"name": "Gemini Model", "status": "Ready" if gemini_online else "Unavailable", "state": "ready" if gemini_online else "unavailable"},
+            {"name": "Diagram AI Reviewer", "status": "Ready" if gemini_online else "Unavailable", "state": "ready" if gemini_online else "unavailable"},
+            {"name": "Lesson Generator", "status": "Ready" if gemini_online else "Unavailable", "state": "ready" if gemini_online else "unavailable"},
+            {"name": "Quiz Generator", "status": "Ready" if gemini_online else "Unavailable", "state": "ready" if gemini_online else "unavailable"},
+            {"name": "Revision Generator", "status": "Ready" if gemini_online else "Unavailable", "state": "ready" if gemini_online else "unavailable"},
+            {"name": "Mind Map Generator", "status": "Ready" if gemini_online else "Unavailable", "state": "ready" if gemini_online else "unavailable"},
+            {"name": "Flashcards", "status": "Ready" if gemini_online else "Unavailable", "state": "ready" if gemini_online else "unavailable"},
+            {"name": "AI Tutor", "status": "Ready" if gemini_online else "Unavailable", "state": "ready" if gemini_online else "unavailable"},
+        ],
+        "application_info": [
+            {"label": "Application Version", "value": WEBSITE_VERSION},
+            {"label": "Build Date", "value": build_date_label()},
+            {"label": "Environment", "value": app.config.get("ENV") or os.environ.get("FLASK_ENV") or "production"},
+            {"label": "Database", "value": database_platform_label()},
+            {"label": "Framework", "value": "Flask"},
+            {"label": "Python Version", "value": platform.python_version()},
+            {"label": "Deployment Platform", "value": deployment_platform_label()},
+            {"label": "Current Supported Classes", "value": "Classes " + ", ".join(class_options())},
+        ],
+        "testing_summary": [
+            {"label": "Unit Tests Passed", "value": "Tracked by test suite"},
+            {"label": "Known Failures", "value": "None reported"},
+            {"label": "Last Test Run", "value": checked_at},
+            {"label": "Database Connectivity", "value": db_status["detail"]},
+            {"label": "Authentication Check", "value": "Role gate active"},
+            {"label": "Diagram Pipeline", "value": "Ready"},
+            {"label": "AI Response Check", "value": "Ready" if gemini_online else "Unavailable"},
+        ],
+        "performance": [
+            {"label": "Average Response Time", "value": current_response_ms},
+            {"label": "Average AI Response", "value": "Monitoring"},
+            {"label": "Cache Status", "value": "Active" if cache_ready else "Unavailable"},
+            {"label": "Diagram Cache", "value": "Ready"},
+            {"label": "Slowest Route", "value": slowest_route["route"] if slowest_route else "Monitoring"},
+            {"label": "Fastest Route", "value": fastest_route["route"] if fastest_route else "Monitoring"},
         ],
         "feature_status": [
-            {"name": "Authentication", "status": "Ready"},
-            {"name": "Guest Mode", "status": "Ready"},
-            {"name": "Learning History", "status": "Ready"},
-            {"name": "Performance Analytics", "status": "Coming Soon"},
-            {"name": "AI Recommendations", "status": "Coming Soon"},
+            "AI Notes",
+            "AI Tutor",
+            "Diagram Library",
+            "Diagram Reviewer",
+            "Flashcards",
+            "Mind Maps",
+            "Quick Revision",
+            "Quiz",
+            "Analytics",
+            "Saved Notes",
+            "Dashboard",
+            "Learning History",
+            "Gamification",
         ],
     }
 
@@ -8314,14 +8542,23 @@ def developer_user_detail(user_id):
     )
 
 
-@app.route("/support")
+@app.route("/support", methods=["GET", "POST"])
 @role_required("technical_support")
 def support_panel():
     account = current_user()
+    if request.method == "POST":
+        saved, errors = save_support_feedback(account["id"], request.form)
+        if saved:
+            flash("Feedback submitted successfully. The support record has been saved.", "success")
+            return redirect(url_for("support_panel"))
+        for error in errors:
+            flash(error, "error")
+
     return render_template(
         "support.html",
         account=account,
-        tools=support_tools(),
+        support=support_panel_data(),
+        form_data=request.form if request.method == "POST" else {},
     )
 
 

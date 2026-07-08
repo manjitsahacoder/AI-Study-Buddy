@@ -681,10 +681,22 @@ span.role-student {
     background: var(--green);
 }
 
+.profile-dropdown-user > div,
+.student-identity-card > div {
+    min-width: 0;
+}
+
 .profile-dropdown-user strong,
 .student-identity-card strong {
     display: block;
     color: var(--ink);
+}
+
+.profile-dropdown-user .role-badge,
+.student-identity-card .role-badge {
+    max-width: 100%;
+    white-space: normal;
+    text-align: left;
 }
 
 .profile-dropdown-user small,
@@ -2463,6 +2475,329 @@ body.dashboard-page #theme-toggle {
     color: var(--ink);
     background: rgba(31, 122, 77, 0.08);
     font-weight: 800;
+}
+
+.system-health-section {
+    margin-bottom: 18px;
+}
+
+.health-card-grid,
+.support-category-grid,
+.feature-status-grid,
+.info-metric-grid,
+.service-status-list,
+.faq-list,
+.support-feedback-form {
+    display: grid;
+    gap: 14px;
+}
+
+.health-card-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.support-category-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.feature-status-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.info-metric-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.health-status-card,
+.support-category-card,
+.feature-status-grid article,
+.info-metric-grid article,
+.service-status-row,
+.faq-list details {
+    position: relative;
+    min-width: 0;
+    overflow: hidden;
+    padding: 16px;
+    border: 1px solid rgba(49, 87, 213, 0.13);
+    border-radius: 8px;
+    background:
+        linear-gradient(145deg, rgba(255, 255, 255, 0.74), rgba(255, 253, 248, 0.92)),
+        rgba(255, 253, 248, 0.86);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.7) inset, var(--soft-shadow);
+    transition:
+        transform var(--transition-base),
+        border-color var(--transition-base),
+        box-shadow var(--transition-base),
+        background var(--transition-base);
+}
+
+.health-status-card:hover,
+.support-category-card:hover,
+.feature-status-grid article:hover,
+.info-metric-grid article:hover,
+.service-status-row:hover,
+.faq-list details:hover {
+    transform: translateY(-3px);
+    border-color: rgba(49, 87, 213, 0.26);
+    box-shadow: var(--lift-shadow);
+}
+
+.health-card-topline,
+.health-card-meta,
+.service-status-row,
+.feature-status-grid article {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.health-card-topline {
+    justify-content: flex-start;
+    margin-bottom: 14px;
+}
+
+.health-card-topline strong,
+.support-category-card strong,
+.feature-status-grid strong,
+.service-status-row strong,
+.info-metric-grid strong {
+    color: var(--ink);
+}
+
+.health-card-meta {
+    align-items: flex-end;
+}
+
+.health-card-meta span,
+.service-status-row strong {
+    display: inline-flex;
+    align-items: center;
+    min-height: 28px;
+    padding: 5px 9px;
+    border-radius: 999px;
+    color: var(--color-success);
+    background: var(--color-success-soft);
+    font-size: 0.78rem;
+    font-weight: 900;
+    white-space: nowrap;
+}
+
+.health-card-meta small,
+.service-status-row span,
+.info-metric-grid span {
+    color: var(--muted);
+    font-size: 0.78rem;
+    font-weight: 900;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.status-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    flex: 0 0 10px;
+    border-radius: 50%;
+    background: var(--color-success);
+    box-shadow: 0 0 0 6px var(--color-success-soft);
+}
+
+.status-offline .status-dot,
+.status-unavailable .status-dot {
+    background: var(--color-danger);
+    box-shadow: 0 0 0 6px var(--color-danger-soft);
+}
+
+.status-warning .status-dot {
+    background: var(--color-warning);
+    box-shadow: 0 0 0 6px var(--color-warning-soft);
+}
+
+.status-offline .health-card-meta span,
+.status-unavailable .health-card-meta span,
+.status-unavailable.service-status-row strong {
+    color: var(--color-danger);
+    background: var(--color-danger-soft);
+}
+
+.status-warning.service-status-row strong {
+    color: var(--color-warning);
+    background: var(--color-warning-soft);
+}
+
+.service-status-row {
+    min-height: 58px;
+}
+
+.info-metric-grid article {
+    display: grid;
+    align-content: start;
+    gap: 7px;
+    min-height: 92px;
+}
+
+.compact-metrics article {
+    min-height: 78px;
+}
+
+.feature-status-grid article {
+    justify-content: flex-start;
+    min-height: 60px;
+}
+
+.feature-status-grid article > span,
+.support-category-card > span,
+.help-center-pulse span {
+    display: grid;
+    place-items: center;
+    width: 42px;
+    height: 42px;
+    flex: 0 0 42px;
+    border-radius: 8px;
+    color: #ffffff;
+    background: var(--primary);
+    font-size: 1.15rem;
+}
+
+.feature-status-grid article > span {
+    color: var(--color-success);
+    background: var(--color-success-soft);
+}
+
+.support-category-card {
+    min-height: 172px;
+}
+
+.support-category-card > span {
+    margin-bottom: 12px;
+}
+
+.support-category-card:nth-child(2n) > span {
+    background: var(--teal);
+}
+
+.support-category-card:nth-child(3n) > span {
+    background: var(--amber);
+}
+
+.support-category-card:nth-child(4n) > span {
+    background: var(--green);
+}
+
+.support-category-card p {
+    margin: 9px 0 0;
+    font-size: 0.94rem;
+}
+
+.help-center-hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 18px;
+    margin-bottom: 18px;
+}
+
+.help-center-hero h2,
+.help-center-hero p {
+    margin-bottom: 0;
+}
+
+.help-center-pulse {
+    display: grid;
+    gap: 9px;
+    justify-items: center;
+    min-width: 132px;
+    padding: 16px;
+    border: 1px solid rgba(4, 125, 135, 0.16);
+    border-radius: 8px;
+    color: var(--ink);
+    background: rgba(4, 125, 135, 0.08);
+    animation: supportPulse 2.8s ease-in-out infinite;
+}
+
+.help-center-pulse strong {
+    font-size: 0.86rem;
+}
+
+.faq-list details {
+    padding: 0;
+}
+
+.faq-list summary {
+    cursor: pointer;
+    padding: 16px;
+    color: var(--ink);
+    font-weight: 900;
+}
+
+.faq-list summary::marker {
+    color: var(--primary);
+}
+
+.faq-list p {
+    margin: 0;
+    padding: 0 16px 16px;
+    font-size: 0.94rem;
+}
+
+.support-form-layout {
+    align-items: start;
+}
+
+.support-feedback-form label {
+    display: grid;
+    gap: 8px;
+}
+
+.support-feedback-form label > span {
+    color: var(--ink);
+    font-size: var(--font-size-md);
+    font-weight: var(--font-weight-bold);
+}
+
+.support-feedback-form button {
+    justify-self: start;
+    min-width: 170px;
+}
+
+.panel-skeleton-stack {
+    display: none;
+}
+
+.system-panel-loading .panel-skeleton-stack {
+    position: absolute;
+    inset: 14px;
+    z-index: 2;
+    display: grid;
+    gap: 10px;
+    align-content: center;
+    background: inherit;
+}
+
+.system-panel-loading .panel-skeleton-stack span {
+    height: 14px;
+    border-radius: 999px;
+    background:
+        linear-gradient(90deg, rgba(49, 87, 213, 0.08), rgba(255, 255, 255, 0.72), rgba(49, 87, 213, 0.08));
+    background-size: 220% 100%;
+    animation: skeletonShimmer 1.15s var(--ease-premium) infinite;
+}
+
+.system-panel-loading .panel-skeleton-stack span:last-child {
+    width: 68%;
+}
+
+@keyframes supportPulse {
+    0%,
+    100% {
+        transform: translateY(0);
+        box-shadow: var(--soft-shadow);
+    }
+    50% {
+        transform: translateY(-2px);
+        box-shadow: 0 16px 34px rgba(4, 125, 135, 0.16);
+    }
 }
 
 .developer-filter-form {
@@ -9315,6 +9650,10 @@ textarea[aria-invalid="true"] {
     background: var(--primary);
 }
 
+:where(button:not(.profile-menu-button), .button-link, .back-btn):not(.secondary-link):not(.danger-link) {
+    --profile-menu-button-reset-compatible: 1;
+}
+
 .secondary-link {
     color: var(--primary);
     border: 1px solid rgba(49, 87, 213, 0.22);
@@ -10440,6 +10779,81 @@ textarea[aria-invalid="true"] {
     .favourite-note-actions .button-link,
     .favourite-note-actions form,
     .favourite-note-actions button {
+        width: 100%;
+    }
+}
+
+.dark-mode .health-status-card,
+.dark-mode .support-category-card,
+.dark-mode .feature-status-grid article,
+.dark-mode .info-metric-grid article,
+.dark-mode .service-status-row,
+.dark-mode .faq-list details,
+.dark-mode .help-center-pulse {
+    border-color: rgba(127, 153, 255, 0.22);
+    background:
+        linear-gradient(145deg, rgba(23, 32, 51, 0.88), rgba(15, 23, 42, 0.94)),
+        rgba(15, 23, 42, 0.9);
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.08) inset, var(--soft-shadow);
+}
+
+.dark-mode .health-card-topline strong,
+.dark-mode .support-category-card strong,
+.dark-mode .feature-status-grid strong,
+.dark-mode .service-status-row strong,
+.dark-mode .info-metric-grid strong,
+.dark-mode .support-feedback-form label > span,
+.dark-mode .faq-list summary,
+.dark-mode .help-center-pulse strong {
+    color: var(--ink);
+}
+
+.dark-mode .support-category-card p,
+.dark-mode .faq-list p,
+.dark-mode .health-card-meta small,
+.dark-mode .service-status-row span,
+.dark-mode .info-metric-grid span {
+    color: var(--muted);
+}
+
+.dark-mode .system-panel-loading .panel-skeleton-stack span {
+    background:
+        linear-gradient(90deg, rgba(127, 153, 255, 0.1), rgba(255, 255, 255, 0.16), rgba(127, 153, 255, 0.1));
+    background-size: 220% 100%;
+}
+
+@media (max-width: 1100px) {
+    .health-card-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .support-category-grid,
+    .feature-status-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 700px) {
+    .health-card-grid,
+    .support-category-grid,
+    .feature-status-grid,
+    .info-metric-grid,
+    .help-center-hero {
+        grid-template-columns: 1fr;
+    }
+
+    .health-card-meta {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .service-status-row {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .help-center-pulse,
+    .support-feedback-form button {
         width: 100%;
     }
 }

@@ -4,11 +4,11 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Support Panel - AI Study Buddy</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=qa-support-redesign-20260708">
     {% include 'components/pwa_head.html' %}
 </head>
 
-<body class="dashboard-page">
+<body class="dashboard-page support-dashboard-page system-panel-loading">
 
 {% set active_page = 'support' %}
 <div class="dashboard-shell">
@@ -19,7 +19,7 @@
             <div>
                 <span class="eyebrow">Technical Support</span>
                 <h1>Support Panel</h1>
-                <p>Placeholder tools for helping students and monitoring common issues.</p>
+                <p>Professional Help Center for student issues, product feedback, and system checks.</p>
                 <div class="student-identity-card">
                     <span aria-hidden="true">&#128100;</span>
                     <div>
@@ -38,25 +38,123 @@
 
         {% include 'components/flash_messages.html' %}
 
-        <section class="dashboard-panel">
+        <section class="dashboard-panel help-center-hero motion-reveal">
+            <div>
+                <span class="eyebrow">Need Help?</span>
+                <h2>Support for AI Study Buddy workflows</h2>
+                <p>Use this center to triage student reports, collect structured feedback, and confirm whether core AI, database, and diagram services are healthy.</p>
+            </div>
+            <div class="help-center-pulse" aria-hidden="true">
+                <span>&#128172;</span>
+                <strong>Help Center</strong>
+            </div>
+        </section>
+
+        <section class="dashboard-panel system-health-section motion-reveal">
             <div class="dashboard-section-heading">
                 <div>
-                    <span class="eyebrow">Support Tools</span>
-                    <h2>Available Tools</h2>
+                    <span class="eyebrow">Support Categories</span>
+                    <h2>Choose the Right Queue</h2>
                 </div>
-                <p>Future support workflows can be added here.</p>
             </div>
-            <div class="rbac-tool-grid">
-                {% for tool in tools %}
-                <article class="rbac-tool-card">
-                    <span aria-hidden="true">&#127911;</span>
-                    <strong>{{ tool.title }}</strong>
-                    <p>{{ tool.description }}</p>
-                    <small>Placeholder</small>
+            <div class="support-category-grid">
+                {% for category in support.categories %}
+                <article class="support-category-card">
+                    <span aria-hidden="true">{{ category.icon|safe }}</span>
+                    <strong>{{ category.title }}</strong>
+                    <p>{{ category.description }}</p>
                 </article>
                 {% endfor %}
             </div>
         </section>
+
+        <div class="dashboard-content-grid">
+            <section class="dashboard-panel system-health-section motion-reveal">
+                <div class="dashboard-section-heading">
+                    <div>
+                        <span class="eyebrow">Frequently Asked Questions</span>
+                        <h2>Fast Answers</h2>
+                    </div>
+                </div>
+                <div class="faq-list">
+                    {% for item in support.faqs %}
+                    <details>
+                        <summary>{{ item.question }}</summary>
+                        <p>{{ item.answer }}</p>
+                    </details>
+                    {% endfor %}
+                </div>
+            </section>
+
+            <section class="dashboard-panel system-health-section motion-reveal">
+                <div class="dashboard-section-heading">
+                    <div>
+                        <span class="eyebrow">Developer Information</span>
+                        <h2>Project Contacts</h2>
+                    </div>
+                </div>
+                <div class="info-metric-grid compact-metrics">
+                    {% for item in support.developer_info %}
+                    <article>
+                        <span>{{ item.label }}</span>
+                        <strong>{{ item.value }}</strong>
+                    </article>
+                    {% endfor %}
+                </div>
+            </section>
+        </div>
+
+        <div class="dashboard-content-grid support-form-layout">
+            <section class="dashboard-panel system-health-section motion-reveal">
+                <div class="dashboard-section-heading">
+                    <div>
+                        <span class="eyebrow">Feedback Form</span>
+                        <h2>Submit a Support Record</h2>
+                    </div>
+                </div>
+                <form class="support-feedback-form" method="post" novalidate>
+                    <label>
+                        <span>Name</span>
+                        <input type="text" name="name" value="{{ form_data.get('name', account.full_name) }}" autocomplete="name" required>
+                    </label>
+                    <label>
+                        <span>Email (optional)</span>
+                        <input type="email" name="email" value="{{ form_data.get('email', account.email) }}" autocomplete="email">
+                    </label>
+                    <label>
+                        <span>Issue Type</span>
+                        <select name="issue_type" required>
+                            <option value="">Select issue type</option>
+                            {% for issue_type in support.issue_types %}
+                            <option value="{{ issue_type }}" {% if form_data.get('issue_type') == issue_type %}selected{% endif %}>{{ issue_type }}</option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                    <label>
+                        <span>Message</span>
+                        <textarea name="message" placeholder="Describe the issue, affected page, and steps to reproduce." required>{{ form_data.get('message', '') }}</textarea>
+                    </label>
+                    <button type="submit">Submit Feedback</button>
+                </form>
+            </section>
+
+            <section class="dashboard-panel system-health-section motion-reveal">
+                <div class="dashboard-section-heading">
+                    <div>
+                        <span class="eyebrow">System Information</span>
+                        <h2>Current Service State</h2>
+                    </div>
+                </div>
+                <div class="service-status-list">
+                    {% for item in support.system_info %}
+                    <article class="service-status-row status-{{ item.state }}">
+                        <span>{{ item.label }}</span>
+                        <strong>{{ item.value }}</strong>
+                    </article>
+                    {% endfor %}
+                </div>
+            </section>
+        </div>
 
         {% include 'components/footer.html' %}
     </main>
@@ -68,6 +166,9 @@ function toggleTheme() {
     let btn = document.getElementById("theme-toggle");
     btn.innerHTML = document.body.classList.contains("dark-mode") ? "&#9728;&#65039; Light Mode" : "&#127769; Dark Mode";
 }
+window.addEventListener("DOMContentLoaded", function () {
+    document.body.classList.remove("system-panel-loading");
+});
 </script>
 </body>
 </html>

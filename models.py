@@ -55,6 +55,23 @@ class User(ModelMappingMixin, db.Model):
     study_plan_progress = db.relationship("StudyPlanProgress", back_populates="user", lazy=True)
 
 
+class SupportFeedback(ModelMappingMixin, db.Model):
+    __tablename__ = "support_feedback"
+    __table_args__ = (
+        db.Index("ix_support_feedback_created_at", "created_at"),
+        db.Index("ix_support_feedback_issue_type", "issue_type"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    submitter_user_id = db.Column(db.Integer, nullable=True, index=True)
+    name = db.Column(db.Text, nullable=False)
+    email = db.Column(db.Text)
+    issue_type = db.Column(db.Text, nullable=False)
+    message = db.Column(db.Text, nullable=False)
+    status = db.Column(db.Text, nullable=False, default="new")
+    created_at = db.Column(db.DateTime, nullable=False, default=utc_now)
+
+
 class FavouriteNote(ModelMappingMixin, db.Model):
     __tablename__ = "favourite_notes"
     __table_args__ = (
