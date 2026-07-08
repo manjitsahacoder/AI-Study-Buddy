@@ -4,6 +4,7 @@ from pathlib import Path
 from urllib.request import Request, urlopen
 
 from PIL import Image
+from performance_monitor import performance_span
 
 
 MAX_IMAGE_BYTES = 8 * 1024 * 1024
@@ -42,10 +43,11 @@ def download_and_store(candidate, cache_dir, topic, timeout=10):
     if cached:
         return cached
 
-    request = Request(candidate.image_url, headers={"User-Agent": "AI-Study-Buddy/1.0"})
-    with urlopen(request, timeout=timeout) as response:
-        content_type = _normalize_mime(response.headers.get("Content-Type", ""))
-        data = response.read(MAX_IMAGE_BYTES + 1)
+    with performance_span("Diagram download", detail=getattr(candidate, "title", "")):
+        request = Request(candidate.image_url, headers={"User-Agent": "AI-Study-Buddy/1.0"})
+        with urlopen(request, timeout=timeout) as response:
+            content_type = _normalize_mime(response.headers.get("Content-Type", ""))
+            data = response.read(MAX_IMAGE_BYTES + 1)
 
     return store_candidate_bytes(
         candidate,
@@ -113,13 +115,10 @@ def valid_cached_image(path):
     path = Path(path)
     if not path.exists() or path.stat().st_size <= 0:
         return False
-    try:
-        data = path.read_bytes()
-    except OSError:
-        return False
-    actual_mime = detect_image_mime(data)
-    if not actual_mime:
-        return False
+    with performance_span("Cache lookups", detail=f"image {path.name}"):
+        actual_mime = detect_image_mime_from_path(path)
+        if not actual_mime:
+            return False
     return path.suffix.lower() in _extensions_for_mime(actual_mime)
 
 
@@ -160,6 +159,22 @@ def detect_image_mime(data):
 
         with Image.open(BytesIO(data)) as image:
             return PIL_FORMAT_MIME.get((image.format or "").upper())
+    except Exception:
+        return None
+
+
+def detect_image_mime_from_path(path):
+    try:
+        with open(path, "rb") as image_file:
+            prefix = image_file.read(512)
+            text = prefix.decode("utf-8", errors="ignore").lower()
+            if "<svg" in text:
+                return "image/svg+xml"
+            image_file.seek(0)
+            with Image.open(image_file) as image:
+                return PIL_FORMAT_MIME.get((image.format or "").upper())
+    except OSError:
+        return None
     except Exception:
         return None
 

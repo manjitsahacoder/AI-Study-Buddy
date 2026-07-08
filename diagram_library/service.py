@@ -4,6 +4,7 @@ from sqlalchemy import func
 
 from database import db
 from models import DiagramLibrary
+from performance_monitor import performance_span
 
 from .ai_review import AI_REVIEW_BATCH_SIZE, review_diagram_candidates
 from .cache import cache_file_exists, utc_now
@@ -22,18 +23,35 @@ def default_registry(static_folder="static"):
 
 
 def find_cached_diagram(static_folder, subject, topic):
-    diagram = (
-        DiagramLibrary.query.filter(
-            DiagramLibrary.verified.is_(True),
-            func.lower(DiagramLibrary.subject) == (subject or "").lower(),
-            func.lower(DiagramLibrary.topic) == (topic or "").lower(),
+    with performance_span("Cache lookups", detail=f"diagram {subject}/{topic}"):
+        diagram = (
+            DiagramLibrary.query.filter(
+                DiagramLibrary.verified.is_(True),
+                DiagramLibrary.subject == (subject or ""),
+                DiagramLibrary.topic == (topic or ""),
+            )
+            .order_by(DiagramLibrary.last_used.desc(), DiagramLibrary.cached_at.desc())
+            .first()
         )
-        .order_by(DiagramLibrary.last_used.desc(), DiagramLibrary.cached_at.desc())
-        .first()
-    )
+        if diagram is None:
+            diagram = (
+                DiagramLibrary.query.filter(
+                    DiagramLibrary.verified.is_(True),
+                    func.lower(DiagramLibrary.subject) == (subject or "").lower(),
+                    func.lower(DiagramLibrary.topic) == (topic or "").lower(),
+                )
+                .order_by(DiagramLibrary.last_used.desc(), DiagramLibrary.cached_at.desc())
+                .first()
+            )
     if diagram and cache_file_exists(static_folder, diagram.image_path):
-        diagram.last_used = utc_now()
-        db.session.commit()
+        now = utc_now()
+        try:
+            should_touch = not diagram.last_used or (now - diagram.last_used).total_seconds() >= 3600
+        except TypeError:
+            should_touch = True
+        if should_touch:
+            diagram.last_used = now
+            db.session.commit()
         return diagram
     if diagram:
         repaired_path = repair_cached_image_extension(static_folder, diagram.image_path)
@@ -84,12 +102,13 @@ def get_or_create_diagram(
             subject=subject,
             limit_per_query=8,
         ):
-            candidates = rank_diagram_candidates(
-                provider_candidates,
-                topic=topic,
-                subject=subject,
-                visualization_type=visualization_type,
-            )
+            with performance_span("Diagram ranking", detail=getattr(provider, "name", "") if provider else ""):
+                candidates = rank_diagram_candidates(
+                    provider_candidates,
+                    topic=topic,
+                    subject=subject,
+                    visualization_type=visualization_type,
+                )
             candidates = [
                 candidate for candidate in candidates if acceptable_candidate_title(candidate.title)
             ]
@@ -128,6 +147,10 @@ def _reviewed_candidate_order(
     reviewer=None,
 ):
     candidates = list(candidates or [])
+    trusted = [candidate for candidate in candidates if "ncert" in str(getattr(candidate, "provider", "")).lower()]
+    if trusted:
+        yield from trusted
+        return
     for start in range(0, len(candidates), AI_REVIEW_BATCH_SIZE):
         batch = candidates[start : start + AI_REVIEW_BATCH_SIZE]
         if not batch:
@@ -182,7 +205,8 @@ def _store_reviewed_candidate(
     topic,
     subject,
 ):
-    stored_path = _fetch_candidate(provider, candidate, cache_dir, topic)
+    with performance_span("Diagram storage", detail=getattr(candidate, "title", "")):
+        stored_path = _fetch_candidate(provider, candidate, cache_dir, topic)
     if not stored_path:
         return None
     image_path = stored_path.relative_to(static_folder).as_posix()

@@ -78,6 +78,10 @@ class FavouriteNote(ModelMappingMixin, db.Model):
 
 class QuizHistory(ModelMappingMixin, db.Model):
     __tablename__ = "quiz_history"
+    __table_args__ = (
+        db.Index("ix_quiz_history_user_created_id", "user_id", "created_at", "id"),
+        db.Index("ix_quiz_history_user_subject_topic", "user_id", "subject", "topic"),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
@@ -97,6 +101,9 @@ class QuizHistory(ModelMappingMixin, db.Model):
 
 class LearningSession(ModelMappingMixin, db.Model):
     __tablename__ = "learning_sessions"
+    __table_args__ = (
+        db.Index("ix_learning_sessions_user_created_id", "user_id", "created_at", "id"),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
@@ -113,6 +120,10 @@ class LearningSession(ModelMappingMixin, db.Model):
 
 class DownloadedFile(ModelMappingMixin, db.Model):
     __tablename__ = "downloaded_files"
+    __table_args__ = (
+        db.Index("ix_downloaded_files_user_created_id", "user_id", "created_at", "id"),
+        db.Index("ix_downloaded_files_user_topic", "user_id", "topic"),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
@@ -128,6 +139,10 @@ class DownloadedFile(ModelMappingMixin, db.Model):
 
 class LearningHistory(ModelMappingMixin, db.Model):
     __tablename__ = "learning_history"
+    __table_args__ = (
+        db.Index("ix_learning_history_user_created_id", "user_id", "created_at", "id"),
+        db.Index("ix_learning_history_user_subject_topic", "user_id", "subject", "topic"),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
@@ -196,6 +211,9 @@ class LearningHistory(ModelMappingMixin, db.Model):
 
 class DiagramLibrary(ModelMappingMixin, db.Model):
     __tablename__ = "diagram_library"
+    __table_args__ = (
+        db.Index("ix_diagram_library_verified_subject_topic_used", "verified", "subject", "topic", "last_used", "cached_at"),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
     lesson_id = db.Column(db.Integer, db.ForeignKey("learning_history.id"), nullable=True, index=True)
@@ -370,6 +388,10 @@ class Flashcard(ModelMappingMixin, db.Model):
 
 class MemoryChallengeSession(ModelMappingMixin, db.Model):
     __tablename__ = "memory_challenges"
+    __table_args__ = (
+        db.Index("ix_memory_challenges_user_completed_id", "user_id", "completed_at", "id"),
+        db.Index("ix_memory_challenges_user_lesson_difficulty", "user_id", "lesson_id", "difficulty"),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
@@ -447,6 +469,10 @@ class TutorLesson(ModelMappingMixin, db.Model):
 
 class TutorMessage(ModelMappingMixin, db.Model):
     __tablename__ = "tutor_messages"
+    __table_args__ = (
+        db.Index("ix_tutor_messages_user_created_id", "user_id", "created_at", "id"),
+        db.Index("ix_tutor_messages_lesson_created_id", "tutor_lesson_id", "created_at", "id"),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
     tutor_lesson_id = db.Column(

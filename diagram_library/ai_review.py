@@ -10,6 +10,7 @@ from urllib.parse import unquote, urlsplit
 import google.generativeai as genai
 
 from config import GEMINI_API_KEY
+from performance_monitor import performance_span
 
 from .lookup import candidate_language_category
 
@@ -58,15 +59,16 @@ def review_diagram_candidates(
 
     metadata = [_candidate_review_metadata(index, candidate) for index, candidate in enumerate(candidates)]
     cache_key = _review_cache_key(topic, subject, student_class, visualization_type, metadata)
-    cached = _cache_get(cache_key)
-    if cached:
-        return DiagramReviewDecision(
-            selected_index=cached.selected_index,
-            confidence=cached.confidence,
-            reason=cached.reason,
-            unavailable=cached.unavailable,
-            from_cache=True,
-        )
+    with performance_span("Cache lookups", detail=f"diagram_ai_review {topic}"):
+        cached = _cache_get(cache_key)
+        if cached:
+            return DiagramReviewDecision(
+                selected_index=cached.selected_index,
+                confidence=cached.confidence,
+                reason=cached.reason,
+                unavailable=cached.unavailable,
+                from_cache=True,
+            )
 
     prompt = build_diagram_review_prompt(
         topic=topic,
@@ -81,8 +83,9 @@ def review_diagram_candidates(
             model = genai.GenerativeModel("gemini-2.5-flash")
         else:
             model = model_factory()
-        response = _generate_review_response(model, prompt)
-        decision = parse_diagram_review_response(getattr(response, "text", "") or "", len(candidates))
+        with performance_span("Diagram AI review", detail=f"{topic} candidates={len(candidates)}"):
+            response = _generate_review_response(model, prompt)
+            decision = parse_diagram_review_response(getattr(response, "text", "") or "", len(candidates))
     except Exception as error:
         _LOGGER.warning("diagram_ai_review_failed topic=%s error=%s", topic, _sanitize_error(error))
         decision = DiagramReviewDecision(unavailable=True, reason="Gemini diagram review is unavailable.")

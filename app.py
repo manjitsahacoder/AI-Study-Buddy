@@ -32,7 +32,6 @@ from pathlib import Path
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache, wraps
 from difflib import SequenceMatcher
-from werkzeug.exceptions import HTTPException
 from werkzeug.security import check_password_hash, generate_password_hash
 from urllib.parse import quote, urlencode, urlsplit
 from sqlalchemy import and_, func, inspect, or_, text
@@ -56,6 +55,15 @@ from gemini_service import (
     GeminiRequestError,
     handle_gemini_exception,
     log_gemini_request,
+)
+from performance_monitor import (
+    performance_span,
+    performance_timing_enabled,
+    sql_preview,
+    timing_end,
+    timing_error,
+    timing_start,
+    timing_summary,
 )
 from models import (
     DiagramLibrary,
@@ -102,6 +110,7 @@ app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE="Lax",
     SESSION_REFRESH_EACH_REQUEST=True,
+    SEND_FILE_MAX_AGE_DEFAULT=timedelta(days=30),
 )
 configure_database(app)
 latest_report = {}
@@ -110,7 +119,7 @@ genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel("gemini-2.5-flash")
 
 
-AUTH_TIMING_ENABLED = os.environ.get("AUTH_TIMING_ENABLED", "0").lower() not in {"0", "false", "no"}
+AUTH_TIMING_ENABLED = performance_timing_enabled()
 
 
 def request_cache():
@@ -153,6 +162,7 @@ def clear_user_progress_request_cache():
         "gamification_summary",
         "weekly_study_streak",
         "has_activity_today",
+        "memory_match_dashboard",
         "study_plan_lessons",
         "study_plan_bulk_context",
         "important_question_count",
@@ -160,65 +170,25 @@ def clear_user_progress_request_cache():
 
 
 def auth_timing_request_label():
-    if not has_request_context():
-        return "no-request"
+    from performance_monitor import request_label
 
-    return f"{request.method} {request.path} endpoint={request.endpoint or '-'}"
+    return request_label()
 
 
 def auth_timing_start(step, detail=""):
-    started_at = time.perf_counter()
-    if AUTH_TIMING_ENABLED:
-        app.logger.info(
-            "AUTH_TIMING START step=%s at=%.6f request=%s%s",
-            step,
-            started_at,
-            auth_timing_request_label(),
-            f" detail={detail}" if detail else "",
-        )
-    return started_at
+    return timing_start(step, detail=detail)
 
 
 def auth_timing_end(step, started_at, detail=""):
-    ended_at = time.perf_counter()
-    if AUTH_TIMING_ENABLED:
-        app.logger.info(
-            "AUTH_TIMING END step=%s at=%.6f duration_ms=%.2f request=%s%s",
-            step,
-            ended_at,
-            (ended_at - started_at) * 1000,
-            auth_timing_request_label(),
-            f" detail={detail}" if detail else "",
-        )
-    return ended_at
+    return timing_end(step, started_at, detail=detail)
 
 
 def auth_timing_error(step, started_at, error):
-    ended_at = time.perf_counter()
-    if AUTH_TIMING_ENABLED:
-        if isinstance(error, HTTPException):
-            app.logger.info(
-                "AUTH_TIMING HTTP_EXCEPTION step=%s at=%.6f duration_ms=%.2f request=%s status=%s error=%s",
-                step,
-                ended_at,
-                (ended_at - started_at) * 1000,
-                auth_timing_request_label(),
-                error.code,
-                error,
-            )
-            return
-        app.logger.exception(
-            "AUTH_TIMING ERROR step=%s at=%.6f duration_ms=%.2f request=%s error=%s",
-            step,
-            ended_at,
-            (ended_at - started_at) * 1000,
-            auth_timing_request_label(),
-            error,
-        )
+    return timing_error(step, started_at, error)
 
 
 def auth_timing_sql_preview(statement):
-    return re.sub(r"\s+", " ", statement or "").strip()[:240]
+    return sql_preview(statement)
 
 
 @event.listens_for(Engine, "before_cursor_execute")
@@ -282,6 +252,7 @@ def trace_template_render_end(sender, template, context, **extra):
 
 @app.before_request
 def trace_authenticated_request_lifecycle_start():
+    g._performance_request_started_at = time.perf_counter()
     request_started_at = auth_timing_start("Request received")
     g._auth_timing_request_started_at = request_started_at
     auth_timing_end("Request received", request_started_at)
@@ -304,9 +275,17 @@ def trace_authenticated_request_lifecycle_end(response):
     response_started_at = auth_timing_start("Response returned", detail=f"status={response.status}")
     auth_timing_end("Response returned", response_started_at, detail=f"status={response.status}")
 
+    if request.endpoint == "static" and response.status_code == 200:
+        response.cache_control.public = True
+        response.cache_control.max_age = 60 * 60 * 24 * 30
+    elif request.endpoint in {"manifest"} and response.status_code == 200:
+        response.cache_control.public = True
+        response.cache_control.max_age = 60 * 60 * 24
+
     request_started_at = getattr(g, "_auth_timing_request_started_at", None)
     if request_started_at is not None:
         auth_timing_end("Authenticated request lifecycle", request_started_at, detail=f"status={response.status}")
+    timing_summary(status=response.status)
     return response
 
 @app.errorhandler(SQLAlchemyError)
@@ -334,6 +313,7 @@ def initialize_database():
         ensure_memory_challenge_schema_compatibility()
         ensure_learning_history_schema_compatibility()
         ensure_favourite_notes_schema_compatibility()
+        ensure_performance_indexes()
         ensure_user_roles()
         app.logger.info("Database tables are ready.")
 
@@ -693,6 +673,7 @@ def gemini_request(
     request_options=None,
 ):
     started_at = time.perf_counter()
+    span_started_at = auth_timing_start("Gemini API calls", detail=feature_name)
     try:
         response = generate_content_with_fallback(
             prompt,
@@ -708,8 +689,14 @@ def gemini_request(
             user_id=user_id,
             lesson_id=lesson_id,
         )
+        auth_timing_end(
+            "Gemini API calls",
+            span_started_at,
+            detail=f"feature={feature_name} response_chars={len(getattr(response, 'text', '') or '')}",
+        )
         return response
     except Exception as error:
+        auth_timing_error("Gemini API calls", span_started_at, error)
         error_info = handle_gemini_exception(
             error,
             app.logger,
@@ -944,6 +931,30 @@ def ensure_favourite_notes_schema_compatibility():
         db.session.execute(text("ALTER TABLE favourite_notes ADD COLUMN student_class TEXT"))
     elif db.engine.dialect.name == "postgresql":
         db.session.execute(text("ALTER TABLE favourite_notes ADD COLUMN IF NOT EXISTS student_class TEXT"))
+    db.session.commit()
+
+
+def ensure_performance_indexes():
+    index_statements = (
+        "CREATE INDEX IF NOT EXISTS ix_quiz_history_user_created_id ON quiz_history (user_id, created_at, id)",
+        "CREATE INDEX IF NOT EXISTS ix_quiz_history_user_subject_topic ON quiz_history (user_id, subject, topic)",
+        "CREATE INDEX IF NOT EXISTS ix_learning_sessions_user_created_id ON learning_sessions (user_id, created_at, id)",
+        "CREATE INDEX IF NOT EXISTS ix_downloaded_files_user_created_id ON downloaded_files (user_id, created_at, id)",
+        "CREATE INDEX IF NOT EXISTS ix_downloaded_files_user_topic ON downloaded_files (user_id, topic)",
+        "CREATE INDEX IF NOT EXISTS ix_learning_history_user_created_id ON learning_history (user_id, created_at, id)",
+        "CREATE INDEX IF NOT EXISTS ix_learning_history_user_subject_topic ON learning_history (user_id, subject, topic)",
+        "CREATE INDEX IF NOT EXISTS ix_diagram_library_verified_subject_topic_used ON diagram_library (verified, subject, topic, last_used, cached_at)",
+        "CREATE INDEX IF NOT EXISTS ix_memory_challenges_user_completed_id ON memory_challenges (user_id, completed_at, id)",
+        "CREATE INDEX IF NOT EXISTS ix_memory_challenges_user_lesson_difficulty ON memory_challenges (user_id, lesson_id, difficulty)",
+        "CREATE INDEX IF NOT EXISTS ix_tutor_messages_user_created_id ON tutor_messages (user_id, created_at, id)",
+        "CREATE INDEX IF NOT EXISTS ix_tutor_messages_lesson_created_id ON tutor_messages (tutor_lesson_id, created_at, id)",
+    )
+    existing_tables = set(inspect(db.engine).get_table_names())
+    for statement in index_statements:
+        table_match = re.search(r"\bON\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(", statement)
+        if table_match and table_match.group(1) not in existing_tables:
+            continue
+        db.session.execute(text(statement))
     db.session.commit()
 
 
@@ -2090,16 +2101,17 @@ def lesson_diagram_view(lesson, diagram_payload, student_class=""):
     if not diagram_payload.get("available"):
         return None
     try:
-        diagram = get_or_create_diagram(
-            lesson_id=getattr(lesson, "id", None) or lesson.get("id"),
-            subject=getattr(lesson, "subject", None) or lesson.get("subject", ""),
-            topic=getattr(lesson, "topic", None) or lesson.get("topic", ""),
-            student_class=student_class,
-            book_name=getattr(lesson, "book_name", None) or lesson.get("book_name", ""),
-            visualization_type=diagram_payload.get("visualization_type") or diagram_payload.get("type", ""),
-            static_folder=app.static_folder,
-            testing=app.config.get("TESTING") and not app.config.get("DIAGRAM_LIBRARY_ENABLE_NETWORK_TESTS"),
-        )
+        with performance_span("Diagram pipeline", detail=lesson_value(lesson, "topic")):
+            diagram = get_or_create_diagram(
+                lesson_id=getattr(lesson, "id", None) or lesson.get("id"),
+                subject=getattr(lesson, "subject", None) or lesson.get("subject", ""),
+                topic=getattr(lesson, "topic", None) or lesson.get("topic", ""),
+                student_class=student_class,
+                book_name=getattr(lesson, "book_name", None) or lesson.get("book_name", ""),
+                visualization_type=diagram_payload.get("visualization_type") or diagram_payload.get("type", ""),
+                static_folder=app.static_folder,
+                testing=app.config.get("TESTING") and not app.config.get("DIAGRAM_LIBRARY_ENABLE_NETWORK_TESTS"),
+            )
     except Exception as error:
         app.logger.warning("diagram_library_lookup_failed topic=%s error=%s", getattr(lesson, "topic", ""), error)
         return None
@@ -2303,18 +2315,19 @@ def get_or_create_diagram_explanation(lesson, diagram_payload, diagram_view, stu
     if cached:
         return cached, False
 
-    response = gemini_request(
-        "Diagram Explanation",
-        build_diagram_explanation_prompt(lesson, diagram_payload, diagram_view, student_class),
-        user_id=user_id,
-        lesson_id=getattr(lesson, "id", None),
-        generation_config={"max_output_tokens": 1800},
-        request_options={"timeout": 35},
-    )
-    response_payload = extract_json_payload(getattr(response, "text", "") or "")
-    explanation = normalize_diagram_explanation_payload(response_payload)
-    lesson.diagram_explanation = json.dumps(explanation)
-    db.session.commit()
+    with performance_span("Diagram AI explanation", detail=lesson_value(lesson, "topic")):
+        response = gemini_request(
+            "Diagram Explanation",
+            build_diagram_explanation_prompt(lesson, diagram_payload, diagram_view, student_class),
+            user_id=user_id,
+            lesson_id=getattr(lesson, "id", None),
+            generation_config={"max_output_tokens": 1800},
+            request_options={"timeout": 35},
+        )
+        response_payload = extract_json_payload(getattr(response, "text", "") or "")
+        explanation = normalize_diagram_explanation_payload(response_payload)
+        lesson.diagram_explanation = json.dumps(explanation)
+        db.session.commit()
     return explanation, True
 
 
@@ -3362,43 +3375,46 @@ def memory_highest_combo_for_user(user_id, lesson_id, difficulty, highest_combo)
 
 
 def summarize_memory_match_dashboard(user_id):
-    rows = (
-        MemoryChallenge.query.with_entities(
-            func.coalesce(func.sum(MemoryChallenge.games_played), 0),
-            func.min(MemoryChallenge.best_time),
-            func.avg(MemoryChallenge.best_accuracy),
-            func.coalesce(func.sum(MemoryChallenge.xp_earned), 0),
-            func.count(MemoryChallenge.id),
+    def load_summary():
+        rows = (
+            MemoryChallenge.query.with_entities(
+                func.coalesce(func.sum(MemoryChallenge.games_played), 0),
+                func.min(MemoryChallenge.best_time),
+                func.avg(MemoryChallenge.best_accuracy),
+                func.coalesce(func.sum(MemoryChallenge.xp_earned), 0),
+                func.count(MemoryChallenge.id),
+            )
+            .filter(MemoryChallenge.user_id == user_id)
+            .first()
         )
-        .filter(MemoryChallenge.user_id == user_id)
-        .first()
-    )
-    games_played, best_time, average_accuracy, total_xp, session_count = rows if rows else (0, None, None, 0, 0)
-    total_lessons_with_flashcards = (
-        FlashcardSet.query.with_entities(func.count(FlashcardSet.id))
-        .filter_by(user_id=user_id)
-        .scalar()
-        or 0
-    )
-    completed_lessons = (
-        MemoryChallenge.query.with_entities(func.count(func.distinct(MemoryChallenge.lesson_id)))
-        .filter_by(user_id=user_id)
-        .scalar()
-        or 0
-    )
-    completion_percentage = (
-        int((completed_lessons / total_lessons_with_flashcards) * 100)
-        if total_lessons_with_flashcards
-        else 0
-    )
-    return {
-        "games_played": games_played or 0,
-        "best_time": format_duration(best_time) if best_time else "No games yet",
-        "average_accuracy": f"{round(average_accuracy or 0, 1)}%",
-        "total_xp_earned": int(total_xp or 0),
-        "completion_percentage": min(100, completion_percentage),
-        "sessions_saved": session_count or 0,
-    }
+        games_played, best_time, average_accuracy, total_xp, session_count = rows if rows else (0, None, None, 0, 0)
+        total_lessons_with_flashcards = (
+            FlashcardSet.query.with_entities(func.count(FlashcardSet.id))
+            .filter_by(user_id=user_id)
+            .scalar()
+            or 0
+        )
+        completed_lessons = (
+            MemoryChallenge.query.with_entities(func.count(func.distinct(MemoryChallenge.lesson_id)))
+            .filter_by(user_id=user_id)
+            .scalar()
+            or 0
+        )
+        completion_percentage = (
+            int((completed_lessons / total_lessons_with_flashcards) * 100)
+            if total_lessons_with_flashcards
+            else 0
+        )
+        return {
+            "games_played": games_played or 0,
+            "best_time": format_duration(best_time) if best_time else "No games yet",
+            "average_accuracy": f"{round(average_accuracy or 0, 1)}%",
+            "total_xp_earned": int(total_xp or 0),
+            "completion_percentage": min(100, completion_percentage),
+            "sessions_saved": session_count or 0,
+        }
+
+    return request_cached(("memory_match_dashboard", user_id), load_summary)
 
 
 def summarize_memory_profile(user_id):
@@ -4079,10 +4095,76 @@ def get_developer_study_planner_stats():
         )
         .all()
     )
-    plans = [build_study_plan(lesson, lesson.user_id) for lesson in lessons]
-    total_lessons = len(plans)
+    total_lessons = len(lessons)
+    if lessons:
+        lesson_ids = [lesson.id for lesson in lessons]
+        lesson_user_ids = {lesson.user_id for lesson in lessons}
+        flashcards = {
+            (row.user_id, row.learning_history_id)
+            for row in FlashcardSet.query.with_entities(FlashcardSet.user_id, FlashcardSet.learning_history_id)
+            .filter(FlashcardSet.learning_history_id.in_(lesson_ids))
+            .all()
+        }
+        revisions = {
+            (row.user_id, row.learning_history_id)
+            for row in RevisionSheet.query.with_entities(RevisionSheet.user_id, RevisionSheet.learning_history_id)
+            .filter(RevisionSheet.learning_history_id.in_(lesson_ids))
+            .all()
+        }
+        mind_maps = {
+            (row.user_id, row.learning_history_id)
+            for row in MindMap.query.with_entities(MindMap.user_id, MindMap.learning_history_id)
+            .filter(MindMap.learning_history_id.in_(lesson_ids))
+            .all()
+        }
+        important_questions = {
+            (row.user_id, row.learning_history_id)
+            for row in ImportantQuestionSet.query.with_entities(
+                ImportantQuestionSet.user_id,
+                ImportantQuestionSet.learning_history_id,
+            )
+            .filter(ImportantQuestionSet.learning_history_id.in_(lesson_ids))
+            .all()
+        }
+        memory_challenges = {
+            (row.user_id, row.lesson_id)
+            for row in MemoryChallenge.query.with_entities(MemoryChallenge.user_id, MemoryChallenge.lesson_id)
+            .filter(MemoryChallenge.lesson_id.in_(lesson_ids))
+            .all()
+        }
+        tutor_lessons = {
+            (row.user_id, row.learning_history_id)
+            for row in TutorLesson.query.with_entities(TutorLesson.user_id, TutorLesson.learning_history_id)
+            .filter(TutorLesson.learning_history_id.in_(lesson_ids))
+            .all()
+        }
+        quiz_pairs = {
+            (row.user_id, row.subject, row.topic)
+            for row in QuizHistory.query.with_entities(QuizHistory.user_id, QuizHistory.subject, QuizHistory.topic)
+            .filter(QuizHistory.user_id.in_(lesson_user_ids))
+            .all()
+        }
+    else:
+        flashcards = revisions = mind_maps = important_questions = memory_challenges = tutor_lessons = quiz_pairs = set()
+
+    completion_percentages = []
+    completed_lessons = 0
+    for lesson in lessons:
+        lesson_key = (lesson.user_id, lesson.id)
+        completed_count = 1
+        completed_count += int(lesson_key in revisions)
+        completed_count += int(lesson_key in mind_maps)
+        completed_count += int(lesson_key in flashcards)
+        completed_count += int(lesson_key in memory_challenges)
+        completed_count += int(lesson_key in tutor_lessons)
+        completed_count += int((lesson.user_id, lesson.subject, lesson.topic) in quiz_pairs)
+        percentage = int((completed_count / len(STUDY_PLAN_ACTIVITY_DEFINITIONS)) * 100)
+        completion_percentages.append(percentage)
+        if completed_count == len(STUDY_PLAN_ACTIVITY_DEFINITIONS):
+            completed_lessons += 1
+
     average_completion = (
-        round(sum(plan["completion_percentage"] for plan in plans) / total_lessons, 1)
+        round(sum(completion_percentages) / total_lessons, 1)
         if total_lessons
         else 0
     )
@@ -4103,7 +4185,7 @@ def get_developer_study_planner_stats():
     )
     return {
         "total_lessons": total_lessons,
-        "completed_lessons": sum(1 for plan in plans if plan["completed"]),
+        "completed_lessons": completed_lessons,
         "average_completion": average_completion,
         "awarded_completions": awarded_completions,
         "active_users": active_users,
@@ -4667,32 +4749,9 @@ def get_performance_analytics(user_id):
         .order_by(LearningHistory.created_at.asc(), LearningHistory.id.asc())
         .all()
     )
-    recent_lesson_rows = (
-        LearningHistory.query.with_entities(
-            LearningHistory.id,
-            LearningHistory.subject,
-            LearningHistory.topic,
-            LearningHistory.created_at,
-        )
-        .filter(LearningHistory.user_id == user_id)
-        .order_by(LearningHistory.created_at.desc(), LearningHistory.id.desc())
-        .limit(10)
-        .all()
-    )
-    recent_quiz_rows = (
-        QuizHistory.query.with_entities(
-            QuizHistory.id,
-            QuizHistory.subject,
-            QuizHistory.topic,
-            QuizHistory.score,
-            QuizHistory.created_at,
-        )
-        .filter(QuizHistory.user_id == user_id)
-        .order_by(QuizHistory.created_at.desc(), QuizHistory.id.desc())
-        .limit(10)
-        .all()
-    )
-    recent_tutor_rows = (
+    recent_lesson_rows = list(reversed(lesson_rows[-10:]))
+    recent_quiz_rows = list(reversed(quiz_rows[-10:]))
+    tutor_rows = (
         TutorLesson.query.with_entities(
             TutorLesson.id,
             TutorLesson.subject,
@@ -4700,10 +4759,10 @@ def get_performance_analytics(user_id):
             TutorLesson.created_at,
         )
         .filter(TutorLesson.user_id == user_id)
-        .order_by(TutorLesson.created_at.desc(), TutorLesson.id.desc())
-        .limit(10)
+        .order_by(TutorLesson.created_at.asc(), TutorLesson.id.asc())
         .all()
     )
+    recent_tutor_rows = list(reversed(tutor_rows[-10:]))
 
     topic_rows = (
         LearningHistory.query.with_entities(LearningHistory.subject, LearningHistory.topic)
@@ -4866,13 +4925,7 @@ def get_performance_analytics(user_id):
     for row in quiz_rows:
         if row.created_at:
             timeline_buckets[row.created_at.date()]["Quiz"] += 1
-    tutor_date_rows = (
-        TutorLesson.query.with_entities(TutorLesson.created_at)
-        .filter(TutorLesson.user_id == user_id)
-        .order_by(TutorLesson.created_at.asc(), TutorLesson.id.asc())
-        .all()
-    )
-    for row in tutor_date_rows:
+    for row in tutor_rows:
         if row.created_at:
             timeline_buckets[row.created_at.date()]["Tutor"] += 1
 
@@ -7008,6 +7061,11 @@ def evaluation_to_pdf_flowables(evaluation, styles):
 
 
 def create_performance_pdf(name, subject, topic, score, grade, report_text, evaluation=None):
+    with performance_span("PDF generation", detail="performance_report"):
+        return _create_performance_pdf(name, subject, topic, score, grade, report_text, evaluation)
+
+
+def _create_performance_pdf(name, subject, topic, score, grade, report_text, evaluation=None):
     buffer = BytesIO()
     doc = SimpleDocTemplate(
         buffer,
@@ -7210,6 +7268,11 @@ def create_performance_pdf(name, subject, topic, score, grade, report_text, eval
 
 
 def create_learning_history_pdf(entry, diagram_payload, questions, diagram_view=None):
+    with performance_span("PDF generation", detail="learning_history"):
+        return _create_learning_history_pdf(entry, diagram_payload, questions, diagram_view)
+
+
+def _create_learning_history_pdf(entry, diagram_payload, questions, diagram_view=None):
     buffer = BytesIO()
     doc = SimpleDocTemplate(
         buffer,
@@ -7319,6 +7382,11 @@ def create_learning_history_pdf(entry, diagram_payload, questions, diagram_view=
 
 
 def create_revision_pdf(lesson, revision_sheet):
+    with performance_span("PDF generation", detail="revision"):
+        return _create_revision_pdf(lesson, revision_sheet)
+
+
+def _create_revision_pdf(lesson, revision_sheet):
     buffer = BytesIO()
     doc = SimpleDocTemplate(
         buffer,
@@ -7399,6 +7467,11 @@ def create_revision_pdf(lesson, revision_sheet):
 
 
 def create_important_questions_pdf(lesson, question_set):
+    with performance_span("PDF generation", detail="important_questions"):
+        return _create_important_questions_pdf(lesson, question_set)
+
+
+def _create_important_questions_pdf(lesson, question_set):
     buffer = BytesIO()
     doc = SimpleDocTemplate(
         buffer,
@@ -8143,27 +8216,33 @@ def toggle_exhibition_mode():
 @login_required
 def dashboard():
     account = current_user()
-    stats = get_dashboard_stats(account["id"])
-    gamification = get_gamification_summary(account["id"])
-    continue_lesson = get_continue_lesson(account["id"])
-    weekly_summary = get_weekly_study_summary(account["id"])
+    with performance_span("Dashboard loading", detail=f"user_id={account['id']}"):
+        stats = get_dashboard_stats(account["id"])
+        gamification = get_gamification_summary(account["id"])
+        continue_lesson = get_continue_lesson(account["id"])
+        weekly_summary = get_weekly_study_summary(account["id"])
+        study_planner = get_study_planner_stats(account["id"])
+        today_study_goal = get_today_study_goal(account["id"])
+        recent_tutor_conversation = get_recent_tutor_conversation(account["id"])
+        recent_activity = get_recent_learning_activity(account["id"])
+        recommendations = get_smart_recommendations(account["id"], stats, continue_lesson)
     return render_template(
         "dashboard.html",
         account=account,
         stats=stats,
         gamification=gamification,
-        study_planner=get_study_planner_stats(account["id"]),
-        today_study_goal=get_today_study_goal(account["id"]),
+        study_planner=study_planner,
+        today_study_goal=today_study_goal,
         daily_quote=dashboard_daily_quote(),
         continue_lesson=continue_lesson,
-        recent_tutor_conversation=get_recent_tutor_conversation(account["id"]),
+        recent_tutor_conversation=recent_tutor_conversation,
         learning_progress=dashboard_learning_progress(stats, weekly_summary),
         weekly_summary=weekly_summary,
         today_recommendation=get_today_recommendation(stats, continue_lesson),
-        recent_activity=get_recent_learning_activity(account["id"]),
+        recent_activity=recent_activity,
         achievements=gamification["badges"],
         achievement_progress=gamification["achievements"],
-        recommendations=get_smart_recommendations(account["id"], stats, continue_lesson),
+        recommendations=recommendations,
         current_page_url=current_internal_url(),
     )
 
@@ -8172,10 +8251,12 @@ def dashboard():
 @login_required
 def performance():
     account = current_user()
+    with performance_span("Analytics generation", detail=f"user_id={account['id']}"):
+        analytics = get_performance_analytics(account["id"])
     return render_template(
         "performance.html",
         account=account,
-        analytics=get_performance_analytics(account["id"]),
+        analytics=analytics,
     )
 
 
@@ -8183,10 +8264,12 @@ def performance():
 @role_required("developer")
 def developer_panel():
     account = current_user()
+    with performance_span("Dashboard loading", detail="developer_panel"):
+        stats = get_developer_panel_stats()
     return render_template(
         "developer.html",
         account=account,
-        stats=get_developer_panel_stats(),
+        stats=stats,
     )
 
 
@@ -9235,13 +9318,14 @@ def learn():
         book_name,
         student_class,
     )
-    textbook_context_section = local_textbook_context_section(
-        student_class,
-        subject,
-        book_name,
-        topic,
-        max_chars=LEARN_MAX_TEXTBOOK_CONTEXT_CHARS,
-    )
+    with performance_span("Textbook context loading", detail=f"{student_class} {subject} {topic}"):
+        textbook_context_section = local_textbook_context_section(
+            student_class,
+            subject,
+            book_name,
+            topic,
+            max_chars=LEARN_MAX_TEXTBOOK_CONTEXT_CHARS,
+        )
 
     prompt = f"""
 You are a school teacher.
@@ -9391,7 +9475,8 @@ Rules:
         return learn_busy_response(request_started_at, error)
 
     try:
-        notes, raw_visualization_decision, raw_diagram, questions = split_learning_content(response_text)
+        with performance_span("Learn response parsing", detail="primary"):
+            notes, raw_visualization_decision, raw_diagram, questions = split_learning_content(response_text)
     except ValueError as error:
         print("LEARN RESPONSE ERROR:", error)
         retry_prompt = build_learn_retry_prompt(prompt)
@@ -9416,38 +9501,41 @@ Rules:
                 estimated_characters=len(response_text),
                 estimated_tokens=estimate_tokens(response_text),
             )
-            notes, raw_visualization_decision, raw_diagram, questions = split_learning_content(response_text)
+            with performance_span("Learn response parsing", detail="retry"):
+                notes, raw_visualization_decision, raw_diagram, questions = split_learning_content(response_text)
         except GeminiRequestError as retry_error:
             return render_gemini_error(retry_error.error_info)
         except Exception as retry_error:
             print("LEARN RETRY ERROR:", retry_error)
             return learn_busy_response(request_started_at, retry_error)
 
-    diagram_payload = build_visualization_payload(subject, topic, raw_visualization_decision, raw_diagram)
+    with performance_span("Visualization payload", detail=topic):
+        diagram_payload = build_visualization_payload(subject, topic, raw_visualization_decision, raw_diagram)
     diagram_available = diagram_payload.get("available", False)
     diagram_view = None
 
     lesson_id = None
     if session.get("user_id"):
-        lesson_id = save_learning_history(
-            session["user_id"],
-            subject,
-            book_name,
-            topic,
-            notes,
-            diagram_payload,
-            questions,
-        )
-        save_learning_session(
-            session["user_id"],
-            name,
-            student_class,
-            subject,
-            book_name,
-            topic,
-            notes,
-        )
-        saved_lesson = get_learning_history_entry(lesson_id, session["user_id"])
+        with performance_span("Learning save", detail=topic):
+            lesson_id = save_learning_history(
+                session["user_id"],
+                subject,
+                book_name,
+                topic,
+                notes,
+                diagram_payload,
+                questions,
+            )
+            save_learning_session(
+                session["user_id"],
+                name,
+                student_class,
+                subject,
+                book_name,
+                topic,
+                notes,
+            )
+            saved_lesson = get_learning_history_entry(lesson_id, session["user_id"])
         if saved_lesson:
             diagram_view = lesson_diagram_view(saved_lesson, diagram_payload, student_class)
     elif diagram_available:
@@ -9461,6 +9549,8 @@ Rules:
         estimated_characters=len(response_text),
         estimated_tokens=estimate_tokens(response_text),
     )
+    with performance_span("Markdown conversion", detail="learn_notes"):
+        explanation_html = markdown.markdown(notes)
     return render_template(
         "learn.html",
         name=name,
@@ -9468,7 +9558,7 @@ Rules:
         subject=subject,
         book_name=book_name,
         topic=topic,
-        explanation=markdown.markdown(notes),
+        explanation=explanation_html,
         notes=notes,
         diagram_payload=diagram_payload,
         diagram_image=diagram_image,

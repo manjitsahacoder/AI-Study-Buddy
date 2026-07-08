@@ -1,12 +1,21 @@
 import json
+from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from threading import RLock
 from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
+
+from performance_monitor import performance_span
 
 from .metadata import DiagramCandidate, attribution_text, reusable_license
 
 
 COMMONS_API_URL = "https://commons.wikimedia.org/w/api.php"
 COMMONS_FILE_URL = "https://commons.wikimedia.org/wiki/File:"
+COMMONS_QUERY_CACHE_LIMIT = 128
+
+_COMMONS_QUERY_CACHE = OrderedDict()
+_COMMONS_QUERY_CACHE_LOCK = RLock()
 
 
 class WikimediaCommonsProvider:
@@ -17,10 +26,49 @@ class WikimediaCommonsProvider:
         self.user_agent = user_agent
 
     def _get_json(self, params):
-        url = f"{COMMONS_API_URL}?{urlencode(params)}"
-        request = Request(url, headers={"User-Agent": self.user_agent})
-        with urlopen(request, timeout=self.timeout) as response:
-            return json.loads(response.read().decode("utf-8"))
+        cache_key = json.dumps(params, sort_keys=True, ensure_ascii=True)
+        with _COMMONS_QUERY_CACHE_LOCK:
+            cached = _COMMONS_QUERY_CACHE.get(cache_key)
+            if cached is not None:
+                _COMMONS_QUERY_CACHE.move_to_end(cache_key)
+                return cached
+
+        with performance_span("Diagram search", detail=params.get("gsrsearch", "")):
+            url = f"{COMMONS_API_URL}?{urlencode(params)}"
+            request = Request(url, headers={"User-Agent": self.user_agent})
+            with urlopen(request, timeout=self.timeout) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+
+        with _COMMONS_QUERY_CACHE_LOCK:
+            _COMMONS_QUERY_CACHE[cache_key] = payload
+            _COMMONS_QUERY_CACHE.move_to_end(cache_key)
+            while len(_COMMONS_QUERY_CACHE) > COMMONS_QUERY_CACHE_LIMIT:
+                _COMMONS_QUERY_CACHE.popitem(last=False)
+        return payload
+
+    def find(self, queries, *, topic="", subject="", limit_per_query=8):
+        queries = list(queries or [])
+        if len(queries) <= 1:
+            for query in queries:
+                yield from self.search(query, limit=limit_per_query)
+            return
+
+        max_workers = min(4, len(queries))
+        results_by_index = {}
+        with performance_span("Diagram search", detail=f"wikimedia_parallel queries={len(queries)}"):
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                future_to_index = {
+                    executor.submit(lambda q=query: list(self.search(q, limit=limit_per_query))): index
+                    for index, query in enumerate(queries)
+                }
+                for future in as_completed(future_to_index):
+                    index = future_to_index[future]
+                    try:
+                        results_by_index[index] = future.result()
+                    except Exception:
+                        results_by_index[index] = []
+        for index in range(len(queries)):
+            yield from results_by_index.get(index, [])
 
     def search(self, query, *, limit=8):
         search_payload = self._get_json(
