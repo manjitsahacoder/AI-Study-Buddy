@@ -764,11 +764,25 @@
         }
 
         function handleBeforeUnload() {
-            if (navigationLocked || Date.now() < suppressUnloadOverlayUntil) {
+            if ("navigation" in window || navigationLocked || Date.now() < suppressUnloadOverlayUntil) {
                 return;
             }
 
             showOverlay("Loading page...", window.location.pathname);
+        }
+
+        function handleNavigationEvent(event) {
+            if (navigationLocked || !event.destination || !event.destination.url) {
+                return;
+            }
+
+            const url = isInternalPageUrl(event.destination.url, { allowCurrentPage: true });
+            if (!url) {
+                suppressUnloadOverlay();
+                return;
+            }
+
+            showOverlay(contextualMessage(null, url), url.pathname);
         }
 
         patchLocationMethod("assign", nativeLocationAssign, false);
@@ -782,6 +796,9 @@
 
         document.addEventListener("click", handlePageTransitionClick, true);
         document.addEventListener("submit", handlePageTransitionSubmit, true);
+        if ("navigation" in window) {
+            window.navigation.addEventListener("navigate", handleNavigationEvent);
+        }
         window.addEventListener("beforeunload", handleBeforeUnload);
         window.addEventListener("pageshow", hidePageTransitionOverlay);
         window.addEventListener("focus", function () {
