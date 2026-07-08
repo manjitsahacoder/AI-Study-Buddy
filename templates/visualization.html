@@ -1,4 +1,4 @@
-<section class="visualization-card" data-diagram-library-card data-topic="{{ topic }}">
+<section class="visualization-card" data-diagram-library-card data-topic="{{ topic }}"{% if diagram_pending_url|default('', true) %} data-diagram-pending-url="{{ diagram_pending_url }}"{% endif %}>
     <div class="visualization-header">
         <div>
             <span class="eyebrow">AI Visualization</span>
@@ -11,7 +11,23 @@
         {% endif %}
     </div>
 
-    {% if diagram_available and diagram_view %}
+    {% if diagram_available and diagram_pending_url|default('', true) %}
+    <div class="visualization-insights visualization-insights-skeleton" aria-label="Diagram loading details">
+        <div><span>Selected Type</span><strong>{{ diagram_payload.visualization_label or diagram_payload.type|replace('_', ' ')|title }}</strong></div>
+        <div><span>Confidence</span><strong>{{ diagram_payload.confidence_percent or 0 }}%</strong></div>
+        <div class="visualization-reason"><span>Source</span><strong>Searching library...</strong></div>
+    </div>
+
+    <div class="diagram-pending-state" role="status" aria-live="polite" data-diagram-pending-state>
+        <div class="diagram-skeleton-frame">
+            <span>Loading educational diagram...</span>
+        </div>
+        <div class="diagram-progress-copy">
+            <strong data-diagram-progress-message>Searching educational diagrams...</strong>
+            <span>Lesson notes are ready. The diagram will fade in here when selected.</span>
+        </div>
+    </div>
+    {% elif diagram_available and diagram_view %}
     <div class="visualization-insights" aria-label="Diagram selection details">
         <div>
             <span>Selected Type</span>

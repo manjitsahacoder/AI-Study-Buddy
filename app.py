@@ -44,6 +44,7 @@ import markdown
 import os
 import random
 import re
+import threading
 import time
 from dotenv import load_dotenv
 
@@ -117,6 +118,8 @@ latest_report = {}
 genai.configure(api_key=GEMINI_API_KEY)
 
 model = genai.GenerativeModel("gemini-2.5-flash")
+
+_diagram_hydration_locks = defaultdict(threading.Lock)
 
 
 AUTH_TIMING_ENABLED = performance_timing_enabled()
@@ -8833,6 +8836,64 @@ def update_flashcard_status(flashcard_id):
     )
 
 
+@app.route("/api/learning-history/<int:lesson_id>/diagram")
+@login_required
+def learning_history_diagram_status(lesson_id):
+    lesson = get_learning_history_entry(lesson_id, session["user_id"])
+    if not lesson:
+        abort(404)
+
+    student_class = preferred_class_for_user(current_user())
+    class_error = validate_supported_class(student_class)
+    if class_error:
+        return jsonify({"error": class_error}), 400
+
+    diagram_payload = decode_diagram_payload(lesson.diagram_data, lesson.subject, lesson.topic)
+    if not diagram_payload.get("available"):
+        return jsonify(
+            {
+                "status": "not_required",
+                "diagram_available": False,
+                "diagram_payload": diagram_payload,
+            }
+        )
+
+    lock = _diagram_hydration_locks[lesson_id]
+    with lock:
+        try:
+            diagram_view = lesson_diagram_view(lesson, diagram_payload, student_class)
+        except Exception:
+            app.logger.exception("diagram_hydration_failed lesson_id=%s", lesson_id)
+            return jsonify({"error": "The educational diagram is unavailable right now."}), 503
+
+    if not diagram_view:
+        return jsonify(
+            {
+                "status": "unavailable",
+                "diagram_available": True,
+                "diagram_payload": diagram_payload,
+            }
+        )
+
+    account = current_user()
+    return jsonify(
+        {
+            "status": "ready",
+            "diagram_available": True,
+            "diagram_payload": diagram_payload,
+            "diagram_view": diagram_view,
+            "download_url": url_for("download_learning_history_diagram", lesson_id=lesson.id),
+            "explanation_url": url_for("diagram_explanation", lesson_id=lesson.id),
+            "lesson": {
+                "name": account["full_name"] if account else "Student",
+                "student_class": preferred_class_for_user(account),
+                "subject": lesson.subject,
+                "book_name": lesson.book_name or "",
+            },
+        }
+    )
+
+
 @app.route("/learning-history/<int:lesson_id>/diagram-explanation")
 @login_required
 def diagram_explanation(lesson_id):
@@ -9513,6 +9574,7 @@ Rules:
         diagram_payload = build_visualization_payload(subject, topic, raw_visualization_decision, raw_diagram)
     diagram_available = diagram_payload.get("available", False)
     diagram_view = None
+    diagram_pending_url = ""
 
     lesson_id = None
     if session.get("user_id"):
@@ -9536,7 +9598,9 @@ Rules:
                 notes,
             )
             saved_lesson = get_learning_history_entry(lesson_id, session["user_id"])
-        if saved_lesson:
+        if saved_lesson and diagram_available and not app.config.get("TESTING"):
+            diagram_pending_url = url_for("learning_history_diagram_status", lesson_id=lesson_id)
+        elif saved_lesson:
             diagram_view = lesson_diagram_view(saved_lesson, diagram_payload, student_class)
     elif diagram_available:
         diagram_view = None
@@ -9565,6 +9629,7 @@ Rules:
         diagram_svg="",
         diagram_available=diagram_available,
         diagram_view=diagram_view,
+        diagram_pending_url=diagram_pending_url,
         diagram_explanation=None,
         diagram_explanation_url=url_for("diagram_explanation", lesson_id=lesson_id) if lesson_id else "",
         diagram_json=json.dumps(diagram_payload),

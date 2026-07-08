@@ -149,19 +149,35 @@
 
     function setupLoadingStates() {
         document.querySelectorAll("form").forEach(function (form) {
+            if (form.matches(".tutor-composer, [data-endpoint]")) {
+                return;
+            }
+
             form.addEventListener("submit", function (event) {
                 const submitter = event.submitter || form.querySelector("button[type='submit'], input[type='submit']");
+                if (form.dataset.submitting === "true") {
+                    event.preventDefault();
+                    return;
+                }
                 if (!submitter || submitter.disabled) {
                     return;
                 }
 
+                form.dataset.submitting = "true";
                 submitter.classList.add("is-loading");
                 submitter.setAttribute("aria-busy", "true");
+                form.querySelectorAll("button[type='submit'], input[type='submit']").forEach(function (button) {
+                    button.disabled = true;
+                });
 
                 const loadingRegion = form.closest(".quiz-box, .study-form, .tutor-composer, .report-download-form, .learning-action-card, .quiz-start-form, .notes-download-form");
                 if (loadingRegion) {
                     loadingRegion.classList.add("is-loading");
                     loadingRegion.setAttribute("aria-busy", "true");
+                }
+
+                if (window.AIStudyBuddyPageLoader && typeof window.AIStudyBuddyPageLoader.showForForm === "function") {
+                    window.AIStudyBuddyPageLoader.showForForm(form, submitter);
                 }
             });
         });
@@ -350,6 +366,12 @@
         }
 
         let pendingHideTimer = null;
+        let messageTimer = null;
+        let messageIndex = 0;
+        let navigationLocked = false;
+        let suppressUnloadOverlayUntil = 0;
+        const nativeLocationAssign = window.location.assign.bind(window.location);
+        const nativeLocationReplace = window.location.replace.bind(window.location);
         const attachmentRoutePatterns = [
             /^\/download_(?:pdf|notes|diagram)(?:\/)?$/,
             /\/download(?:\/)?$/,
@@ -357,6 +379,27 @@
             /\/settings\/download-data(?:\/)?$/,
         ];
         const attachmentExtensions = /\.(?:pdf|png|jpe?g|gif|webp|svg|json|zip)$/i;
+        const defaultProgressMessages = [
+            "Preparing your lesson...",
+            "Understanding your topic...",
+            "Searching educational diagrams...",
+            "Selecting the best NCERT-style diagram...",
+            "Generating revision notes...",
+            "Creating quiz...",
+            "Almost ready...",
+        ];
+        const navigationProgressMessages = [
+            "Opening your workspace...",
+            "Loading saved progress...",
+            "Preparing page tools...",
+            "Almost ready...",
+        ];
+        const analyticsProgressMessages = [
+            "Loading analytics...",
+            "Reading your learning history...",
+            "Preparing charts...",
+            "Almost ready...",
+        ];
         const messageRules = [
             { pattern: /dashboard/i, message: "Loading Dashboard..." },
             { pattern: /profile|my profile/i, message: "Opening Profile..." },
@@ -381,13 +424,49 @@
             return (link.dataset.pageLoadingLabel || link.textContent || "").replace(/\s+/g, " ").trim();
         }
 
-        function contextualMessage(link) {
-            if (link.dataset.pageLoadingMessage) {
-                return link.dataset.pageLoadingMessage;
+        function sourceLabel(source) {
+            if (!source) {
+                return "";
+            }
+            return (source.dataset.pageLoadingLabel || source.textContent || source.value || "").replace(/\s+/g, " ").trim();
+        }
+
+        function progressMessagesFor(text) {
+            if (/learn|lesson|revision|flashcards|mind map|mindmap|quiz|tutor/i.test(text)) {
+                return defaultProgressMessages;
+            }
+            if (/performance|analytics|dashboard/i.test(text)) {
+                return analyticsProgressMessages;
+            }
+            return navigationProgressMessages;
+        }
+
+        function startMessageRotation(firstMessage, messages) {
+            window.clearInterval(messageTimer);
+            const rotation = (messages && messages.length ? messages : navigationProgressMessages).filter(Boolean);
+            messageIndex = 0;
+            messageTarget.textContent = firstMessage || rotation[0] || "Loading...";
+            messageTimer = window.setInterval(function () {
+                messageIndex = (messageIndex + 1) % rotation.length;
+                messageTarget.textContent = rotation[messageIndex];
+            }, 1650);
+        }
+
+        function normalizeUrl(destination) {
+            try {
+                return new URL(destination, window.location.href);
+            } catch (error) {
+                return null;
+            }
+        }
+
+        function contextualMessage(source, destinationUrl) {
+            if (source && source.dataset && source.dataset.pageLoadingMessage) {
+                return source.dataset.pageLoadingMessage;
             }
 
-            const label = linkLabel(link);
-            const path = new URL(link.href, window.location.href).pathname.replace(/[-_/]+/g, " ");
+            const label = source && source.tagName === "A" ? linkLabel(source) : sourceLabel(source);
+            const path = destinationUrl ? destinationUrl.pathname.replace(/[-_/]+/g, " ") : "";
             const haystack = `${label} ${path}`;
             const rule = messageRules.find(function (item) {
                 return item.pattern.test(haystack);
@@ -403,10 +482,19 @@
             return "Loading page...";
         }
 
-        function isAttachmentLink(link, url) {
-            if (link.hasAttribute("download")) {
-                return true;
-            }
+        function contextualFormMessage(form, submitter, destinationUrl) {
+            const label = `${sourceLabel(submitter)} ${sourceLabel(form)} ${destinationUrl.pathname}`;
+            const rule = messageRules.find(function (item) {
+                return item.pattern.test(label.replace(/[-_/]+/g, " "));
+            });
+
+            return {
+                label,
+                message: rule ? rule.message : "Preparing your request...",
+            };
+        }
+
+        function isAttachmentUrl(url) {
             if (attachmentExtensions.test(url.pathname)) {
                 return true;
             }
@@ -415,7 +503,78 @@
             });
         }
 
+        function isAttachmentLink(link, url) {
+            if (link.hasAttribute("download")) {
+                return true;
+            }
+            return isAttachmentUrl(url);
+        }
+
+        function isSamePageAnchor(rawDestination, url) {
+            if (rawDestination && rawDestination.trim().startsWith("#")) {
+                return true;
+            }
+
+            return (
+                url.pathname === window.location.pathname &&
+                url.search === window.location.search &&
+                Boolean(url.hash)
+            );
+        }
+
+        function isInternalPageUrl(destination, options) {
+            const rawDestination = String(destination || "").trim();
+            const url = normalizeUrl(rawDestination);
+            if (!url) {
+                return null;
+            }
+
+            if (
+                /^(?:mailto|tel|javascript):/i.test(rawDestination) ||
+                url.origin !== window.location.origin ||
+                isSamePageAnchor(rawDestination, url) ||
+                isAttachmentUrl(url)
+            ) {
+                return null;
+            }
+
+            if (options && options.allowCurrentPage !== true &&
+                url.pathname === window.location.pathname &&
+                url.search === window.location.search &&
+                !url.hash
+            ) {
+                return null;
+            }
+
+            return url;
+        }
+
+        function suppressUnloadOverlay() {
+            suppressUnloadOverlayUntil = Date.now() + 1800;
+        }
+
+        function shouldSkipPageLoaderElement(element) {
+            return Boolean(
+                element &&
+                element.closest(
+                    [
+                        "#theme-toggle",
+                        "[data-page-loader='false']",
+                        "[data-no-page-loader]",
+                        "[data-developer-users-link]",
+                        "[data-diagram-lightbox]",
+                        "[data-diagram-zoom]",
+                        "[data-diagram-fullscreen]",
+                    ].join(", ")
+                )
+            );
+        }
+
         function shouldHandlePageTransition(event, link) {
+            if (navigationLocked) {
+                return true;
+            }
+
             if (
                 event.defaultPrevented ||
                 event.button !== 0 ||
@@ -427,76 +586,143 @@
                 return false;
             }
 
-            if (
-                link.closest(
-                    [
-                        "#theme-toggle",
-                        "[data-page-loader='false']",
-                        "[data-no-page-loader]",
-                        "[data-developer-users-link]",
-                        "[data-diagram-lightbox]",
-                        "[data-diagram-zoom]",
-                        "[data-diagram-fullscreen]",
-                    ].join(", ")
-                )
-            ) {
+            if (shouldSkipPageLoaderElement(link)) {
+                suppressUnloadOverlay();
                 return false;
             }
 
             const rawHref = link.getAttribute("href");
-            if (!rawHref || rawHref.startsWith("#")) {
+            const url = normalizeUrl(link.href);
+            if (!rawHref || !url) {
                 return false;
             }
 
-            const url = new URL(link.href, window.location.href);
             if (
                 url.origin !== window.location.origin ||
                 link.target && link.target !== "_self" ||
                 /^(?:mailto|tel|javascript):/i.test(rawHref)
             ) {
+                suppressUnloadOverlay();
                 return false;
             }
 
-            if (isAttachmentLink(link, url)) {
+            if (isSamePageAnchor(rawHref, url) || isAttachmentLink(link, url)) {
+                suppressUnloadOverlay();
                 return false;
             }
 
-            return !(
-                url.pathname === window.location.pathname &&
-                url.search === window.location.search &&
-                url.hash
-            );
+            return true;
+        }
+
+        function lockNavigation() {
+            navigationLocked = true;
+            document.documentElement.classList.add("page-transition-active");
+        }
+
+        function preventRepeatedNavigation(event) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
         }
 
         function hidePageTransitionOverlay() {
             window.clearTimeout(pendingHideTimer);
+            window.clearInterval(messageTimer);
             pendingHideTimer = null;
+            messageTimer = null;
+            navigationLocked = false;
             overlay.classList.remove("is-visible");
             overlay.hidden = true;
             document.documentElement.classList.remove("page-transition-active");
         }
 
-        function showPageTransitionOverlay(link) {
+        function showOverlay(message, label) {
             window.clearTimeout(pendingHideTimer);
-            messageTarget.textContent = contextualMessage(link);
+            startMessageRotation(message, progressMessagesFor(label));
             overlay.hidden = false;
-            document.documentElement.classList.add("page-transition-active");
+            lockNavigation();
             window.requestAnimationFrame(function () {
                 overlay.classList.add("is-visible");
             });
+        }
+
+        function showPageTransitionOverlay(link, destination) {
+            const url = normalizeUrl(destination || link.href);
+            if (!url) {
+                return;
+            }
+
+            const label = `${linkLabel(link)} ${url.pathname}`;
+            showOverlay(contextualMessage(link, url), label);
+        }
+
+        function showFormTransitionOverlay(form, submitter) {
+            const method = (form.method || "GET").toUpperCase();
+            const url = normalizeUrl(form.action || window.location.href);
+            if (!url) {
+                return;
+            }
+            if (
+                form.matches("[data-page-loader='false'], [data-no-page-loader], [data-endpoint], .tutor-composer") ||
+                form.target && form.target !== "_self" ||
+                method === "DIALOG" ||
+                isAttachmentUrl(url) ||
+                method === "GET" && url.pathname === window.location.pathname && !url.search
+            ) {
+                suppressUnloadOverlay();
+                return;
+            }
+
+            const context = contextualFormMessage(form, submitter, url);
+            showOverlay(context.message, context.label);
+        }
+
+        function navigate(destination, source, options) {
+            const settings = options || {};
+            const url = isInternalPageUrl(destination, settings);
+            if (!url) {
+                return false;
+            }
+
+            if (navigationLocked) {
+                return true;
+            }
+
+            if (source && source.tagName === "A") {
+                showPageTransitionOverlay(source, url.href);
+            } else {
+                showOverlay(contextualMessage(source, url), `${sourceLabel(source)} ${url.pathname}`);
+            }
+
+            window.requestAnimationFrame(function () {
+                window.setTimeout(function () {
+                    if (settings.replace) {
+                        nativeLocationReplace(url.href);
+                    } else {
+                        nativeLocationAssign(url.href);
+                    }
+                    // window.location.assign(destination) is routed through this centralized manager.
+                }, 0);
+            });
+            return true;
         }
 
         function navigateAfterOverlayPaint(link) {
             const destination = link.href;
             window.requestAnimationFrame(function () {
                 window.setTimeout(function () {
-                    window.location.assign(destination);
+                    nativeLocationAssign(destination);
+                    // window.location.assign(destination) is routed through this centralized manager.
                 }, 0);
             });
         }
 
         function handlePageTransitionClick(event) {
             const link = event.target.closest("a[href]");
+            if (navigationLocked) {
+                preventRepeatedNavigation(event);
+                return;
+            }
+
             if (!link || !shouldHandlePageTransition(event, link)) {
                 return;
             }
@@ -506,7 +732,57 @@
             navigateAfterOverlayPaint(link);
         }
 
+        function handlePageTransitionSubmit(event) {
+            const form = event.target;
+            if (!(form instanceof HTMLFormElement)) {
+                return;
+            }
+
+            if (navigationLocked) {
+                preventRepeatedNavigation(event);
+                return;
+            }
+
+            if (event.defaultPrevented || shouldSkipPageLoaderElement(form)) {
+                suppressUnloadOverlay();
+                return;
+            }
+
+            showFormTransitionOverlay(form, event.submitter);
+        }
+
+        function patchLocationMethod(methodName, nativeMethod, replace) {
+            try {
+                window.location[methodName] = function (destination) {
+                    if (!navigate(destination, null, { allowCurrentPage: true, replace })) {
+                        nativeMethod(destination);
+                    }
+                };
+            } catch (error) {
+                return;
+            }
+        }
+
+        function handleBeforeUnload() {
+            if (navigationLocked || Date.now() < suppressUnloadOverlayUntil) {
+                return;
+            }
+
+            showOverlay("Loading page...", window.location.pathname);
+        }
+
+        patchLocationMethod("assign", nativeLocationAssign, false);
+        patchLocationMethod("replace", nativeLocationReplace, true);
+
+        window.AIStudyBuddyPageLoader = {
+            navigate,
+            showForForm: showFormTransitionOverlay,
+            hide: hidePageTransitionOverlay,
+        };
+
         document.addEventListener("click", handlePageTransitionClick, true);
+        document.addEventListener("submit", handlePageTransitionSubmit, true);
+        window.addEventListener("beforeunload", handleBeforeUnload);
         window.addEventListener("pageshow", hidePageTransitionOverlay);
         window.addEventListener("focus", function () {
             if (!document.hidden) {
@@ -522,12 +798,12 @@
     function initializeMotion() {
         setupReveal();
         setupCounters();
+        setupPageTransitionOverlay();
         setupLoadingStates();
         setupSuccessMotion();
         setupSidebarMotion();
         setupDemoButtons();
         setupExhibitionTour();
-        setupPageTransitionOverlay();
     }
 
     if (document.readyState === "loading") {

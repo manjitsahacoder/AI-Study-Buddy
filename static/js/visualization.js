@@ -5,7 +5,212 @@
         }
     }
 
+    function element(tagName, className, text) {
+        const item = document.createElement(tagName);
+        if (className) {
+            item.className = className;
+        }
+        if (text !== undefined) {
+            item.textContent = text;
+        }
+        return item;
+    }
+
+    function removeHydratedContent(card) {
+        Array.from(card.children).forEach(function (child, index) {
+            if (index > 0) {
+                child.remove();
+            }
+        });
+    }
+
+    function payloadTypeLabel(payload) {
+        const raw = (payload && (payload.visualization_label || payload.type || payload.visualization_type)) || "Educational Diagram";
+        return String(raw).replace(/_/g, " ").replace(/\b\w/g, function (letter) {
+            return letter.toUpperCase();
+        });
+    }
+
+    function renderInfoCard(card, title, lines, listItems) {
+        removeHydratedContent(card);
+        const info = element("div", "visualization-info-card");
+        info.setAttribute("role", "note");
+        info.setAttribute("aria-label", title);
+        const icon = element("span", "visualization-info-icon");
+        icon.setAttribute("aria-hidden", "true");
+        icon.innerHTML = "&#9432;";
+        const body = element("div");
+        body.appendChild(element("h3", "", title));
+        lines.forEach(function (line) {
+            body.appendChild(element("p", "", line));
+        });
+        if (Array.isArray(listItems) && listItems.length) {
+            const list = element("ul", "diagram-learning-list");
+            listItems.forEach(function (item) {
+                list.appendChild(element("li", "", item));
+            });
+            body.appendChild(list);
+        }
+        info.append(icon, body);
+        card.appendChild(info);
+    }
+
+    function renderDiagramReady(card, body) {
+        const payload = body.diagram_payload || {};
+        const view = body.diagram_view || {};
+        removeHydratedContent(card);
+        card.removeAttribute("data-diagram-pending-url");
+
+        const insights = element("div", "visualization-insights");
+        insights.setAttribute("aria-label", "Diagram selection details");
+        [
+            ["Selected Type", payloadTypeLabel(payload)],
+            ["Confidence", `${payload.confidence_percent || 0}%`],
+            ["Source", view.provider || "Wikimedia Commons", "visualization-reason"]
+        ].forEach(function (entry) {
+            const block = element("div", entry[2] || "");
+            block.append(element("span", "", entry[0]), element("strong", "", entry[1]));
+            insights.appendChild(block);
+        });
+        card.appendChild(insights);
+
+        const toolbar = element("div", "diagram-library-toolbar");
+        toolbar.setAttribute("aria-label", "Educational diagram controls");
+        const zoom = element("button", "button-link secondary-link", "Zoom");
+        zoom.type = "button";
+        zoom.setAttribute("data-diagram-zoom", "");
+        const fullscreen = element("button", "button-link secondary-link", "Fullscreen");
+        fullscreen.type = "button";
+        fullscreen.setAttribute("data-diagram-fullscreen", "");
+        toolbar.append(zoom, fullscreen);
+        if (body.download_url) {
+            const download = element("a", "button-link secondary-link", "Download PNG");
+            download.href = body.download_url;
+            toolbar.appendChild(download);
+        }
+        card.appendChild(toolbar);
+
+        const figure = element("figure", "diagram-library-figure");
+        figure.setAttribute("data-diagram-figure", "");
+        const shell = element("div", "diagram-library-image-shell");
+        const image = element("img", "diagram-library-image");
+        image.src = view.image_url || "";
+        image.alt = `${card.dataset.topic || "Lesson"} educational diagram`;
+        image.loading = "lazy";
+        image.setAttribute("data-diagram-image", "");
+        shell.appendChild(image);
+        const attribution = element("figcaption", "diagram-library-attribution");
+        [
+            ["Diagram Source", view.provider || "Wikimedia Commons", view.source_url],
+            ["Author", view.author || "Unknown"],
+            ["License", view.license || "Reusable license"]
+        ].forEach(function (entry) {
+            const span = element("span");
+            span.appendChild(element("strong", "", entry[0]));
+            span.appendChild(document.createTextNode(" "));
+            if (entry[2]) {
+                const link = element("a", "", entry[1]);
+                link.href = entry[2];
+                link.target = "_blank";
+                link.rel = "noopener noreferrer";
+                span.appendChild(link);
+            } else {
+                span.appendChild(document.createTextNode(entry[1]));
+            }
+            attribution.appendChild(span);
+        });
+        figure.append(shell, attribution);
+        card.appendChild(figure);
+
+        if (body.explanation_url) {
+            const lesson = body.lesson || {};
+            const panel = element("section", "diagram-explanation-panel");
+            panel.setAttribute("aria-label", "AI textbook diagram explanation");
+            panel.setAttribute("data-diagram-explanation-panel", "");
+            panel.dataset.explanationUrl = body.explanation_url;
+            panel.dataset.learnUrl = "/learn";
+            panel.dataset.lessonName = lesson.name || "Student";
+            panel.dataset.lessonClass = lesson.student_class || "";
+            panel.dataset.lessonSubject = lesson.subject || "";
+            panel.dataset.lessonBook = lesson.book_name || "";
+            const status = element("div", "diagram-explanation-status");
+            status.setAttribute("data-diagram-explanation-status", "");
+            const spinner = element("span", "diagram-explanation-spinner");
+            spinner.setAttribute("aria-hidden", "true");
+            status.append(spinner, element("span", "", "Preparing textbook explanation..."));
+            const content = element("div", "diagram-explanation-grid");
+            content.setAttribute("data-diagram-explanation-content", "");
+            content.hidden = true;
+            panel.append(status, content);
+            card.appendChild(panel);
+            initDiagramExplanation(panel);
+        }
+
+        const lightbox = element("div", "diagram-lightbox");
+        lightbox.setAttribute("role", "dialog");
+        lightbox.setAttribute("aria-modal", "true");
+        lightbox.setAttribute("aria-label", `${card.dataset.topic || "Lesson"} full-size educational diagram`);
+        lightbox.setAttribute("data-diagram-lightbox", "");
+        lightbox.hidden = true;
+        const close = element("button", "diagram-lightbox-close", "Close");
+        close.type = "button";
+        close.setAttribute("data-diagram-lightbox-close", "");
+        const stage = element("div", "diagram-lightbox-stage");
+        const fullImage = element("img", "diagram-lightbox-image");
+        fullImage.src = view.image_url || "";
+        fullImage.alt = `${card.dataset.topic || "Lesson"} educational diagram full size`;
+        stage.appendChild(fullImage);
+        lightbox.append(close, stage);
+        card.appendChild(lightbox);
+
+        initDiagramCard(card);
+    }
+
+    function hydratePendingDiagram(card, endpoint) {
+        if (card.dataset.diagramHydrating === "true" || !window.fetch) {
+            return;
+        }
+        card.dataset.diagramHydrating = "true";
+        fetch(endpoint, { headers: { "Accept": "application/json" } })
+            .then(function (response) {
+                return response.json().then(function (body) {
+                    if (!response.ok) {
+                        throw new Error(body.error || "Unable to load the educational diagram.");
+                    }
+                    return body;
+                });
+            })
+            .then(function (body) {
+                card.dataset.diagramHydrating = "false";
+                if (body.status === "ready") {
+                    renderDiagramReady(card, body);
+                } else if (body.status === "not_required") {
+                    renderInfoCard(card, "AI Visualization", [
+                        "This lesson is primarily text-based and does not require a visual diagram.",
+                        "AI Study Buddy has automatically focused on notes, revision, flashcards, quizzes, memory challenge, and AI Tutor instead."
+                    ]);
+                } else {
+                    renderInfoCard(card, "Educational Diagram", [
+                        "No suitable educational diagram is currently available for this lesson.",
+                        "Continue learning using:"
+                    ], ["Notes", "Revision", "Flashcards", "Memory Challenge", "AI Tutor", "Quiz"]);
+                }
+            })
+            .catch(function (error) {
+                card.dataset.diagramHydrating = "false";
+                const message = card.querySelector("[data-diagram-progress-message]");
+                if (message) {
+                    message.textContent = error.message || "The educational diagram is unavailable right now.";
+                }
+            });
+    }
+
     function initDiagramCard(card) {
+        const pendingUrl = card.dataset.diagramPendingUrl;
+        if (pendingUrl) {
+            hydratePendingDiagram(card, pendingUrl);
+        }
+
         const image = card.querySelector("[data-diagram-image]");
         const zoomButton = card.querySelector("[data-diagram-zoom]");
         const fullscreenButton = card.querySelector("[data-diagram-fullscreen]");
