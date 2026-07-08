@@ -1994,10 +1994,15 @@ Grade: A
         script = Path("static/motion.js").read_text(encoding="utf-8")
         self.assertIn("setupPageTransitionOverlay", script)
         self.assertIn('document.addEventListener("click", handlePageTransitionClick, true)', script)
-        self.assertIn('document.addEventListener("submit", handlePageTransitionSubmit, true)', script)
+        self.assertIn('document.addEventListener("submit", handlePageTransitionSubmit)', script)
         self.assertIn("event.preventDefault();", script)
         self.assertIn("showPageTransitionOverlay(link)", script)
         self.assertIn("navigateAfterOverlayPaint(link)", script)
+        self.assertIn("afterOverlayPaint", script)
+        self.assertIn("minimumOverlayPaintDelay", script)
+        self.assertIn("Loader triggered from:", script)
+        self.assertIn("window.navigate = navigate", script)
+        self.assertIn("window.goTo = navigate", script)
         self.assertIn("window.location.assign(destination)", script)
         self.assertIn("AIStudyBuddyPageLoader", script)
         self.assertIn("navigate,", script)
@@ -2022,6 +2027,7 @@ Grade: A
         self.assertIn(".page-transition-overlay.is-visible", css)
         self.assertIn("opacity: 1;", css)
         self.assertIn("pointer-events: auto;", css)
+        self.assertIn(".page-transition-active body", css)
 
     def test_full_page_templates_include_transition_overlay_runtime(self):
         missing_overlay = []
@@ -2081,7 +2087,7 @@ Grade: A
         self.assertEqual(response.headers["Service-Worker-Allowed"], "/")
         self.assertEqual(response.headers["Cache-Control"], "no-cache")
         script = response.get_data(as_text=True)
-        self.assertIn('const CACHE_VERSION = "ai-study-buddy-pwa-v2"', script)
+        self.assertIn('const CACHE_VERSION = "ai-study-buddy-pwa-v3"', script)
         self.assertIn('request.method !== "GET"', script)
         self.assertIn('request.mode === "navigate"', script)
         self.assertIn("networkOnlyNavigation(request)", script)

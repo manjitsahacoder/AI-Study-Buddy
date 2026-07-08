@@ -6952,6 +6952,11 @@ footer p {
     cursor: progress;
 }
 
+.page-transition-active body {
+    pointer-events: none;
+    user-select: none;
+}
+
 #loader {
     display: none;
     position: fixed;

@@ -341,7 +341,7 @@
     </section>
     {% endif %}
 
-    <form id="lesson-form" class="study-form" action="{{ url_for('learn') }}" method="POST" onsubmit="showLoader()" data-tour-title="Live Lesson Generator" data-tour-body="This form starts the real learning workflow. It generates notes, a diagram, quiz questions, and saved history for logged-in students.">
+    <form id="lesson-form" class="study-form" action="{{ url_for('learn') }}" method="POST" data-tour-title="Live Lesson Generator" data-tour-body="This form starts the real learning workflow. It generates notes, a diagram, quiz questions, and saved history for logged-in students.">
         <div class="form-grid">
             <div class="form-field">
                 <label for="name">&#128100; Your Name</label>
@@ -522,6 +522,11 @@ let loaderMessageIndex = 0;
 let loaderInterval;
 
 function showLoader() {
+    if (window.AIStudyBuddyPageLoader && typeof window.AIStudyBuddyPageLoader.showForForm === "function") {
+        window.AIStudyBuddyPageLoader.showForForm(document.getElementById("lesson-form"), null);
+        return;
+    }
+
     document.getElementById("loader").style.display = "flex";
     const loaderMessage = document.getElementById("loader-message");
     loaderMessageIndex = 0;

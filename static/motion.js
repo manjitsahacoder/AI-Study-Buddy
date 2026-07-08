@@ -141,6 +141,9 @@
         );
 
         revealTargets.forEach(function (target, index) {
+            if (target.matches("[data-page-transition-overlay], [data-page-transition-overlay] *")) {
+                return;
+            }
             target.classList.add("motion-reveal");
             target.style.setProperty("--motion-delay", `${Math.min(index % 6, 5) * 35}ms`);
             revealObserver.observe(target);
@@ -148,39 +151,7 @@
     }
 
     function setupLoadingStates() {
-        document.querySelectorAll("form").forEach(function (form) {
-            if (form.matches(".tutor-composer, [data-endpoint]")) {
-                return;
-            }
-
-            form.addEventListener("submit", function (event) {
-                const submitter = event.submitter || form.querySelector("button[type='submit'], input[type='submit']");
-                if (form.dataset.submitting === "true") {
-                    event.preventDefault();
-                    return;
-                }
-                if (!submitter || submitter.disabled) {
-                    return;
-                }
-
-                form.dataset.submitting = "true";
-                submitter.classList.add("is-loading");
-                submitter.setAttribute("aria-busy", "true");
-                form.querySelectorAll("button[type='submit'], input[type='submit']").forEach(function (button) {
-                    button.disabled = true;
-                });
-
-                const loadingRegion = form.closest(".quiz-box, .study-form, .tutor-composer, .report-download-form, .learning-action-card, .quiz-start-form, .notes-download-form");
-                if (loadingRegion) {
-                    loadingRegion.classList.add("is-loading");
-                    loadingRegion.setAttribute("aria-busy", "true");
-                }
-
-                if (window.AIStudyBuddyPageLoader && typeof window.AIStudyBuddyPageLoader.showForForm === "function") {
-                    window.AIStudyBuddyPageLoader.showForForm(form, submitter);
-                }
-            });
-        });
+        // Form loading is handled by the centralized page navigation manager.
     }
 
     function setupSuccessMotion() {
@@ -370,8 +341,11 @@
         let messageIndex = 0;
         let navigationLocked = false;
         let suppressUnloadOverlayUntil = 0;
+        const debugPageLoader = true;
+        const minimumOverlayPaintDelay = 180;
         const nativeLocationAssign = window.location.assign.bind(window.location);
         const nativeLocationReplace = window.location.replace.bind(window.location);
+        const nativeFormSubmit = HTMLFormElement.prototype.submit;
         const attachmentRoutePatterns = [
             /^\/download_(?:pdf|notes|diagram)(?:\/)?$/,
             /\/download(?:\/)?$/,
@@ -429,6 +403,32 @@
                 return "";
             }
             return (source.dataset.pageLoadingLabel || source.textContent || source.value || "").replace(/\s+/g, " ").trim();
+        }
+
+        function sourceType(source, fallback) {
+            if (!source) {
+                return fallback || "JavaScript Navigation";
+            }
+            if (source instanceof HTMLFormElement) {
+                return "Form Submit";
+            }
+            if (source.closest("[data-dashboard-sidebar]")) {
+                return "Sidebar";
+            }
+            if (source.closest("[data-profile-dropdown], [data-profile-menu]")) {
+                return "Profile Menu";
+            }
+            if (source.closest(".quick-actions-grid, .dashboard-panel, .dashboard-stat-grid, .dashboard-hero-grid")) {
+                return "Dashboard Card";
+            }
+            return fallback || "Link";
+        }
+
+        function debugLog(trigger, detail) {
+            if (!debugPageLoader || !window.console || typeof window.console.info !== "function") {
+                return;
+            }
+            window.console.info(`Loader triggered from:\n${trigger}`, detail || "");
         }
 
         function progressMessagesFor(text) {
@@ -640,8 +640,14 @@
             startMessageRotation(message, progressMessagesFor(label));
             overlay.hidden = false;
             lockNavigation();
+            overlay.offsetHeight;
+            overlay.classList.add("is-visible");
+            debugLog("Overlay Visible", label);
+        }
+
+        function afterOverlayPaint(callback) {
             window.requestAnimationFrame(function () {
-                overlay.classList.add("is-visible");
+                window.setTimeout(callback, minimumOverlayPaintDelay);
             });
         }
 
@@ -652,28 +658,79 @@
             }
 
             const label = `${linkLabel(link)} ${url.pathname}`;
+            debugLog(sourceType(link), url.href);
             showOverlay(contextualMessage(link, url), label);
+        }
+
+        function shouldSkipFormTransition(form, url, method) {
+            return Boolean(
+                form.matches("[data-page-loader='false'], [data-no-page-loader], [data-endpoint], .tutor-composer") ||
+                form.target && form.target !== "_self" ||
+                method === "DIALOG" ||
+                isAttachmentUrl(url)
+            );
         }
 
         function showFormTransitionOverlay(form, submitter) {
             const method = (form.method || "GET").toUpperCase();
             const url = normalizeUrl(form.action || window.location.href);
             if (!url) {
-                return;
+                return false;
             }
-            if (
-                form.matches("[data-page-loader='false'], [data-no-page-loader], [data-endpoint], .tutor-composer") ||
-                form.target && form.target !== "_self" ||
-                method === "DIALOG" ||
-                isAttachmentUrl(url) ||
-                method === "GET" && url.pathname === window.location.pathname && !url.search
-            ) {
+            if (shouldSkipFormTransition(form, url, method)) {
                 suppressUnloadOverlay();
-                return;
+                return false;
             }
 
             const context = contextualFormMessage(form, submitter, url);
+            debugLog("Form Submit", form.action || window.location.href);
             showOverlay(context.message, context.label);
+            return true;
+        }
+
+        function markFormSubmitting(form, submitter) {
+            const actualSubmitter = submitter || form.querySelector("button[type='submit'], input[type='submit']");
+            form.dataset.submitting = "true";
+
+            if (actualSubmitter) {
+                actualSubmitter.classList.add("is-loading");
+                actualSubmitter.setAttribute("aria-busy", "true");
+            }
+
+            form.querySelectorAll("button[type='submit'], input[type='submit']").forEach(function (button) {
+                button.disabled = true;
+            });
+
+            const loadingRegion = form.closest(".quiz-box, .study-form, .tutor-composer, .report-download-form, .learning-action-card, .quiz-start-form, .notes-download-form");
+            if (loadingRegion) {
+                loadingRegion.classList.add("is-loading");
+                loadingRegion.setAttribute("aria-busy", "true");
+            }
+        }
+
+        function preserveSubmitterValue(form, submitter) {
+            if (!submitter || !submitter.name || submitter.disabled) {
+                return null;
+            }
+
+            const input = document.createElement("input");
+            input.type = "hidden";
+            input.name = submitter.name;
+            input.value = submitter.value;
+            input.dataset.pageLoaderSubmitter = "true";
+            form.appendChild(input);
+            return input;
+        }
+
+        function submitAfterOverlayPaint(form, submitter) {
+            const hiddenSubmitter = preserveSubmitterValue(form, submitter);
+            markFormSubmitting(form, submitter);
+            afterOverlayPaint(function () {
+                nativeFormSubmit.call(form);
+                if (hiddenSubmitter && hiddenSubmitter.parentNode) {
+                    hiddenSubmitter.parentNode.removeChild(hiddenSubmitter);
+                }
+            });
         }
 
         function navigate(destination, source, options) {
@@ -690,34 +747,32 @@
             if (source && source.tagName === "A") {
                 showPageTransitionOverlay(source, url.href);
             } else {
+                debugLog(sourceType(source, "JavaScript Navigation"), url.href);
                 showOverlay(contextualMessage(source, url), `${sourceLabel(source)} ${url.pathname}`);
             }
 
-            window.requestAnimationFrame(function () {
-                window.setTimeout(function () {
-                    if (settings.replace) {
-                        nativeLocationReplace(url.href);
-                    } else {
-                        nativeLocationAssign(url.href);
-                    }
-                    // window.location.assign(destination) is routed through this centralized manager.
-                }, 0);
+            afterOverlayPaint(function () {
+                if (settings.replace) {
+                    nativeLocationReplace(url.href);
+                } else {
+                    nativeLocationAssign(url.href);
+                }
+                // window.location.assign(destination) is routed through this centralized manager.
             });
             return true;
         }
 
         function navigateAfterOverlayPaint(link) {
             const destination = link.href;
-            window.requestAnimationFrame(function () {
-                window.setTimeout(function () {
-                    nativeLocationAssign(destination);
-                    // window.location.assign(destination) is routed through this centralized manager.
-                }, 0);
+            afterOverlayPaint(function () {
+                nativeLocationAssign(destination);
+                // window.location.assign(destination) is routed through this centralized manager.
             });
         }
 
         function handlePageTransitionClick(event) {
-            const link = event.target.closest("a[href]");
+            const eventTarget = event.target instanceof Element ? event.target : null;
+            const link = eventTarget ? eventTarget.closest("a[href]") : null;
             if (navigationLocked) {
                 preventRepeatedNavigation(event);
                 return;
@@ -748,7 +803,12 @@
                 return;
             }
 
-            showFormTransitionOverlay(form, event.submitter);
+            event.preventDefault();
+            if (!showFormTransitionOverlay(form, event.submitter)) {
+                nativeFormSubmit.call(form);
+                return;
+            }
+            submitAfterOverlayPaint(form, event.submitter);
         }
 
         function patchLocationMethod(methodName, nativeMethod, replace) {
@@ -793,9 +853,11 @@
             showForForm: showFormTransitionOverlay,
             hide: hidePageTransitionOverlay,
         };
+        window.navigate = navigate;
+        window.goTo = navigate;
 
         document.addEventListener("click", handlePageTransitionClick, true);
-        document.addEventListener("submit", handlePageTransitionSubmit, true);
+        document.addEventListener("submit", handlePageTransitionSubmit);
         if ("navigation" in window) {
             window.navigation.addEventListener("navigate", handleNavigationEvent);
         }
