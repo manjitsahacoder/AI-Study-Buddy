@@ -195,6 +195,12 @@ class RouteTests(unittest.TestCase):
             },
         )
 
+    def grant_role(self, username, role):
+        with app_module.app.app_context():
+            user = User.query.filter_by(username=username).first()
+            user.role = role
+            db.session.commit()
+
     def test_supported_classes_are_limited_to_6_through_10(self):
         self.assertEqual(app_module.class_options(), ["6", "7", "8", "9", "10"])
 
@@ -2000,7 +2006,7 @@ Grade: A
         self.assertIn("navigateAfterOverlayPaint(link)", script)
         self.assertIn("afterOverlayPaint", script)
         self.assertIn("minimumOverlayPaintDelay", script)
-        self.assertIn("Loader triggered from:", script)
+        self.assertNotIn("Loader triggered from:", script)
         self.assertIn("window.navigate = navigate", script)
         self.assertIn("window.goTo = navigate", script)
         self.assertIn("window.location.assign(destination)", script)
@@ -2153,24 +2159,46 @@ Grade: A
 
         self.assertEqual(row.role, "student")
 
-    def test_predefined_accounts_receive_role_badges(self):
+    def test_public_registration_never_assigns_predefined_privileged_roles(self):
         special_accounts = [
-            ("Manjit Saha", "manjit", "manjit@example.com", "developer", "Developer", "role-developer"),
-            ("Manjit Saha", "manjitsaha", "manjitsaha2026@example.com", "developer", "Developer", "role-developer"),
-            ("Gyanjyoti Mahanta", "gyanjyoti", "gyanjyoti@example.com", "technical_support", "Technical Support", "role-technical-support"),
-            ("Lakshya Tuwani", "lakshya", "lakshya@example.com", "qa_tester", "Testing &amp; Quality Assurance", "role-qa-tester"),
+            ("Manjit Saha", "manjit", "manjit@example.com"),
+            ("Manjit Saha", "manjitsaha", "manjitsaha2026@example.com"),
+            ("Gyanjyoti Mahanta", "gyanjyoti", "gyanjyoti@example.com"),
+            ("Lakshya Tuwani", "lakshya", "lakshya@example.com"),
         ]
 
-        for full_name, username, email, expected_role, badge_text, badge_class in special_accounts:
+        for full_name, username, email in special_accounts:
             with self.subTest(username=username):
                 self.register_user(username=username, email=email, full_name=full_name)
                 with app_module.app.app_context():
                     row = User.query.filter_by(username=username).first()
 
-                self.assertEqual(row.role, expected_role)
+                self.assertEqual(row.role, "student")
 
                 self.client.get("/logout")
                 self.login_user(identifier=username)
+                dashboard_response = self.client.get("/dashboard")
+
+                self.assertEqual(dashboard_response.status_code, 200)
+                dashboard_page = dashboard_response.get_data(as_text=True)
+                self.assertIn("Student", dashboard_page)
+                self.assertIn("role-student", dashboard_page)
+                self.assertNotIn("role-developer", dashboard_page)
+
+    def test_existing_trusted_roles_keep_role_badges(self):
+        trusted_accounts = [
+            ("Manjit Saha", "manjit", "manjit@example.com", "developer", "Developer", "role-developer"),
+            ("Gyanjyoti Mahanta", "gyanjyoti", "gyanjyoti@example.com", "technical_support", "Technical Support", "role-technical-support"),
+            ("Lakshya Tuwani", "lakshya", "lakshya@example.com", "qa_tester", "Testing &amp; Quality Assurance", "role-qa-tester"),
+        ]
+
+        for full_name, username, email, role, badge_text, badge_class in trusted_accounts:
+            with self.subTest(username=username):
+                self.register_user(username=username, email=email, full_name=full_name)
+                self.grant_role(username, role)
+                self.client.get("/logout")
+                self.login_user(identifier=username)
+
                 dashboard_response = self.client.get("/dashboard")
                 profile_response = self.client.get("/profile")
 
@@ -2609,6 +2637,7 @@ Grade: A
 
     def test_developer_panel_shows_system_stats_and_full_access(self):
         self.register_user(full_name="Manjit Saha", username="manjit", email="manjit@example.com")
+        self.grant_role("manjit", "developer")
         self.login_user(identifier="manjit")
 
         with app_module.app.app_context():
@@ -2666,6 +2695,7 @@ Grade: A
 
     def test_developer_users_page_filters_and_shows_rollups(self):
         self.register_user(full_name="Manjit Saha", username="manjit", email="manjit@example.com")
+        self.grant_role("manjit", "developer")
         self.login_user(identifier="manjit")
 
         with app_module.app.app_context():
@@ -2728,6 +2758,7 @@ Grade: A
 
     def test_developer_users_page_paginates_25_users(self):
         self.register_user(full_name="Manjit Saha", username="manjit", email="manjit@example.com")
+        self.grant_role("manjit", "developer")
         self.login_user(identifier="manjit")
 
         with app_module.app.app_context():
@@ -2758,6 +2789,7 @@ Grade: A
 
     def test_developer_user_detail_shows_account_stats_and_activity(self):
         self.register_user(full_name="Manjit Saha", username="manjit", email="manjit@example.com")
+        self.grant_role("manjit", "developer")
         self.login_user(identifier="manjit")
 
         with app_module.app.app_context():
@@ -2811,6 +2843,7 @@ Grade: A
             username="gyanjyoti",
             email="gyanjyoti@example.com",
         )
+        self.grant_role("gyanjyoti", "technical_support")
         self.login_user(identifier="gyanjyoti")
 
         support_response = self.client.get("/support")
@@ -2829,6 +2862,7 @@ Grade: A
             username="lakshya",
             email="lakshya@example.com",
         )
+        self.grant_role("lakshya", "qa_tester")
         self.login_user(identifier="lakshya")
 
         qa_tester_response = self.client.get("/qa")
@@ -2937,7 +2971,7 @@ Grade: A
         self.assertIn("Forgot Password?", page)
         self.assertIn('href="/forgot-password"', page)
 
-    def test_forgot_password_rejects_unknown_account(self):
+    def test_forgot_password_does_not_reveal_unknown_account(self):
         response = self.client.post(
             "/forgot-password",
             data={
@@ -2946,14 +2980,15 @@ Grade: A
             },
         )
 
-        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.status_code, 200)
         page = response.get_data(as_text=True)
-        self.assertIn("We could not find an account with that username or email.", page)
-        self.assertIn("missing@example.com", page)
+        self.assertIn("online password reset is temporarily unavailable", page)
+        self.assertNotIn("We could not find an account", page)
+        self.assertNotIn("missing@example.com", page)
 
-    def test_forgot_password_validates_new_password(self):
+    def test_forgot_password_does_not_reveal_known_account(self):
         self.register_user()
-        find_response = self.client.post(
+        response = self.client.post(
             "/forgot-password",
             data={
                 "action": "find_account",
@@ -2961,34 +2996,14 @@ Grade: A
             },
         )
 
-        self.assertEqual(find_response.status_code, 200)
-        self.assertIn("Account Found", find_response.get_data(as_text=True))
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        self.assertIn("online password reset is temporarily unavailable", page)
+        self.assertNotIn("Account Found", page)
+        self.assertNotIn("Asha Student", page)
+        self.assertNotIn("asha@example.com", page)
 
-        short_response = self.client.post(
-            "/forgot-password",
-            data={
-                "action": "reset_password",
-                "password": "short",
-                "confirm_password": "short",
-            },
-        )
-
-        self.assertEqual(short_response.status_code, 400)
-        self.assertIn("Password must be at least 8 characters long.", short_response.get_data(as_text=True))
-
-        mismatch_response = self.client.post(
-            "/forgot-password",
-            data={
-                "action": "reset_password",
-                "password": "newpassword123",
-                "confirm_password": "different123",
-            },
-        )
-
-        self.assertEqual(mismatch_response.status_code, 400)
-        self.assertIn("Passwords do not match.", mismatch_response.get_data(as_text=True))
-
-    def test_forgot_password_resets_hash_and_allows_new_login(self):
+    def test_forgot_password_never_changes_password_hash(self):
         self.register_user()
 
         with app_module.app.app_context():
@@ -3013,28 +3028,27 @@ Grade: A
 
         self.assertEqual(response.status_code, 200)
         page = response.get_data(as_text=True)
-        self.assertIn("Your password has been reset successfully. Please log in with your new password.", page)
+        self.assertIn("online password reset is temporarily unavailable", page)
 
         with app_module.app.app_context():
             new_hash = User.query.filter_by(username="asha").first().password_hash
 
-        self.assertNotEqual(old_hash, new_hash)
-        self.assertFalse(app_module.check_password_hash(new_hash, "password123"))
-        self.assertTrue(app_module.check_password_hash(new_hash, "newpassword123"))
+        self.assertEqual(old_hash, new_hash)
+        self.assertTrue(app_module.check_password_hash(new_hash, "password123"))
 
         old_login = self.client.post(
             "/login",
             data={"identifier": "asha", "password": "password123"},
+            follow_redirects=True,
         )
-        self.assertEqual(old_login.status_code, 401)
+        self.assertEqual(old_login.status_code, 200)
+        self.assertIn("Student Dashboard", old_login.get_data(as_text=True))
 
         new_login = self.client.post(
             "/login",
             data={"identifier": "asha", "password": "newpassword123"},
-            follow_redirects=True,
         )
-        self.assertEqual(new_login.status_code, 200)
-        self.assertIn("Student Dashboard", new_login.get_data(as_text=True))
+        self.assertEqual(new_login.status_code, 401)
 
     def test_dashboard_and_profile_require_login(self):
         dashboard_response = self.client.get("/dashboard")
@@ -3104,6 +3118,7 @@ Grade: A
             username="manjit",
             email="manjit@example.com",
         )
+        self.grant_role("manjit", "developer")
         self.login_user(identifier="manjit")
 
         toggle_response = self.client.post(

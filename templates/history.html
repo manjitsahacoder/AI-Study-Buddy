@@ -8,9 +8,9 @@
     {% include 'components/pwa_head.html' %}
 </head>
 
-<body>
+<body class="{{ theme_class }}">
 <button id="theme-toggle" onclick="toggleTheme()">
-    &#127769; Dark Mode
+    {% if theme_class %}&#9728;&#65039; Light Mode{% else %}&#127769; Dark Mode{% endif %}
 </button>
 
 <div class="learn-container history-container">

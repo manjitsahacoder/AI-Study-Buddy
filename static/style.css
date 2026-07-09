@@ -3506,10 +3506,12 @@ body.dashboard-page #theme-toggle {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 14px;
+    min-width: 0;
 }
 
 .performance-chart-card {
     min-width: 0;
+    max-width: 100%;
     min-height: 360px;
     padding: 18px;
 }
@@ -3520,7 +3522,9 @@ body.dashboard-page #theme-toggle {
 }
 
 .performance-chart-card canvas {
+    display: block;
     width: 100%;
+    max-width: 100%;
     max-height: 285px;
 }
 
@@ -3540,6 +3544,7 @@ body.dashboard-page #theme-toggle {
 }
 
 .performance-table-wrap {
+    max-width: 100%;
     overflow-x: auto;
 }
 
@@ -10252,6 +10257,34 @@ textarea[aria-invalid="true"] {
 
     .dashboard-shell {
         width: min(100% - 20px, 1120px);
+    }
+
+    .performance-page .dashboard-shell,
+    .performance-page .dashboard-main,
+    .performance-page .dashboard-panel,
+    .performance-page .dashboard-content-grid,
+    .performance-page .performance-content-grid,
+    .performance-page .performance-chart-grid,
+    .performance-page .performance-chart-card,
+    .performance-page .performance-table-wrap {
+        min-width: 0;
+        max-width: 100%;
+    }
+
+    .performance-page .performance-chart-card canvas {
+        width: 100% !important;
+        max-width: 100% !important;
+    }
+
+    .performance-page .performance-table {
+        min-width: 0;
+        width: 100%;
+    }
+
+    .performance-page .performance-table th,
+    .performance-page .performance-table td {
+        padding: 12px 10px;
+        overflow-wrap: anywhere;
     }
 
     .dashboard-topbar,

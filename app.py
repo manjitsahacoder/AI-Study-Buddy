@@ -350,12 +350,14 @@ ROLE_DEFINITIONS = {
     },
 }
 
-SPECIAL_ROLE_ACCOUNTS = {
-    ("manjit", "manjit"): "developer",
-    ("manjit saha", "manjit"): "developer",
-    ("manjit saha", "manjitsaha"): "developer",
-    ("gyanjyoti mahanta", "gyanjyoti"): "technical_support",
-    ("lakshya tuwani", "lakshya"): "qa_tester",
+TRUSTED_ROLE_ASSIGNMENTS = {
+    key.strip().lower(): role.strip().lower()
+    for key, role in (
+        assignment.split(":", 1)
+        for assignment in os.environ.get("TRUSTED_ROLE_ASSIGNMENTS", "").split(",")
+        if ":" in assignment
+    )
+    if key.strip() and role.strip().lower() in ROLE_DEFINITIONS and role.strip().lower() != "student"
 }
 
 WEBSITE_VERSION = os.environ.get("WEBSITE_VERSION", "AI Study Buddy 1.0")
@@ -965,16 +967,6 @@ def ensure_performance_indexes():
     db.session.commit()
 
 
-def normalize_account_name(name):
-    return re.sub(r"\s+", " ", (name or "").strip().lower())
-
-
-def resolve_account_role(full_name, username=""):
-    normalized_name = normalize_account_name(full_name)
-    normalized_username = normalize_account_name(username)
-    return SPECIAL_ROLE_ACCOUNTS.get((normalized_name, normalized_username), "student")
-
-
 def normalize_role(role):
     return role if role in ROLE_DEFINITIONS else "student"
 
@@ -996,9 +988,8 @@ def ensure_user_roles():
         {"role": "student"},
         synchronize_session=False,
     )
-    for (normalized_name, normalized_username), role in SPECIAL_ROLE_ACCOUNTS.items():
+    for normalized_username, role in TRUSTED_ROLE_ASSIGNMENTS.items():
         User.query.filter(
-            func.lower(User.full_name) == normalized_name,
             func.lower(User.username) == normalized_username,
             User.role != role,
         ).update({"role": role}, synchronize_session=False)
@@ -1169,7 +1160,6 @@ def update_profile_settings(user, form):
     user.username = form_data["username"]
     user.email = form_data["email"]
     user.student_class = form_data["student_class"]
-    user.role = resolve_account_role(user.full_name, user.username)
     db.session.commit()
     start_authenticated_session(user)
     g._current_user = user
@@ -1407,13 +1397,12 @@ except SQLAlchemyError:
 
 
 def create_user(full_name, username, email, student_class, password):
-    role = resolve_account_role(full_name, username)
     user = User(
         full_name=full_name,
         username=username,
         email=email.lower(),
         student_class=student_class,
-        role=role,
+        role="student",
         password_hash=generate_password_hash(password),
     )
     db.session.add(user)
@@ -1482,6 +1471,7 @@ def inject_current_user():
         role_started_at = auth_timing_start("RBAC / role resolution", detail="context_processor account role")
         account_role = account["role"] if account else None
         account_role_details = role_details(account_role) if account else None
+        theme_class = "dark-mode" if account and account.theme_preference == "dark" else ""
         auth_timing_end("RBAC / role resolution", role_started_at, detail=f"role={account_role or '-'}")
 
         context = {
@@ -1489,6 +1479,7 @@ def inject_current_user():
             "exhibition_mode": exhibition_mode,
             "is_developer": account_role == "developer",
             "role_details": role_details,
+            "theme_class": theme_class,
             "user": {
                 "id": account["id"],
                 "name": account["full_name"],
@@ -8361,62 +8352,16 @@ def login():
 
 @app.route("/forgot-password", methods=["GET", "POST"])
 def forgot_password():
-    if request.method == "GET":
-        session.pop("password_reset_user_id", None)
-        return render_template("forgot_password.html", identifier="", reset_step=False)
+    session.pop("password_reset_user_id", None)
 
-    action = request.form.get("action", "find_account")
-    if action == "find_account":
-        identifier = request.form.get("identifier", "").strip()
-        if not identifier:
-            flash("Please enter your username or email address.", "error")
-            return render_template("forgot_password.html", identifier=identifier, reset_step=False), 400
-
-        account = get_user_by_username_or_email(identifier)
-        if not account:
-            flash("We could not find an account with that username or email.", "error")
-            return render_template("forgot_password.html", identifier=identifier, reset_step=False), 404
-
-        # Future email verification or OTP checks can be inserted before enabling this step.
-        session["password_reset_user_id"] = account["id"]
-        return render_template(
-            "forgot_password.html",
-            identifier=identifier,
-            reset_step=True,
-            account=account,
+    if request.method == "POST":
+        flash(
+            "For your security, online password reset is temporarily unavailable for the exhibition build. "
+            "Please contact your teacher or the project team to verify your account in person.",
+            "info",
         )
 
-    if action == "reset_password":
-        reset_user_id = session.get("password_reset_user_id")
-        if not reset_user_id:
-            flash("Please confirm your username or email before resetting the password.", "error")
-            return render_template("forgot_password.html", identifier="", reset_step=False), 400
-
-        account = get_user_by_id(reset_user_id)
-        if not account:
-            session.pop("password_reset_user_id", None)
-            flash("We could not find that account. Please try again.", "error")
-            return render_template("forgot_password.html", identifier="", reset_step=False), 404
-
-        password = request.form.get("password", "")
-        confirm_password = request.form.get("confirm_password", "")
-        errors = validate_new_password(password, confirm_password)
-        if errors:
-            for error in errors:
-                flash(error, "error")
-            return render_template(
-                "forgot_password.html",
-                identifier=account["username"],
-                reset_step=True,
-                account=account,
-            ), 400
-
-        update_user_password(account["id"], password)
-        session.pop("password_reset_user_id", None)
-        flash("Your password has been reset successfully. Please log in with your new password.", "success")
-        return redirect(url_for("login"))
-
-    abort(400, description="Invalid password reset request.")
+    return render_template("forgot_password.html")
 
 
 @app.route("/logout")

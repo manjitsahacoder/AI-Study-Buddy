@@ -9,7 +9,7 @@
     {% include 'components/pwa_head.html' %}
 </head>
 
-<body class="dashboard-page {% if exhibition_mode %}exhibition-mode{% endif %}">
+<body class="dashboard-page performance-page {{ theme_class }} {% if exhibition_mode %}exhibition-mode{% endif %}">
 
 {% set active_page = 'performance' %}
 {% set overview = analytics.overview %}
@@ -35,7 +35,7 @@
             </div>
             <div class="dashboard-topbar-actions">
                 <button id="theme-toggle" onclick="toggleTheme()">
-                    &#127769; Dark Mode
+                    {% if theme_class %}&#9728;&#65039; Light Mode{% else %}&#127769; Dark Mode{% endif %}
                 </button>
                 <a class="button-link secondary-link" href="{{ url_for('dashboard') }}">Back to Dashboard</a>
                 {% include 'components/auth_nav.html' %}

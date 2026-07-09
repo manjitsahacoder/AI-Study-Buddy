@@ -341,7 +341,6 @@
         let messageIndex = 0;
         let navigationLocked = false;
         let suppressUnloadOverlayUntil = 0;
-        const debugPageLoader = true;
         const minimumOverlayPaintDelay = 180;
         const nativeLocationAssign = window.location.assign.bind(window.location);
         const nativeLocationReplace = window.location.replace.bind(window.location);
@@ -422,13 +421,6 @@
                 return "Dashboard Card";
             }
             return fallback || "Link";
-        }
-
-        function debugLog(trigger, detail) {
-            if (!debugPageLoader || !window.console || typeof window.console.info !== "function") {
-                return;
-            }
-            window.console.info(`Loader triggered from:\n${trigger}`, detail || "");
         }
 
         function progressMessagesFor(text) {
@@ -642,7 +634,6 @@
             lockNavigation();
             overlay.offsetHeight;
             overlay.classList.add("is-visible");
-            debugLog("Overlay Visible", label);
         }
 
         function afterOverlayPaint(callback) {
@@ -658,7 +649,6 @@
             }
 
             const label = `${linkLabel(link)} ${url.pathname}`;
-            debugLog(sourceType(link), url.href);
             showOverlay(contextualMessage(link, url), label);
         }
 
@@ -683,7 +673,6 @@
             }
 
             const context = contextualFormMessage(form, submitter, url);
-            debugLog("Form Submit", form.action || window.location.href);
             showOverlay(context.message, context.label);
             return true;
         }
@@ -747,7 +736,6 @@
             if (source && source.tagName === "A") {
                 showPageTransitionOverlay(source, url.href);
             } else {
-                debugLog(sourceType(source, "JavaScript Navigation"), url.href);
                 showOverlay(contextualMessage(source, url), `${sourceLabel(source)} ${url.pathname}`);
             }
 
