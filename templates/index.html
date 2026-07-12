@@ -8,7 +8,7 @@
     {% include 'components/pwa_head.html' %}
 </head>
 
-<body class="home-page {% if exhibition_mode %}exhibition-mode{% endif %}">
+<body class="home-page {% if exhibition_mode %}exhibition-mode{% endif %} {{ theme_class }}">
 <div class="page-illustrations home-illustrations" aria-hidden="true">
     <img class="bg-illustration bg-illustration-large bg-top-left" src="{{ url_for('static', filename='images/backgrounds/home-education.svg') }}" alt="">
     <img class="bg-illustration bg-illustration-medium bg-top-right" src="{{ url_for('static', filename='images/backgrounds/ai-brain-circuit.svg') }}" alt="">
@@ -53,12 +53,6 @@
         </div>
 
         <div class="header-actions">
-            <button id="theme-toggle" onclick="toggleTheme()" aria-label="Switch to dark mode">
-                <span class="toggle-switch" aria-hidden="true">
-                    <span class="toggle-knob"></span>
-                </span>
-                <span class="toggle-text">&#127769; Dark</span>
-            </button>
             {% include 'components/auth_nav.html' %}
         </div>
     </header>
@@ -537,21 +531,6 @@ function showLoader() {
         loaderMessageIndex = (loaderMessageIndex + 1) % loaderMessages.length;
         loaderMessage.innerHTML = loaderMessages[loaderMessageIndex];
     }, 2000);
-}
-
-function toggleTheme() {
-    document.body.classList.toggle("dark-mode");
-
-    let btn = document.getElementById("theme-toggle");
-    let label = btn.querySelector(".toggle-text");
-
-    if(document.body.classList.contains("dark-mode")){
-        label.innerHTML = "&#9728; Light";
-        btn.setAttribute("aria-label", "Switch to light mode");
-    } else {
-        label.innerHTML = "&#127769; Dark";
-        btn.setAttribute("aria-label", "Switch to dark mode");
-    }
 }
 </script>
 </body>

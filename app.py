@@ -1091,6 +1091,13 @@ def class_options():
     return [str(class_number) for class_number in range(6, 11)]
 
 
+def theme_preference_for_user(user):
+    if not user:
+        return "light"
+    theme = (user.theme_preference or "system").strip().lower()
+    return theme if theme in ALLOWED_THEME_PREFERENCES else "system"
+
+
 def unsupported_class_message():
     return SUPPORTED_CLASS_MESSAGE
 
@@ -1471,7 +1478,8 @@ def inject_current_user():
         role_started_at = auth_timing_start("RBAC / role resolution", detail="context_processor account role")
         account_role = account["role"] if account else None
         account_role_details = role_details(account_role) if account else None
-        theme_class = "dark-mode" if account and account.theme_preference == "dark" else ""
+        theme_preference = theme_preference_for_user(account)
+        theme_class = "dark-mode" if theme_preference == "dark" else ""
         auth_timing_end("RBAC / role resolution", role_started_at, detail=f"role={account_role or '-'}")
 
         context = {
@@ -1479,6 +1487,7 @@ def inject_current_user():
             "exhibition_mode": exhibition_mode,
             "is_developer": account_role == "developer",
             "role_details": role_details,
+            "theme_preference": theme_preference,
             "theme_class": theme_class,
             "user": {
                 "id": account["id"],

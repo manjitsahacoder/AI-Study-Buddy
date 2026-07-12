@@ -5,6 +5,36 @@
 <meta name="apple-mobile-web-app-title" content="Study Buddy">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/icon-192.png') }}">
+<script>
+(function() {
+    var preference = {{ theme_preference|default('light')|tojson }};
+    var mediaQuery = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+
+    function shouldUseDarkTheme() {
+        return preference === "dark" || (preference === "system" && mediaQuery && mediaQuery.matches);
+    }
+
+    function applyTheme() {
+        var useDarkTheme = shouldUseDarkTheme();
+        document.documentElement.classList.toggle("dark-mode", useDarkTheme);
+        document.documentElement.dataset.themePreference = preference;
+        if (document.body) {
+            document.body.classList.toggle("dark-mode", useDarkTheme);
+        }
+    }
+
+    applyTheme();
+    document.addEventListener("DOMContentLoaded", applyTheme);
+
+    if (mediaQuery && preference === "system") {
+        if (typeof mediaQuery.addEventListener === "function") {
+            mediaQuery.addEventListener("change", applyTheme);
+        } else if (typeof mediaQuery.addListener === "function") {
+            mediaQuery.addListener(applyTheme);
+        }
+    }
+})();
+</script>
 <link rel="prefetch" href="{{ url_for('static', filename='style.css') }}" as="style">
 <link rel="prefetch" href="{{ url_for('static', filename='motion.js', v='nav-loader-20260709') }}" as="script">
 <link rel="prefetch" href="{{ url_for('static', filename='js/visualization.js') }}" as="script">

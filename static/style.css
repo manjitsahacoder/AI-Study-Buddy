@@ -214,62 +214,6 @@ hr {
     margin: 32px 0;
 }
 
-#theme-toggle {
-    position: fixed;
-    top: 18px;
-    right: 18px;
-    z-index: 50;
-    min-width: auto;
-    padding: 10px 14px;
-    border: 1px solid rgba(255, 255, 255, 0.72);
-    border-radius: 999px;
-    color: var(--ink);
-    background: rgba(255, 253, 248, 0.82);
-    box-shadow: var(--soft-shadow);
-    backdrop-filter: blur(12px);
-}
-
-body.home-page #theme-toggle {
-    position: static;
-    gap: 10px;
-    min-height: 48px;
-    padding: 8px 14px 8px 9px;
-    border-color: rgba(49, 87, 213, 0.2);
-    color: var(--ink);
-    background: rgba(255, 253, 248, 0.86);
-    white-space: nowrap;
-    box-shadow: 0 10px 24px rgba(30, 40, 58, 0.11);
-}
-
-body.home-page #theme-toggle:hover {
-    color: var(--ink);
-    background: rgba(255, 253, 248, 0.96);
-}
-
-.toggle-switch {
-    display: inline-flex;
-    align-items: center;
-    width: 42px;
-    height: 24px;
-    padding: 3px;
-    border-radius: 999px;
-    background: rgba(49, 87, 213, 0.16);
-    transition: background 0.25s ease;
-}
-
-.toggle-knob {
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
-    background: #ffffff;
-    box-shadow: 0 3px 8px rgba(30, 40, 58, 0.22);
-    transition: transform 0.25s ease, background 0.25s ease;
-}
-
-.toggle-text {
-    font-size: 0.94rem;
-}
-
 .container,
 .learn-container {
     position: relative;
@@ -2313,11 +2257,6 @@ button:hover,
     flex-wrap: wrap;
     justify-content: flex-end;
     gap: 10px;
-}
-
-body.dashboard-page #theme-toggle {
-    position: static;
-    min-height: 48px;
 }
 
 .dashboard-stat-grid {
@@ -8398,6 +8337,7 @@ textarea:focus {
     }
 }
 
+html.dark-mode,
 .dark-mode {
     --color-primary: #86a1ff;
     --color-primary-hover: #a0b4ff;
@@ -8444,7 +8384,14 @@ textarea:focus {
         #10141f;
 }
 
-.dark-mode::before {
+html.dark-mode body {
+    background:
+        linear-gradient(180deg, rgba(16, 20, 31, 0.98), rgba(20, 25, 37, 0.98)),
+        #10141f;
+}
+
+body.dark-mode::before,
+html.dark-mode body::before {
     opacity: 0.18;
     background-image:
         linear-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px),
@@ -8458,7 +8405,6 @@ textarea:focus {
         drop-shadow(0 18px 28px rgba(0, 0, 0, 0.16));
 }
 
-.dark-mode #theme-toggle,
 .dark-mode .exhibition-header,
 .dark-mode .welcome-card,
 .dark-mode .hero-feature-badges span,
@@ -8532,15 +8478,6 @@ textarea:focus {
 .dark-mode .team-member {
     background: rgba(134, 161, 255, 0.1);
     border-color: rgba(134, 161, 255, 0.18);
-}
-
-.dark-mode .toggle-switch {
-    background: rgba(240, 179, 95, 0.3);
-}
-
-.dark-mode .toggle-knob {
-    transform: translateX(18px);
-    background: #ffe9b0;
 }
 
 .dark-mode .subtitle,
@@ -10536,14 +10473,6 @@ textarea[aria-invalid="true"] {
         left: 10px;
     }
 
-    #theme-toggle {
-        top: 10px;
-        right: 10px;
-        width: auto;
-        padding: 9px 12px;
-        font-size: 0.9rem;
-    }
-
     .container,
     .learn-container,
     .tutor-shell {
@@ -10620,10 +10549,6 @@ textarea[aria-invalid="true"] {
     .button-link,
     .back-btn {
         width: 100%;
-    }
-
-    body.home-page #theme-toggle {
-        width: auto;
     }
 
     .auth-header-row {
@@ -10901,7 +10826,6 @@ textarea[aria-invalid="true"] {
         background: #ffffff;
     }
 
-    body.mindmap-page #theme-toggle,
     body.mindmap-page .auth-page-actions,
     body.mindmap-page .mindmap-toolbar,
     body.mindmap-page footer {

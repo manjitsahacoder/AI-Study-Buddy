@@ -550,7 +550,6 @@
                 element &&
                 element.closest(
                     [
-                        "#theme-toggle",
                         "[data-page-loader='false']",
                         "[data-no-page-loader]",
                         "[data-developer-users-link]",

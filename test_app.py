@@ -5442,6 +5442,32 @@ Q5. What is question five?
         new_login = self.login_user(password="newpassword123")
         self.assertEqual(new_login.status_code, 302)
 
+    def test_settings_appearance_controls_theme_across_pages(self):
+        self.register_user()
+        self.login_user()
+
+        response = self.client.post(
+            "/settings",
+            data={
+                "action": "appearance",
+                "theme_preference": "dark",
+            },
+            follow_redirects=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Settings updated successfully.", response.get_data(as_text=True))
+        with app_module.app.app_context():
+            row = User.query.filter_by(username="asha").first()
+            self.assertEqual(row.theme_preference, "dark")
+
+        dashboard_response = self.client.get("/dashboard")
+        self.assertEqual(dashboard_response.status_code, 200)
+        dashboard_page = dashboard_response.get_data(as_text=True)
+        self.assertIn('<body class="dashboard-page dark-mode', dashboard_page)
+        self.assertNotIn("theme-toggle", dashboard_page)
+        self.assertNotIn("toggleTheme()", dashboard_page)
+
     @patch.object(app_module.model, "generate_content")
     def test_settings_preferences_are_saved_and_used_for_future_ai_requests(self, generate_content):
         generate_content.return_value = MockResponse(
