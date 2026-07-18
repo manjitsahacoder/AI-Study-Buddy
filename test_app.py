@@ -15,6 +15,7 @@ import app as app_module
 from database import db
 from gemini_service import classify_gemini_exception
 from models import (
+    Chapter,
     DownloadedFile,
     DiagramLibrary,
     FavouriteNote,
@@ -29,10 +30,12 @@ from models import (
     QuizHistory,
     RevisionSheet,
     StudyPlanProgress,
+    Textbook,
     TutorLesson,
     TutorMessage,
     User,
 )
+from textbook_catalog import seed_cbse_textbook_catalog
 from diagram_library.metadata import DiagramCandidate, reusable_license
 from diagram_library.lookup import candidate_language_category, rank_diagram_candidates
 from diagram_library.providers import NcertProvider, ProviderRegistry
@@ -70,6 +73,7 @@ class RouteTests(unittest.TestCase):
             db.session.remove()
             db.drop_all()
             db.create_all()
+            app_module.clear_smart_search_cache()
         app_module.latest_report = {}
         self.client = app_module.app.test_client()
         self.questions = [
@@ -216,6 +220,334 @@ class RouteTests(unittest.TestCase):
         self.assertNotIn(">Class 11<", page)
         self.assertNotIn(">Class 12<", page)
 
+    def test_seed_cbse_textbook_catalog_creates_current_english_books(self):
+        with app_module.app.app_context():
+            seed_cbse_textbook_catalog(db.session)
+
+            class_six = Textbook.query.filter_by(
+                board="CBSE",
+                subject="English",
+                class_level=6,
+                name="Poorvi",
+            ).first()
+            kaveri = Textbook.query.filter_by(
+                board="CBSE",
+                subject="English",
+                class_level=9,
+                name="Kaveri",
+            ).first()
+            first_flight = Textbook.query.filter_by(
+                board="CBSE",
+                subject="English",
+                class_level=10,
+                name="First Flight",
+            ).first()
+
+            self.assertIsNotNone(class_six)
+            self.assertIsNotNone(kaveri)
+            self.assertIsNotNone(first_flight)
+            self.assertEqual(Chapter.query.filter_by(textbook_id=kaveri.id).count(), 16)
+            self.assertIsNotNone(
+                Chapter.query.filter_by(
+                    textbook_id=first_flight.id,
+                    title="A Letter to God",
+                ).first()
+            )
+
+    def test_textbook_search_api_filters_and_ranks_matches(self):
+        with app_module.app.app_context():
+            db.session.add_all(
+                [
+                    Textbook(
+                        board="CBSE",
+                        subject="English",
+                        class_level=9,
+                        name="My Beehive Reader",
+                        normalized_name="my beehive reader",
+                        is_active=True,
+                    ),
+                    Textbook(
+                        board="CBSE",
+                        subject="English",
+                        class_level=9,
+                        name="Beehive",
+                        normalized_name="beehive",
+                        is_active=True,
+                    ),
+                    Textbook(
+                        board="CBSE",
+                        subject="English",
+                        class_level=9,
+                        name="Beehive Workbook",
+                        normalized_name="beehive workbook",
+                        is_active=True,
+                    ),
+                ]
+            )
+            db.session.commit()
+
+        response = self.client.get("/api/textbooks/search?q=beehive&class=9&subject=English")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(
+            [item["name"] for item in payload[:3]],
+            ["Beehive", "Beehive Workbook", "My Beehive Reader"],
+        )
+        self.assertEqual(payload[0]["board"], "CBSE")
+        self.assertEqual(payload[0]["class"], 9)
+
+    def test_textbook_info_endpoint_returns_metadata(self):
+        with app_module.app.app_context():
+            seed_cbse_textbook_catalog(db.session)
+            textbook = Textbook.query.filter_by(class_level=10, name="First Flight").first()
+            textbook_id = textbook.id
+            chapter_count = Chapter.query.filter_by(textbook_id=textbook_id).count()
+
+        response = self.client.get(f"/api/textbooks/{textbook_id}")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["id"], textbook_id)
+        self.assertEqual(payload["name"], "First Flight")
+        self.assertEqual(payload["board"], "CBSE")
+        self.assertEqual(payload["class"], 10)
+        self.assertEqual(payload["subject"], "English")
+        self.assertEqual(payload["chapter_count"], chapter_count)
+        self.assertTrue(payload["available"])
+
+    def test_textbook_info_endpoint_returns_404_for_missing_textbook(self):
+        response = self.client.get("/api/textbooks/9999")
+
+        self.assertEqual(response.status_code, 404)
+        self.assertFalse(response.get_json()["available"])
+
+    def test_textbook_search_database_hit_skips_gemini(self):
+        with app_module.app.app_context():
+            seed_cbse_textbook_catalog(db.session)
+
+        with patch("app.gemini_request") as gemini_request:
+            response = self.client.get("/api/textbooks/search?q=Kaveri&class=9&subject=English")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload[0]["name"], "Kaveri")
+        self.assertFalse(payload[0].get("ai_suggestion", False))
+        gemini_request.assert_not_called()
+
+    def test_textbook_search_database_miss_calls_gemini_for_spelling_correction(self):
+        with app_module.app.app_context():
+            seed_cbse_textbook_catalog(db.session)
+
+        with patch("app.gemini_request") as gemini_request:
+            gemini_request.return_value = MockResponse(
+                json.dumps(
+                    {
+                        "suggestions": [
+                            {"name": "First Flight", "confidence": 0.96},
+                        ]
+                    }
+                )
+            )
+            response = self.client.get("/api/textbooks/search?q=First%20Flite&class=10&subject=English")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload[0]["name"], "First Flight")
+        self.assertTrue(payload[0]["ai_suggestion"])
+        self.assertFalse(payload[0]["unavailable"])
+        gemini_request.assert_called_once()
+
+    def test_textbook_search_gemini_unavailable_returns_empty_suggestions(self):
+        with app_module.app.app_context():
+            seed_cbse_textbook_catalog(db.session)
+
+        with patch("app.gemini_request", side_effect=Exception("Gemini unavailable")) as gemini_request:
+            response = self.client.get("/api/textbooks/search?q=Nopebook&class=10&subject=English")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), [])
+        gemini_request.assert_called_once()
+
+    def test_textbook_search_malformed_gemini_json_returns_empty_suggestions(self):
+        with app_module.app.app_context():
+            seed_cbse_textbook_catalog(db.session)
+
+        with patch("app.gemini_request") as gemini_request:
+            gemini_request.return_value = MockResponse("First Flight")
+            response = self.client.get("/api/textbooks/search?q=Furst%20Flyt&class=10&subject=English")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json(), [])
+        gemini_request.assert_called_once()
+
+    def test_textbook_search_reuses_gemini_cache_for_identical_miss(self):
+        with app_module.app.app_context():
+            seed_cbse_textbook_catalog(db.session)
+
+        with patch("app.gemini_request") as gemini_request:
+            gemini_request.return_value = MockResponse(
+                json.dumps(
+                    {
+                        "suggestions": [
+                            {"name": "Poorvi", "confidence": 0.97},
+                        ]
+                    }
+                )
+            )
+            first_response = self.client.get("/api/textbooks/search?q=Poorvee&class=6&subject=English")
+            second_response = self.client.get("/api/textbooks/search?q=Poorvee&class=6&subject=English")
+
+        self.assertEqual(first_response.status_code, 200)
+        self.assertEqual(second_response.status_code, 200)
+        self.assertEqual(first_response.get_json(), second_response.get_json())
+        self.assertEqual(first_response.get_json()[0]["name"], "Poorvi")
+        gemini_request.assert_called_once()
+
+    def test_textbook_search_ai_suggestion_not_in_database_is_unavailable(self):
+        with app_module.app.app_context():
+            seed_cbse_textbook_catalog(db.session)
+
+        with patch("app.gemini_request") as gemini_request:
+            gemini_request.return_value = MockResponse(
+                json.dumps(
+                    {
+                        "suggestions": [
+                            {"name": "Imaginary Reader", "confidence": 0.95},
+                        ]
+                    }
+                )
+            )
+            response = self.client.get("/api/textbooks/search?q=Imaginary&class=10&subject=English")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload[0]["name"], "Imaginary Reader")
+        self.assertTrue(payload[0]["ai_suggestion"])
+        self.assertTrue(payload[0]["unavailable"])
+
+    def test_chapter_search_api_returns_case_insensitive_suggestions(self):
+        with app_module.app.app_context():
+            seed_cbse_textbook_catalog(db.session)
+            textbook = Textbook.query.filter_by(
+                board="CBSE",
+                subject="English",
+                class_level=10,
+                name="First Flight",
+            ).first()
+            textbook_id = textbook.id
+
+        response = self.client.get(f"/api/chapters/search?textbook_id={textbook_id}&q=god")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertLessEqual(len(payload), 10)
+        self.assertEqual(payload[0]["title"], "A Letter to God")
+        self.assertEqual(payload[0]["textbook_id"], textbook_id)
+
+    def test_empty_chapter_search_returns_popular_chapters_without_gemini(self):
+        with app_module.app.app_context():
+            seed_cbse_textbook_catalog(db.session)
+            textbook = Textbook.query.filter_by(class_level=10, name="First Flight").first()
+            textbook_id = textbook.id
+
+        with patch("app.gemini_request") as gemini_request:
+            response = self.client.get(f"/api/chapters/search?textbook_id={textbook_id}&q=")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertLessEqual(len(payload), 12)
+        self.assertEqual(payload[0]["title"], "A Letter to God")
+        self.assertEqual(payload[0]["chapter_number"], 1)
+        gemini_request.assert_not_called()
+
+    def test_chapter_search_database_hit_skips_gemini(self):
+        with app_module.app.app_context():
+            seed_cbse_textbook_catalog(db.session)
+            textbook = Textbook.query.filter_by(class_level=10, name="First Flight").first()
+            textbook_id = textbook.id
+
+        with patch("app.gemini_request") as gemini_request:
+            response = self.client.get(f"/api/chapters/search?textbook_id={textbook_id}&q=letter")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()[0]["title"], "A Letter to God")
+        gemini_request.assert_not_called()
+
+    def test_chapter_search_database_miss_calls_gemini_for_spelling_correction(self):
+        with app_module.app.app_context():
+            seed_cbse_textbook_catalog(db.session)
+            textbook = Textbook.query.filter_by(class_level=10, name="First Flight").first()
+            textbook_id = textbook.id
+
+        with patch("app.gemini_request") as gemini_request:
+            gemini_request.return_value = MockResponse(
+                json.dumps(
+                    {
+                        "suggestions": [
+                            {"title": "A Letter to God", "confidence": 0.96},
+                        ]
+                    }
+                )
+            )
+            response = self.client.get(f"/api/chapters/search?textbook_id={textbook_id}&q=letrr")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload[0]["title"], "A Letter to God")
+        self.assertTrue(payload[0]["ai_suggestion"])
+        self.assertFalse(payload[0]["unavailable"])
+        gemini_request.assert_called_once()
+
+    def test_home_renders_ai_suggestion_badge_and_unavailable_message(self):
+        response = self.client.get("/")
+
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        self.assertIn("AI Suggestion", page)
+        self.assertIn("This textbook is not yet available.", page)
+
+    def test_home_renders_textbook_and_chapter_information_components(self):
+        response = self.client.get("/")
+
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        self.assertIn("data-textbook-info-card", page)
+        self.assertIn("data-chapter-info-card", page)
+        self.assertIn("data-popular-chapters-panel", page)
+        self.assertIn("Popular Chapters", page)
+        self.assertIn("Ready to Generate", page)
+
+    def test_home_script_supports_chapter_filtering_selection_and_clear(self):
+        response = self.client.get("/")
+
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        self.assertIn("function renderPopularChapters(items, filterText)", page)
+        self.assertIn("item.title.toLowerCase().includes(normalizedFilter)", page)
+        self.assertIn("selectChapter(item)", page)
+        self.assertIn("hideTextbookInfoCard()", page)
+        self.assertIn("hidePopularChapters()", page)
+
+    def test_home_script_toggles_generate_button_state(self):
+        response = self.client.get("/")
+
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        self.assertIn("data-start-learning-button", page)
+        self.assertIn("function setStartButtonState()", page)
+        self.assertIn("startButton.disabled = Boolean(locked)", page)
+        self.assertIn('startButton.setAttribute("aria-disabled"', page)
+
+    def test_styles_include_responsive_selection_card_rendering(self):
+        css_path = Path(app_module.app.static_folder) / "style.css"
+        styles = css_path.read_text(encoding="utf-8")
+
+        self.assertIn(".selection-info-card", styles)
+        self.assertIn(".popular-chapter-button", styles)
+        self.assertIn("@media (max-width: 560px)", styles)
+        self.assertIn(".dark-mode .selection-info-card", styles)
+
     def test_registration_rejects_unsupported_class(self):
         response = self.register_user(extra_data={"student_class": "11"})
 
@@ -241,6 +573,140 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn(app_module.SUPPORTED_CLASS_MESSAGE, response.get_data(as_text=True))
         generate_content.assert_not_called()
+
+    @patch.object(app_module.model, "generate_content")
+    def test_learn_rejects_invalid_selected_textbook_before_ai_generation(self, generate_content):
+        response = self.client.post(
+            "/learn",
+            data={
+                "name": "Asha",
+                "student_class": "9",
+                "subject": "English",
+                "book_name": "Kaveri",
+                "topic": "How I Taught My Grandmother to Read",
+                "textbook_id": "9999",
+                "chapter_id": "1",
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Selected textbook was not found.", response.get_data(as_text=True))
+        generate_content.assert_not_called()
+
+    @patch.object(app_module.model, "generate_content")
+    def test_learn_rejects_chapter_from_different_textbook_before_ai_generation(self, generate_content):
+        with app_module.app.app_context():
+            seed_cbse_textbook_catalog(db.session)
+            kaveri = Textbook.query.filter_by(class_level=9, name="Kaveri").first()
+            first_flight = Textbook.query.filter_by(class_level=10, name="First Flight").first()
+            first_flight_chapter = Chapter.query.filter_by(textbook_id=first_flight.id).first()
+            kaveri_id = kaveri.id
+            first_flight_chapter_id = first_flight_chapter.id
+
+        response = self.client.post(
+            "/learn",
+            data={
+                "name": "Asha",
+                "student_class": "9",
+                "subject": "English",
+                "book_name": "Kaveri",
+                "topic": "A Letter to God",
+                "textbook_id": str(kaveri_id),
+                "chapter_id": str(first_flight_chapter_id),
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Selected chapter does not belong", response.get_data(as_text=True))
+        generate_content.assert_not_called()
+
+    @patch.object(app_module.model, "generate_content")
+    def test_learn_prompt_and_history_include_selected_textbook_context(self, generate_content):
+        self.register_user(extra_data={"student_class": "10"})
+        self.login_user()
+        generate_content.return_value = MockResponse(
+            """# A Letter to God
+Lencho writes a letter to God.
+
+## Quick Revision
+- Lencho hopes for help.
+
+## Visualization Decision JSON
+{"visualization_required": false, "reason": "This lesson is primarily text based."}
+
+## Diagram JSON
+{"template":"generic","title":"A Letter to God","elements":{},"labels":[],"type":"none","nodes":[],"connections":[],"reason":"Text lesson.","confidence":0.1}
+
+## Questions
+Q1. What does Lencho hope for?
+
+Q2. Why does Lencho write a letter?
+
+Q3. Who reads the letter?
+
+Q4. What is Lencho's reaction?
+
+Q5. What is the main theme?
+"""
+        )
+        with app_module.app.app_context():
+            seed_cbse_textbook_catalog(db.session)
+            textbook = Textbook.query.filter_by(class_level=10, name="First Flight").first()
+            chapter = Chapter.query.filter_by(textbook_id=textbook.id, title="A Letter to God").first()
+            textbook_id = textbook.id
+            chapter_id = chapter.id
+
+        response = self.client.post(
+            "/learn",
+            data={
+                "name": "Asha",
+                "student_class": "10",
+                "subject": "English",
+                "book_name": "First Flight",
+                "topic": "A Letter to God",
+                "textbook_id": str(textbook_id),
+                "chapter_id": str(chapter_id),
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        prompt = generate_content.call_args.args[0]
+        self.assertIn("Class: 10", prompt)
+        self.assertIn("Board: CBSE", prompt)
+        self.assertIn("Subject: English", prompt)
+        self.assertIn("Textbook: First Flight", prompt)
+        self.assertIn("Chapter: A Letter to God", prompt)
+        self.assertIn("Treat the selected textbook as authoritative.", prompt)
+        self.assertIn("Do not mix content from books with similar chapter names.", prompt)
+        self.assertIn("Follow NCERT/CBSE terminology.", prompt)
+        self.assertIn("Story summary", prompt)
+        self.assertIn("Main characters", prompt)
+        self.assertIn("Literary devices", prompt)
+        self.assertIn("Difficult vocabulary with meanings", prompt)
+        self.assertIn("Create exactly 5 teacher-style quiz questions from the selected chapter", prompt)
+        with app_module.app.app_context():
+            lesson = LearningHistory.query.first()
+            self.assertEqual(lesson.board, "CBSE")
+            self.assertEqual(lesson.subject, "English")
+            self.assertEqual(lesson.book_name, "First Flight")
+            self.assertEqual(lesson.topic, "A Letter to God")
+            self.assertEqual(lesson.textbook_id, textbook_id)
+            self.assertEqual(lesson.chapter_id, chapter_id)
+
+    def test_legacy_lesson_prompt_context_falls_back_without_textbook_ids(self):
+        legacy_lesson = {
+            "subject": "Science",
+            "book_name": "",
+            "topic": "Photosynthesis",
+            "notes": "Plants make food.",
+        }
+
+        prompt_context = app_module.lesson_textbook_context_for_prompt(legacy_lesson, "8")
+
+        self.assertIn("Board: CBSE", prompt_context)
+        self.assertIn("Subject: Science", prompt_context)
+        self.assertIn("Textbook: N/A", prompt_context)
+        self.assertIn("Chapter: Photosynthesis", prompt_context)
 
     @patch.object(app_module.model, "generate_content")
     def test_saved_ai_tools_reject_legacy_unsupported_account_class(self, generate_content):
@@ -555,7 +1021,9 @@ She said, "I am tired."
             data={
                 "name": "Asha",
                 "student_class": "8",
+                "board": "CBSE",
                 "subject": "Biology",
+                "book_name": "NCERT",
                 "topic": "Plant Life",
                 "notes": "# Plant Notes\nPlants use sunlight.\n\n## Quick Revision\n- Plants need light.",
                 "diagram_image": "data:image/png;base64,abc",
@@ -571,7 +1039,10 @@ She said, "I am tired."
         notes = response.get_data(as_text=True)
         self.assertIn("Student: Asha", notes)
         self.assertIn("Class: 8", notes)
+        self.assertIn("Board: CBSE", notes)
         self.assertIn("Subject: Biology", notes)
+        self.assertIn("Textbook: NCERT", notes)
+        self.assertIn("Chapter: Plant Life", notes)
         self.assertIn("<h1>Plant Notes</h1>", notes)
         self.assertIn("<h2>Quick Revision</h2>", notes)
         self.assertIn("<li>Plants need light.</li>", notes)
@@ -3775,6 +4246,11 @@ Q5. What is question five?
         self.assertIn("Continue learning with the AI Memory Challenge.", page)
         self.assertIn(f'href="/memory-challenge/{lesson_id}?next=/flashcards/{lesson_id}"', page)
         generate_content.assert_called_once()
+        prompt = generate_content.call_args.args[0]
+        self.assertIn("Board: CBSE", prompt)
+        self.assertIn("Textbook: NCERT", prompt)
+        self.assertIn("Chapter: Photosynthesis", prompt)
+        self.assertIn("Use the selected textbook and chapter context", prompt)
         with app_module.app.app_context():
             flashcard_set = FlashcardSet.query.first()
             self.assertIsNotNone(flashcard_set)
@@ -4167,6 +4643,7 @@ Q5. What is question five?
         with app_module.app.app_context():
             lesson = LearningHistory(
                 user_id=1,
+                board="CBSE",
                 subject="Science",
                 book_name="NCERT",
                 topic="Photosynthesis",
@@ -4256,9 +4733,14 @@ Q5. What is question five?
         self.assertIn("reply_html", second.get_json())
         prompt = generate_content.call_args.args[0]
         self.assertIn("Class: 8", prompt)
+        self.assertIn("Board: CBSE", prompt)
         self.assertIn("Subject: Science", prompt)
+        self.assertIn("Textbook: NCERT", prompt)
         self.assertIn("Book: NCERT", prompt)
+        self.assertIn("Chapter: Photosynthesis", prompt)
         self.assertIn("Current chapter or lesson: Photosynthesis", prompt)
+        self.assertIn("Treat the selected textbook as authoritative", prompt)
+        self.assertIn("Answer based on the selected chapter whenever possible.", prompt)
         self.assertIn("Chlorophyll helps leaves absorb sunlight.", prompt)
         self.assertIn("Student: Explain chlorophyll.", prompt)
         self.assertIn("AI Tutor: Chlorophyll is the green pigment", prompt)
@@ -4508,6 +4990,9 @@ Q5. What is question five?
         self.assertTrue(second_response.get_json()["cached"])
         self.assertEqual(generate_content.call_count, 1)
         prompt = generate_content.call_args.args[0]
+        self.assertIn("Board: CBSE", prompt)
+        self.assertIn("Textbook: NCERT", prompt)
+        self.assertIn("Chapter: Mitosis", prompt)
         self.assertIn("Use simple NCERT textbook language.", prompt)
         self.assertIn("Do not use OCR", prompt)
         self.assertIn("Diagram metadata", prompt)
@@ -4776,6 +5261,34 @@ Q5. What is question five?
         delete_response = self.client.post("/learning-history/1/delete", follow_redirects=True)
         self.assertEqual(delete_response.status_code, 200)
         self.assertIn("No saved lessons yet", delete_response.get_data(as_text=True))
+
+    def test_learning_history_pdf_contains_textbook_metadata(self):
+        self.register_user(extra_data={"student_class": "10"})
+        self.login_user()
+        with app_module.app.app_context():
+            seed_cbse_textbook_catalog(db.session)
+            textbook = Textbook.query.filter_by(class_level=10, name="First Flight").first()
+            chapter = Chapter.query.filter_by(textbook_id=textbook.id, title="A Letter to God").first()
+            lesson_id = app_module.save_learning_history(
+                1,
+                "English",
+                textbook.name,
+                chapter.title,
+                "# A Letter to God\nLencho writes a letter.",
+                {"available": False},
+                self.questions,
+                board=textbook.board,
+                textbook_id=textbook.id,
+                chapter_id=chapter.id,
+            )
+
+        response = self.client.get(f"/learning-history/{lesson_id}/download")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.mimetype, "application/pdf")
+        self.assertIn(b"Board: CBSE", response.data)
+        self.assertIn(b"Textbook: First Flight", response.data)
+        self.assertIn(b"Chapter: A Letter to God", response.data)
 
     @patch.object(app_module.model, "generate_content")
     def test_dashboard_topics_studied_counts_learning_history(self, generate_content):

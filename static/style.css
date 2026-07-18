@@ -1601,6 +1601,184 @@ textarea:focus {
     transform: translateY(-1px);
 }
 
+.autocomplete-menu {
+    position: relative;
+    z-index: 20;
+    display: grid;
+    gap: 4px;
+    max-height: 240px;
+    overflow-y: auto;
+    padding: 6px;
+    border: 1px solid rgba(49, 87, 213, 0.16);
+    border-radius: 8px;
+    background: #ffffff;
+    box-shadow: 0 14px 30px rgba(30, 40, 58, 0.14);
+}
+
+.autocomplete-menu[hidden] {
+    display: none;
+}
+
+.autocomplete-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    justify-content: flex-start;
+    min-height: 40px;
+    padding: 9px 10px;
+    border-radius: 6px;
+    color: var(--ink);
+    background: transparent;
+    box-shadow: none;
+    font-size: 0.92rem;
+    font-weight: 700;
+    text-align: left;
+}
+
+.autocomplete-option > span:first-child {
+    flex: 1;
+    min-width: 0;
+}
+
+.autocomplete-ai-badge {
+    flex: 0 0 auto;
+    padding: 3px 6px;
+    border-radius: 999px;
+    color: #7c3aed;
+    background: rgba(124, 58, 237, 0.1);
+    font-size: 0.68rem;
+    font-weight: 800;
+}
+
+.autocomplete-option:hover,
+.autocomplete-option[aria-selected="true"] {
+    color: var(--primary);
+    background: rgba(49, 87, 213, 0.08);
+    box-shadow: none;
+    transform: none;
+}
+
+.autocomplete-status {
+    min-height: 18px;
+    margin: 0;
+    color: #b54708;
+    font-size: 0.82rem;
+    font-weight: 700;
+}
+
+.selection-info-card,
+.popular-chapters-panel {
+    padding: 10px;
+    border: 1px solid rgba(49, 87, 213, 0.14);
+    border-radius: 8px;
+    background: rgba(49, 87, 213, 0.05);
+}
+
+.selection-info-card[hidden],
+.popular-chapters-panel[hidden] {
+    display: none;
+}
+
+.selection-card-title {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-bottom: 8px;
+    color: var(--ink);
+    font-size: 0.94rem;
+}
+
+.selection-info-card dl {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px 10px;
+    margin: 0;
+}
+
+.selection-info-card dl div {
+    min-width: 0;
+}
+
+.selection-info-card dt,
+.popular-chapters-heading small {
+    color: var(--muted);
+    font-size: 0.7rem;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+
+.selection-info-card dd {
+    margin: 2px 0 0;
+    color: var(--ink);
+    font-size: 0.86rem;
+    font-weight: 800;
+}
+
+.selection-status-ready {
+    color: #16834a !important;
+}
+
+.popular-chapters-heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 8px;
+    color: var(--ink);
+    font-size: 0.86rem;
+    font-weight: 900;
+}
+
+.popular-chapters-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+}
+
+.popular-chapter-button {
+    justify-content: flex-start;
+    min-height: 36px;
+    padding: 8px 10px;
+    border: 1px solid rgba(49, 87, 213, 0.14);
+    border-radius: 8px;
+    color: var(--ink);
+    background: rgba(255, 255, 255, 0.72);
+    box-shadow: none;
+    font-size: 0.84rem;
+    font-weight: 800;
+}
+
+.popular-chapter-button:hover,
+.popular-chapter-button:focus-visible {
+    color: var(--primary);
+    background: rgba(49, 87, 213, 0.08);
+    box-shadow: none;
+    transform: none;
+}
+
+.selection-loading {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.84rem;
+    font-weight: 700;
+}
+
+.start-learning-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.62;
+    transform: none;
+}
+
+@media (max-width: 560px) {
+    .selection-info-card dl {
+        grid-template-columns: 1fr;
+    }
+
+    .popular-chapter-button {
+        width: 100%;
+    }
+}
+
 button,
 .button-link,
 .back-btn {
@@ -8560,6 +8738,59 @@ html.dark-mode body::before {
     color: var(--ink);
     background: #111827;
     border-color: var(--line);
+}
+
+.dark-mode .autocomplete-menu {
+    background: #111827;
+    border-color: var(--line);
+    box-shadow: 0 16px 32px rgba(0, 0, 0, 0.28);
+}
+
+.dark-mode .autocomplete-option {
+    color: var(--ink);
+}
+
+.dark-mode .autocomplete-option:hover,
+.dark-mode .autocomplete-option[aria-selected="true"] {
+    color: #b9c8ff;
+    background: rgba(134, 161, 255, 0.12);
+}
+
+.dark-mode .autocomplete-ai-badge {
+    color: #dbc2ff;
+    background: rgba(163, 104, 255, 0.18);
+}
+
+.dark-mode .autocomplete-status {
+    color: #f7c873;
+}
+
+.dark-mode .selection-info-card,
+.dark-mode .popular-chapters-panel {
+    background: rgba(134, 161, 255, 0.1);
+    border-color: rgba(134, 161, 255, 0.18);
+}
+
+.dark-mode .selection-card-title,
+.dark-mode .selection-info-card dd,
+.dark-mode .popular-chapters-heading {
+    color: var(--ink);
+}
+
+.dark-mode .selection-status-ready {
+    color: #7ee2a8 !important;
+}
+
+.dark-mode .popular-chapter-button {
+    color: var(--ink);
+    background: rgba(17, 24, 39, 0.72);
+    border-color: var(--line);
+}
+
+.dark-mode .popular-chapter-button:hover,
+.dark-mode .popular-chapter-button:focus-visible {
+    color: #b9c8ff;
+    background: rgba(134, 161, 255, 0.12);
 }
 
 .dark-mode .diagram-data-list span {

@@ -42,6 +42,7 @@
         <div class="lesson-info-strip" aria-label="Lesson information">
         <span><strong>Student</strong> {{ name }}</span>
         <span><strong>Class</strong> {{ student_class }}</span>
+        <span><strong>Board</strong> {{ board|default('CBSE', true) }}</span>
         <span><strong>Subject</strong> {{ subject }}</span>
         {% if book_name %}
         <span><strong>Book</strong> {{ book_name }}</span>
@@ -205,6 +206,7 @@
             <form action="{{ url_for('download_notes') }}" method="POST" class="learning-action-card learning-card-download">
                 <input type="hidden" name="name" value="{{ name }}">
                 <input type="hidden" name="student_class" value="{{ student_class }}">
+                <input type="hidden" name="board" value="{{ board|default('CBSE', true) }}">
                 <input type="hidden" name="subject" value="{{ subject }}">
                 <input type="hidden" name="book_name" value="{{ book_name }}">
                 <input type="hidden" name="topic" value="{{ topic }}">

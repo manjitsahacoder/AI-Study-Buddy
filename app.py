@@ -68,6 +68,7 @@ from performance_monitor import (
     timing_summary,
 )
 from models import (
+    Chapter,
     DiagramLibrary,
     DownloadedFile,
     FavouriteNote,
@@ -82,10 +83,12 @@ from models import (
     RevisionSheet,
     StudyPlanProgress,
     SupportFeedback,
+    Textbook,
     TutorLesson,
     TutorMessage,
     User,
 )
+from textbook_catalog import normalize_catalog_value, seed_cbse_textbook_catalog
 from diagram_library import diagram_record_to_view, get_or_create_diagram
 from tutor_repository import (
     get_or_create_tutor_lesson,
@@ -122,6 +125,11 @@ genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel("gemini-2.5-flash")
 
 _diagram_hydration_locks = defaultdict(threading.Lock)
+SMART_SEARCH_CACHE_TTL_SECONDS = 30 * 60
+SMART_SEARCH_GEMINI_TIMEOUT_SECONDS = 8
+SMART_SEARCH_MIN_CONFIDENCE = 0.78
+DEFAULT_BOARD = "CBSE"
+_smart_search_cache = {}
 
 
 AUTH_TIMING_ENABLED = performance_timing_enabled()
@@ -319,6 +327,7 @@ def initialize_database():
         ensure_learning_history_schema_compatibility()
         ensure_favourite_notes_schema_compatibility()
         ensure_performance_indexes()
+        seed_cbse_textbook_catalog(db.session)
         ensure_user_roles()
         app.logger.info("Database tables are ready.")
 
@@ -826,6 +835,18 @@ MEMORY_CHALLENGE_COLUMNS = {
 
 
 LEARNING_HISTORY_VISUALIZATION_COLUMNS = {
+    "board": {
+        "sqlite": "TEXT NOT NULL DEFAULT 'CBSE'",
+        "postgresql": "TEXT NOT NULL DEFAULT 'CBSE'",
+    },
+    "textbook_id": {
+        "sqlite": "INTEGER",
+        "postgresql": "INTEGER",
+    },
+    "chapter_id": {
+        "sqlite": "INTEGER",
+        "postgresql": "INTEGER",
+    },
     "diagram_explanation": {
         "sqlite": "TEXT",
         "postgresql": "TEXT",
@@ -910,6 +931,7 @@ def ensure_learning_history_schema_compatibility():
                 db.session.execute(
                     text(f"ALTER TABLE learning_history ADD COLUMN {column_name} {definitions['sqlite']}")
                 )
+        db.session.execute(text("UPDATE learning_history SET board = 'CBSE' WHERE board IS NULL OR board = ''"))
         db.session.commit()
         return
 
@@ -921,6 +943,7 @@ def ensure_learning_history_schema_compatibility():
                     f"{definitions['postgresql']}"
                 )
             )
+        db.session.execute(text("UPDATE learning_history SET board = 'CBSE' WHERE board IS NULL OR board = ''"))
         db.session.commit()
 
 
@@ -943,6 +966,10 @@ def ensure_favourite_notes_schema_compatibility():
 
 def ensure_performance_indexes():
     index_statements = (
+        "CREATE INDEX IF NOT EXISTS ix_textbooks_board_subject_class ON textbooks (board, subject, class_level)",
+        "CREATE INDEX IF NOT EXISTS ix_textbooks_normalized_name ON textbooks (normalized_name)",
+        "CREATE INDEX IF NOT EXISTS ix_chapters_textbook_id ON chapters (textbook_id)",
+        "CREATE INDEX IF NOT EXISTS ix_chapters_normalized_title ON chapters (normalized_title)",
         "CREATE INDEX IF NOT EXISTS ix_quiz_history_user_created_id ON quiz_history (user_id, created_at, id)",
         "CREATE INDEX IF NOT EXISTS ix_quiz_history_user_subject_topic ON quiz_history (user_id, subject, topic)",
         "CREATE INDEX IF NOT EXISTS ix_learning_sessions_user_created_id ON learning_sessions (user_id, created_at, id)",
@@ -1627,10 +1654,23 @@ def save_learning_session(user_id, name, student_class, subject, book_name, topi
     return learning_session.id
 
 
-def save_learning_history(user_id, subject, book_name, topic, notes, diagram_data, quiz_questions):
+def save_learning_history(
+    user_id,
+    subject,
+    book_name,
+    topic,
+    notes,
+    diagram_data,
+    quiz_questions,
+    board=DEFAULT_BOARD,
+    textbook_id=None,
+    chapter_id=None,
+):
+    board = (board or DEFAULT_BOARD).strip() or DEFAULT_BOARD
     duplicate_cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
     duplicate = LearningHistory.query.filter(
         LearningHistory.user_id == user_id,
+        func.lower(func.coalesce(LearningHistory.board, DEFAULT_BOARD)) == board.lower(),
         func.lower(LearningHistory.subject) == subject.lower(),
         func.lower(func.coalesce(LearningHistory.book_name, "")) == (book_name or "").lower(),
         func.lower(LearningHistory.topic) == topic.lower(),
@@ -1651,7 +1691,10 @@ def save_learning_history(user_id, subject, book_name, topic, notes, diagram_dat
 
     lesson = LearningHistory(
         user_id=user_id,
+        board=board,
         subject=subject,
+        textbook_id=textbook_id,
+        chapter_id=chapter_id,
         book_name=book_name,
         topic=topic,
         notes=notes,
@@ -2263,18 +2306,82 @@ def lesson_value(lesson, key, default=""):
     return value if value is not None else default
 
 
+def lesson_board_value(lesson, default=DEFAULT_BOARD):
+    value = lesson_value(lesson, "board", default)
+    return (value or default).strip() or default
+
+
+def subject_is_english(subject):
+    return (subject or "").strip().lower() == "english"
+
+
+def selected_textbook_context_block(student_class, board, subject, textbook, chapter):
+    return f"""
+Selected Textbook Context:
+Class: {student_class or "the selected class"}
+Board: {(board or DEFAULT_BOARD).strip() or DEFAULT_BOARD}
+Subject: {subject or "the selected subject"}
+Textbook: {textbook or "Not specified"}
+Chapter: {chapter or "Not specified"}
+"""
+
+
+def selected_textbook_rules_block(subject):
+    english_section = ""
+    if subject_is_english(subject):
+        english_section = """
+English-Specific Requirements:
+- Include Story summary where the chapter is prose.
+- Include Main characters where applicable.
+- Include Important themes.
+- Include Literary devices where applicable.
+- Include Difficult vocabulary with meanings.
+- Include Important exam questions.
+- Maintain the existing notes style.
+"""
+
+    return f"""
+Selected Textbook Rules:
+- Treat the selected textbook as authoritative.
+- Explain the chapter exactly as taught in CBSE.
+- Do not mix content from books with similar chapter names.
+- Use age-appropriate language.
+- Follow NCERT/CBSE terminology.
+- Keep the existing output sections unchanged.
+{english_section}
+"""
+
+
+def lesson_textbook_context_for_prompt(lesson, student_class):
+    return (
+        selected_textbook_context_block(
+            student_class,
+            lesson_board_value(lesson),
+            lesson_value(lesson, "subject"),
+            lesson_value(lesson, "book_name") or "N/A",
+            lesson_value(lesson, "topic"),
+        ).strip()
+        + "\n"
+        + selected_textbook_rules_block(lesson_value(lesson, "subject")).strip()
+    )
+
+
 def build_diagram_explanation_prompt(lesson, diagram_payload, diagram_view, student_class=""):
     topic = lesson_value(lesson, "topic")
     subject = lesson_value(lesson, "subject")
     book_name = lesson_value(lesson, "book_name")
+    board = lesson_board_value(lesson)
     class_label = student_class or "the selected class"
     metadata_json = diagram_metadata_for_explanation(diagram_payload, diagram_view)
     return f"""
 You are creating NCERT-style textbook support for an educational diagram.
 
 Class: {class_label}
+Board: {board}
 Subject: {subject}
+Textbook: {book_name or "N/A"}
 Book Name: {book_name}
+Chapter: {topic}
 Topic: {topic}
 Diagram Title: {diagram_payload.get("title") or topic}
 
@@ -2284,7 +2391,7 @@ Diagram metadata:
 Rules:
 - Use simple NCERT textbook language.
 - Match Class {class_label}.
-- Use the topic, selected class, diagram metadata, and diagram title only.
+- Use the subject, textbook, chapter, selected class, diagram metadata, and diagram title only.
 - Do not use OCR or infer text from the image pixels.
 - Avoid unnecessary scientific jargon.
 - Keep explanations concise and educational, not conversational.
@@ -2813,9 +2920,7 @@ def build_mind_map_prompt(lesson, student_class):
     return f"""
 You are an expert school teacher creating a structured concept map.
 
-Class: {student_class or "student's class"}
-Subject: {lesson.subject}
-Book Name: {lesson.book_name or "N/A"}
+{lesson_textbook_context_for_prompt(lesson, student_class)}
 Chapter / Topic: {lesson.topic}
 
 Lesson Notes:
@@ -2934,9 +3039,7 @@ def build_flashcard_prompt(lesson, student_class):
     return f"""
 You are an expert school teacher creating revision flashcards.
 
-Class: {student_class or "student's class"}
-Subject: {lesson.subject}
-Book Name: {lesson.book_name or "N/A"}
+{lesson_textbook_context_for_prompt(lesson, student_class)}
 Chapter / Topic: {lesson.topic}
 
 Lesson Notes:
@@ -2952,6 +3055,7 @@ Rules:
 - Use simple language.
 - Match the selected class level.
 - Focus on important concepts.
+- Use the selected textbook and chapter context when choosing what is important.
 - Keep answers concise.
 - Do not add facts that are not supported by the lesson notes.
 - Return valid JSON only. Do not include markdown, code fences, or extra text.
@@ -2986,9 +3090,7 @@ def build_revision_prompt(lesson, student_class):
     return f"""
 You are an expert school teacher creating a one-page quick revision sheet.
 
-Class: {student_class or "student's class"}
-Subject: {lesson.subject}
-Book Name: {lesson.book_name or "N/A"}
+{lesson_textbook_context_for_prompt(lesson, student_class)}
 Chapter / Topic: {lesson.topic}
 
 Generated Notes:
@@ -3109,9 +3211,7 @@ def build_important_questions_prompt(lesson, revision_sheet, student_class):
     return f"""
 You are an expert school teacher preparing important exam questions.
 
-Class: {student_class or "student's class"}
-Subject: {lesson.subject}
-Book Name: {lesson.book_name or "N/A"}
+{lesson_textbook_context_for_prompt(lesson, student_class)}
 Chapter / Topic: {lesson.topic}
 
 Lesson Notes:
@@ -7570,8 +7670,10 @@ def _create_learning_history_pdf(entry, diagram_payload, questions, diagram_view
         Paragraph(escape(entry["topic"]), styles["Title"]),
         Paragraph(
             (
+                f"Board: {escape(lesson_board_value(entry))} &nbsp;&nbsp; | &nbsp;&nbsp; "
                 f"Subject: {escape(entry['subject'])} &nbsp;&nbsp; | &nbsp;&nbsp; "
-                f"Book: {escape(entry['book_name'] or 'N/A')} &nbsp;&nbsp; | &nbsp;&nbsp; "
+                f"Textbook: {escape(entry['book_name'] or 'N/A')} &nbsp;&nbsp; | &nbsp;&nbsp; "
+                f"Chapter: {escape(entry['topic'])} &nbsp;&nbsp; | &nbsp;&nbsp; "
                 f"Saved: {escape(entry['created_at'])}"
             ),
             styles["Subtitle"],
@@ -7684,8 +7786,9 @@ def _create_revision_pdf(lesson, revision_sheet):
         Paragraph("Quick Revision", styles["Title"]),
         Paragraph(
             (
+                f"Board: {escape(lesson_board_value(lesson))} &nbsp;&nbsp; | &nbsp;&nbsp; "
                 f"Subject: {escape(lesson.subject)} &nbsp;&nbsp; | &nbsp;&nbsp; "
-                f"Book: {escape(lesson.book_name or 'N/A')} &nbsp;&nbsp; | &nbsp;&nbsp; "
+                f"Textbook: {escape(lesson.book_name or 'N/A')} &nbsp;&nbsp; | &nbsp;&nbsp; "
                 f"Chapter: {escape(lesson.topic)}"
             ),
             styles["Subtitle"],
@@ -7769,8 +7872,9 @@ def _create_important_questions_pdf(lesson, question_set):
         Paragraph("Important Exam Questions", styles["Title"]),
         Paragraph(
             (
+                f"Board: {escape(lesson_board_value(lesson))} &nbsp;&nbsp; | &nbsp;&nbsp; "
                 f"Subject: {escape(lesson.subject)} &nbsp;&nbsp; | &nbsp;&nbsp; "
-                f"Book: {escape(lesson.book_name or 'N/A')} &nbsp;&nbsp; | &nbsp;&nbsp; "
+                f"Textbook: {escape(lesson.book_name or 'N/A')} &nbsp;&nbsp; | &nbsp;&nbsp; "
                 f"Chapter: {escape(lesson.topic)}"
             ),
             styles["Subtitle"],
@@ -8241,6 +8345,436 @@ def learning_subject_prompt_section(subject):
     if subject_matches(subject, SCIENCE_MATH_SUBJECTS):
         return science_math_prompt_section()
     return general_prompt_section()
+
+
+def parse_class_level(value):
+    match = re.search(r"\d+", str(value or ""))
+    return int(match.group()) if match else None
+
+
+def textbook_search_rank(textbook, normalized_query):
+    if not normalized_query:
+        return 0
+    if textbook.normalized_name == normalized_query:
+        return 0
+    if textbook.normalized_name.startswith(normalized_query):
+        return 1
+    if normalized_query in textbook.normalized_name:
+        return 2
+    return 3
+
+
+def chapter_search_rank(chapter, normalized_query):
+    if not normalized_query:
+        return 0
+    if chapter.normalized_title == normalized_query:
+        return 0
+    if chapter.normalized_title.startswith(normalized_query):
+        return 1
+    if normalized_query in chapter.normalized_title:
+        return 2
+    return 3
+
+
+def textbook_result_payload(textbook):
+    return {
+        "id": textbook.id,
+        "name": textbook.name,
+        "board": textbook.board,
+        "class": textbook.class_level,
+    }
+
+
+def textbook_info_payload(textbook):
+    return {
+        "id": textbook.id,
+        "name": textbook.name,
+        "board": textbook.board,
+        "class": textbook.class_level,
+        "subject": textbook.subject,
+        "chapter_count": Chapter.query.filter_by(textbook_id=textbook.id).count(),
+        "available": bool(textbook.is_active),
+    }
+
+
+def chapter_result_payload(chapter):
+    return {
+        "id": chapter.id,
+        "textbook_id": chapter.textbook_id,
+        "chapter_number": chapter.chapter_number,
+        "title": chapter.title,
+    }
+
+
+def log_smart_search_event(event, **fields):
+    detail = " ".join(f"{key}={value}" for key, value in fields.items())
+    app.logger.info("smart_textbook_search event=%s %s", event, detail)
+
+
+def smart_search_cache_key(search_type, **parts):
+    return (
+        search_type,
+        str(parts.get("class_level") or "").lower(),
+        str(parts.get("subject") or "").lower(),
+        str(parts.get("textbook_id") or "").lower(),
+        normalize_catalog_value(parts.get("query") or ""),
+    )
+
+
+def clear_smart_search_cache():
+    _smart_search_cache.clear()
+
+
+def smart_search_cache_get(cache_key):
+    cached = _smart_search_cache.get(cache_key)
+    if not cached:
+        log_smart_search_event("cache_miss", cache_key=cache_key[0])
+        return None
+    if cached["expires_at"] <= time.time():
+        _smart_search_cache.pop(cache_key, None)
+        log_smart_search_event("cache_miss", cache_key=cache_key[0], reason="expired")
+        return None
+    log_smart_search_event("cache_hit", cache_key=cache_key[0])
+    return cached["value"]
+
+
+def smart_search_cache_set(cache_key, value):
+    _smart_search_cache[cache_key] = {
+        "value": value,
+        "expires_at": time.time() + SMART_SEARCH_CACHE_TTL_SECONDS,
+    }
+
+
+def parse_gemini_suggestions(response_text):
+    payload = extract_json_payload(response_text)
+    if not isinstance(payload, dict):
+        return []
+    raw_suggestions = payload.get("suggestions")
+    if not isinstance(raw_suggestions, list):
+        return []
+
+    suggestions = []
+    for item in raw_suggestions[:5]:
+        confidence = 1.0
+        if isinstance(item, dict):
+            suggestion = str(item.get("name") or item.get("title") or item.get("suggestion") or "").strip()
+            if item.get("confidence") is not None:
+                try:
+                    confidence = float(item["confidence"])
+                except (TypeError, ValueError):
+                    confidence = 0.0
+        else:
+            suggestion = str(item or "").strip()
+        if suggestion and confidence >= SMART_SEARCH_MIN_CONFIDENCE:
+            suggestions.append(suggestion)
+    return suggestions
+
+
+def smart_search_gemini_options():
+    return {
+        "generation_config": {
+            "temperature": 0.0,
+            "max_output_tokens": 512,
+        },
+        "request_options": {
+            "timeout": SMART_SEARCH_GEMINI_TIMEOUT_SECONDS,
+        },
+    }
+
+
+def build_textbook_fallback_prompt(class_level, subject, query_text, available_names):
+    class_label = class_level if class_level is not None else "not specified"
+    available_line = ", ".join(available_names) if available_names else "No local textbook list is available."
+    return f"""
+The student is studying CBSE.
+
+Class: {class_label}
+Subject: {subject or "English"}
+
+The student entered:
+"{query_text}"
+
+Available official CBSE textbook names in this app:
+{available_line}
+
+Suggest up to 5 official CBSE English textbook names that are likely spelling corrections.
+Only suggest names you are highly confident about.
+Prefer names from the available list when possible.
+Never invent textbooks.
+If uncertain, return an empty suggestions array.
+
+Return ONLY JSON:
+{{
+  "suggestions": [
+    {{"name": "First Flight", "confidence": 0.95}}
+  ]
+}}
+"""
+
+
+def build_chapter_fallback_prompt(textbook, query_text, chapter_titles):
+    available_line = "\n".join(f"- {title}" for title in chapter_titles)
+    return f"""
+The student is studying CBSE.
+
+Textbook: {textbook.name}
+Class: {textbook.class_level}
+Subject: {textbook.subject}
+
+The student entered:
+"{query_text}"
+
+Official chapter names in this selected textbook:
+{available_line}
+
+Suggest up to 5 official chapter names from this selected textbook that are likely spelling corrections or matches.
+Only suggest chapter names you are highly confident about.
+Never invent chapters.
+If uncertain, return an empty suggestions array.
+
+Return ONLY JSON:
+{{
+  "suggestions": [
+    {{"title": "A Letter to God", "confidence": 0.95}}
+  ]
+}}
+"""
+
+
+def call_smart_search_gemini(feature_name, prompt):
+    with performance_span("Smart textbook Gemini fallback", detail=feature_name):
+        try:
+            response = gemini_request(
+                feature_name,
+                prompt,
+                user_id=session.get("user_id"),
+                **smart_search_gemini_options(),
+            )
+            log_smart_search_event("gemini_fallback_used", feature=feature_name)
+            return parse_gemini_suggestions(getattr(response, "text", "") or "")
+        except GeminiRequestError:
+            log_smart_search_event("gemini_unavailable", feature=feature_name)
+            return []
+        except Exception as error:
+            log_smart_search_event("gemini_unavailable", feature=feature_name, error=type(error).__name__)
+            return []
+
+
+def textbook_matches_for_suggestion(suggestion, class_level=None, subject=""):
+    normalized_suggestion = normalize_catalog_value(suggestion)
+    if not normalized_suggestion:
+        return []
+    query = Textbook.query.filter(
+        Textbook.is_active.is_(True),
+        Textbook.board == "CBSE",
+        Textbook.normalized_name == normalized_suggestion,
+    )
+    if class_level is not None:
+        query = query.filter(Textbook.class_level == class_level)
+    if subject:
+        query = query.filter(func.lower(Textbook.subject) == subject.lower())
+    return query.order_by(Textbook.class_level.asc(), Textbook.name.asc()).all()
+
+
+def textbook_ai_suggestion_payload(suggestion, class_level=None, subject=""):
+    matches = textbook_matches_for_suggestion(suggestion, class_level=class_level, subject=subject)
+    if not matches:
+        return {
+            "id": None,
+            "name": suggestion,
+            "board": "CBSE",
+            "class": class_level,
+            "ai_suggestion": True,
+            "unavailable": True,
+        }
+    payloads = []
+    for textbook in matches:
+        payload = textbook_result_payload(textbook)
+        payload["ai_suggestion"] = True
+        payload["unavailable"] = False
+        payloads.append(payload)
+    return payloads
+
+
+def chapter_match_for_suggestion(textbook_id, suggestion):
+    normalized_suggestion = normalize_catalog_value(suggestion)
+    if not normalized_suggestion:
+        return None
+    return Chapter.query.filter_by(
+        textbook_id=textbook_id,
+        normalized_title=normalized_suggestion,
+    ).first()
+
+
+def chapter_ai_suggestion_payload(textbook_id, suggestion):
+    chapter = chapter_match_for_suggestion(textbook_id, suggestion)
+    if not chapter:
+        return {
+            "id": None,
+            "textbook_id": textbook_id,
+            "chapter_number": None,
+            "title": suggestion,
+            "ai_suggestion": True,
+            "unavailable": True,
+        }
+    payload = chapter_result_payload(chapter)
+    payload["ai_suggestion"] = True
+    payload["unavailable"] = False
+    return payload
+
+
+def flatten_suggestion_payloads(payloads):
+    flattened = []
+    seen = set()
+    for payload in payloads:
+        items = payload if isinstance(payload, list) else [payload]
+        for item in items:
+            identity = (item.get("id"), item.get("name") or item.get("title"))
+            if identity in seen:
+                continue
+            seen.add(identity)
+            flattened.append(item)
+    return flattened
+
+
+def textbook_fallback_suggestions(class_level, subject, query_text):
+    cache_key = smart_search_cache_key(
+        "textbook",
+        class_level=class_level,
+        subject=subject,
+        query=query_text,
+    )
+    cached = smart_search_cache_get(cache_key)
+    if cached is not None:
+        return cached
+
+    available_query = Textbook.query.filter(Textbook.is_active.is_(True), Textbook.board == "CBSE")
+    if subject:
+        available_query = available_query.filter(func.lower(Textbook.subject) == subject.lower())
+    if class_level is not None:
+        available_query = available_query.filter(Textbook.class_level == class_level)
+    available_names = sorted({textbook.name for textbook in available_query.all()})
+    prompt = build_textbook_fallback_prompt(class_level, subject, query_text, available_names)
+    suggestions = call_smart_search_gemini("Smart Textbook Search", prompt)
+    payloads = flatten_suggestion_payloads(
+        textbook_ai_suggestion_payload(suggestion, class_level=class_level, subject=subject)
+        for suggestion in suggestions
+    )
+    smart_search_cache_set(cache_key, payloads)
+    log_smart_search_event("gemini_suggestions_accepted", feature="textbook", count=len(payloads))
+    return payloads
+
+
+def chapter_fallback_suggestions(textbook, query_text):
+    cache_key = smart_search_cache_key(
+        "chapter",
+        class_level=textbook.class_level,
+        subject=textbook.subject,
+        textbook_id=textbook.id,
+        query=query_text,
+    )
+    cached = smart_search_cache_get(cache_key)
+    if cached is not None:
+        return cached
+
+    chapters = Chapter.query.filter_by(textbook_id=textbook.id).order_by(Chapter.chapter_number.asc()).all()
+    prompt = build_chapter_fallback_prompt(
+        textbook,
+        query_text,
+        [chapter.title for chapter in chapters],
+    )
+    suggestions = call_smart_search_gemini("Smart Chapter Search", prompt)
+    payloads = flatten_suggestion_payloads(
+        chapter_ai_suggestion_payload(textbook.id, suggestion)
+        for suggestion in suggestions
+    )
+    smart_search_cache_set(cache_key, payloads)
+    log_smart_search_event("gemini_suggestions_accepted", feature="chapter", count=len(payloads))
+    return payloads
+
+
+@app.route("/api/textbooks/search")
+def search_textbooks():
+    query_text = request.args.get("q", "").strip()
+    class_level = parse_class_level(request.args.get("class", ""))
+    subject = request.args.get("subject", "").strip()
+    normalized_query = normalize_catalog_value(query_text)
+
+    with performance_span("Smart textbook database search", detail=f"{class_level or '-'} {subject or '-'} {query_text}"):
+        query = Textbook.query.filter(Textbook.is_active.is_(True), Textbook.board == "CBSE")
+        if subject:
+            query = query.filter(func.lower(Textbook.subject) == subject.lower())
+        if class_level is not None:
+            query = query.filter(Textbook.class_level == class_level)
+        if normalized_query:
+            query = query.filter(Textbook.normalized_name.like(f"%{normalized_query}%"))
+
+        textbooks = sorted(
+            query.all(),
+            key=lambda textbook: (
+                textbook_search_rank(textbook, normalized_query),
+                textbook.class_level,
+                textbook.name.lower(),
+                textbook.id,
+            ),
+        )
+
+    if textbooks:
+        log_smart_search_event("database_hit", feature="textbook", count=len(textbooks), query=query_text)
+        return jsonify([textbook_result_payload(textbook) for textbook in textbooks[:8]])
+
+    log_smart_search_event("database_miss", feature="textbook", query=query_text)
+    fallback_payloads = textbook_fallback_suggestions(class_level, subject, query_text)
+    return jsonify(fallback_payloads[:8])
+
+
+@app.route("/api/textbooks/<int:textbook_id>")
+def textbook_info(textbook_id):
+    textbook = db.session.get(Textbook, textbook_id)
+    if not textbook:
+        return jsonify({"available": False}), 404
+    return jsonify(textbook_info_payload(textbook))
+
+
+@app.route("/api/chapters/search")
+def search_chapters():
+    textbook_id = request.args.get("textbook_id", "").strip()
+    if not textbook_id.isdigit():
+        return jsonify([])
+
+    query_text = request.args.get("q", "").strip()
+    normalized_query = normalize_catalog_value(query_text)
+    textbook = db.session.get(Textbook, int(textbook_id))
+    if not textbook or not textbook.is_active:
+        return jsonify([])
+
+    with performance_span("Smart chapter database search", detail=f"{textbook_id} {query_text}"):
+        query = Chapter.query.filter(Chapter.textbook_id == int(textbook_id))
+        if normalized_query:
+            query = query.filter(Chapter.normalized_title.like(f"%{normalized_query}%"))
+
+        chapters = sorted(
+            query.all(),
+            key=lambda chapter: (
+                chapter_search_rank(chapter, normalized_query),
+                chapter.chapter_number,
+                chapter.title.lower(),
+                chapter.id,
+            ),
+        )
+
+    if chapters:
+        log_smart_search_event("database_hit", feature="chapter", count=len(chapters), query=query_text)
+        limit = 12 if not normalized_query else 10
+        return jsonify([chapter_result_payload(chapter) for chapter in chapters[:limit]])
+
+    if not normalized_query:
+        log_smart_search_event("database_miss", feature="chapter", query=query_text)
+        return jsonify([])
+
+    log_smart_search_event("database_miss", feature="chapter", query=query_text)
+    fallback_payloads = chapter_fallback_suggestions(textbook, query_text)
+    return jsonify(fallback_payloads[:10])
 
 
 @app.route("/")
@@ -9545,6 +10079,36 @@ def history():
     return render_template("history.html", attempts=get_quiz_history(user_id=session["user_id"]))
 
 
+def render_lesson_form_validation_error(message):
+    flash(message, "error")
+    return render_template("index.html", class_options=class_options()), 400
+
+
+def validate_selected_textbook_chapter(form, student_class, subject):
+    textbook_id = form.get("textbook_id", "").strip()
+    chapter_id = form.get("chapter_id", "").strip()
+    if not textbook_id and not chapter_id:
+        return None, None, None
+    if not textbook_id.isdigit() or not chapter_id.isdigit():
+        return None, None, "Select a textbook and chapter from the suggestions."
+
+    textbook = db.session.get(Textbook, int(textbook_id))
+    if not textbook or not textbook.is_active:
+        return None, None, "Selected textbook was not found. Please search and select it again."
+
+    selected_class_level = parse_class_level(student_class)
+    if selected_class_level is not None and textbook.class_level != selected_class_level:
+        return None, None, "Selected textbook does not match the selected class."
+    if subject and textbook.subject.lower() != subject.lower():
+        return None, None, "Selected textbook does not match the selected subject."
+
+    chapter = db.session.get(Chapter, int(chapter_id))
+    if not chapter or chapter.textbook_id != textbook.id:
+        return None, None, "Selected chapter does not belong to the selected textbook."
+
+    return textbook, chapter, None
+
+
 @app.route("/learn", methods=["POST"])
 def learn():
     request_started_at = time.perf_counter()
@@ -9554,6 +10118,7 @@ def learn():
     subject = request.form.get("subject", "").strip() or preferred_subject_for_user(account)
     book_name = request.form.get("book_name", "").strip()
     topic = request.form.get("topic", "").strip()
+    board = DEFAULT_BOARD
     if account and not name:
         name = account["full_name"]
 
@@ -9562,7 +10127,26 @@ def learn():
     class_error = validate_supported_class(student_class)
     if class_error:
         abort(400, description=class_error)
+    textbook, chapter, textbook_error = validate_selected_textbook_chapter(
+        request.form,
+        student_class,
+        subject,
+    )
+    if textbook_error:
+        return render_lesson_form_validation_error(textbook_error)
+    if textbook and chapter:
+        board = textbook.board or DEFAULT_BOARD
+        book_name = textbook.name
+        topic = chapter.title
 
+    selected_textbook_context_section = selected_textbook_context_block(
+        student_class,
+        board,
+        subject,
+        book_name,
+        topic,
+    )
+    selected_textbook_rules_section = selected_textbook_rules_block(subject)
     subject_prompt_section = learning_subject_prompt_section(subject)
     adaptive_quiz_prompt_section = build_adaptive_quiz_prompt_section(
         subject,
@@ -9583,11 +10167,16 @@ def learn():
 You are a school teacher.
 
 Class: {student_class}
+Board: {board}
 Subject: {subject}
+Textbook: {book_name}
+Chapter: {topic}
 Book Name: {book_name}
 Topic: {topic}
 
 {ai_preference_prompt_context(account)}
+{selected_textbook_context_section}
+{selected_textbook_rules_section}
 {subject_prompt_section}
 {adaptive_quiz_prompt_section}
 {textbook_context_section}
@@ -9664,7 +10253,7 @@ If visualization_required is false, use "template": "generic", "type": "none", e
 
 ## Questions
 
-Create exactly 5 teacher-style quiz questions using the Adaptive Quiz Engine rules above.
+Create exactly 5 teacher-style quiz questions from the selected chapter using the Adaptive Quiz Engine rules above.
 
 Rules:
 - Number questions as Q1, Q2, Q3, Q4 and Q5.
@@ -9778,6 +10367,9 @@ Rules:
                 notes,
                 diagram_payload,
                 questions,
+                board=board,
+                textbook_id=textbook.id if textbook else None,
+                chapter_id=chapter.id if chapter else None,
             )
             save_learning_session(
                 session["user_id"],
@@ -9810,6 +10402,7 @@ Rules:
         "learn.html",
         name=name,
         student_class=student_class,
+        board=board,
         subject=subject,
         book_name=book_name,
         topic=topic,
@@ -9841,7 +10434,9 @@ def download_diagram():
 def download_notes():
     name = request.form.get("name", "").strip()
     student_class = request.form.get("student_class", "").strip()
+    board = request.form.get("board", DEFAULT_BOARD).strip() or DEFAULT_BOARD
     subject = request.form.get("subject", "").strip()
+    book_name = request.form.get("book_name", "").strip()
     topic = request.form.get("topic", "").strip()
     notes = request.form.get("notes", "").strip()
     diagram_image = request.form.get("diagram_image", "").strip()
@@ -9913,7 +10508,7 @@ def download_notes():
 <body>
     <main class="notes-page">
         <h1>{escape(topic)}</h1>
-        <div class="student">Student: {escape(name or 'Student')} | Class: {escape(student_class or 'N/A')} | Subject: {escape(subject or 'N/A')}</div>
+        <div class="student">Student: {escape(name or 'Student')} | Class: {escape(student_class or 'N/A')} | Board: {escape(board)} | Subject: {escape(subject or 'N/A')} | Textbook: {escape(book_name or 'N/A')} | Chapter: {escape(topic)}</div>
         <div class="content">
             {notes_html}
         </div>

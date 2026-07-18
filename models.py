@@ -72,6 +72,48 @@ class SupportFeedback(ModelMappingMixin, db.Model):
     created_at = db.Column(db.DateTime, nullable=False, default=utc_now)
 
 
+class Textbook(ModelMappingMixin, db.Model):
+    __tablename__ = "textbooks"
+    __table_args__ = (
+        db.Index("ix_textbooks_board_subject_class", "board", "subject", "class_level"),
+        db.Index("ix_textbooks_normalized_name", "normalized_name"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    board = db.Column(db.Text, nullable=False, default="CBSE")
+    subject = db.Column(db.Text, nullable=False)
+    class_level = db.Column(db.Integer, nullable=False)
+    name = db.Column(db.Text, nullable=False)
+    normalized_name = db.Column(db.Text, nullable=False)
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=utc_now)
+
+    chapters = db.relationship(
+        "Chapter",
+        back_populates="textbook",
+        cascade="all, delete-orphan",
+        lazy=True,
+        order_by="Chapter.chapter_number",
+    )
+
+
+class Chapter(ModelMappingMixin, db.Model):
+    __tablename__ = "chapters"
+    __table_args__ = (
+        db.Index("ix_chapters_textbook_id", "textbook_id"),
+        db.Index("ix_chapters_normalized_title", "normalized_title"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    textbook_id = db.Column(db.Integer, db.ForeignKey("textbooks.id"), nullable=False)
+    chapter_number = db.Column(db.Integer, nullable=False)
+    title = db.Column(db.Text, nullable=False)
+    normalized_title = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, nullable=False, default=utc_now)
+
+    textbook = db.relationship("Textbook", back_populates="chapters")
+
+
 class FavouriteNote(ModelMappingMixin, db.Model):
     __tablename__ = "favourite_notes"
     __table_args__ = (
@@ -163,7 +205,10 @@ class LearningHistory(ModelMappingMixin, db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    board = db.Column(db.Text, nullable=False, default="CBSE")
     subject = db.Column(db.Text, nullable=False)
+    textbook_id = db.Column(db.Integer, db.ForeignKey("textbooks.id"), nullable=True, index=True)
+    chapter_id = db.Column(db.Integer, db.ForeignKey("chapters.id"), nullable=True, index=True)
     book_name = db.Column(db.Text)
     topic = db.Column(db.Text, nullable=False)
     notes = db.Column(db.Text, nullable=False)
@@ -176,6 +221,8 @@ class LearningHistory(ModelMappingMixin, db.Model):
     created_at = db.Column(db.DateTime, nullable=False, default=utc_now, index=True)
 
     user = db.relationship("User", back_populates="learning_history")
+    textbook = db.relationship("Textbook", foreign_keys=[textbook_id])
+    chapter_record = db.relationship("Chapter", foreign_keys=[chapter_id])
     tutor_lessons = db.relationship(
         "TutorLesson",
         back_populates="learning_history",

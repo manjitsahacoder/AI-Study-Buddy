@@ -326,7 +326,7 @@
                 <strong>Maths Demo</strong>
                 <small>Linear Equations</small>
             </button>
-            <button type="button" data-demo-name="Exhibition Visitor" data-demo-class="9" data-demo-subject="English" data-demo-book="Beehive" data-demo-topic="Grammar Revision">
+            <button type="button" data-demo-name="Exhibition Visitor" data-demo-class="9" data-demo-subject="English" data-demo-book="" data-demo-topic="Grammar Revision">
                 <span aria-hidden="true">Aa</span>
                 <strong>English Demo</strong>
                 <small>Grammar Revision</small>
@@ -379,27 +379,53 @@
                 </select>
             </div>
             <div class="form-field">
-                <label for="book_name">&#128214; Book Name (Optional)</label>
+                <label for="book_name">&#128214; Textbook Search</label>
                 <input
                     id="book_name"
                     type="text"
                     name="book_name"
-                    placeholder="Beehive, Honeycomb, First Flight, Kaveri, Poorvi"
+                    placeholder="Search textbook"
+                    autocomplete="off"
+                    role="combobox"
+                    aria-autocomplete="list"
+                    aria-expanded="false"
+                    aria-controls="textbook-suggestions"
                 >
+                <input id="textbook_id" type="hidden" name="textbook_id">
+                <div id="textbook-suggestions" class="autocomplete-menu" role="listbox" hidden></div>
+                <p class="autocomplete-status" data-textbook-status aria-live="polite"></p>
+                <article class="selection-info-card textbook-info-card" data-textbook-info-card aria-live="polite" hidden></article>
             </div>
             <div class="form-field">
-                <label for="topic">&#128221; Topic</label>
+                <label for="topic">&#128221; Chapter Search / Topic</label>
                 <input
                     id="topic"
                     type="text"
                     name="topic"
-                    placeholder="Enter topic"
+                    placeholder="Select textbook first"
+                    autocomplete="off"
+                    role="combobox"
+                    aria-autocomplete="list"
+                    aria-expanded="false"
+                    aria-controls="chapter-suggestions"
+                    disabled
                     required
                 >
+                <input id="chapter_id" type="hidden" name="chapter_id">
+                <div id="chapter-suggestions" class="autocomplete-menu" role="listbox" hidden></div>
+                <p class="autocomplete-status" data-chapter-status aria-live="polite"></p>
+                <div class="popular-chapters-panel" data-popular-chapters-panel hidden>
+                    <div class="popular-chapters-heading">
+                        <span>Popular Chapters</span>
+                        <small data-popular-chapters-count></small>
+                    </div>
+                    <div class="popular-chapters-list" data-popular-chapters-list aria-label="Popular chapters"></div>
+                </div>
+                <article class="selection-info-card chapter-info-card" data-chapter-info-card aria-live="polite" hidden></article>
             </div>
         </div>
 
-        <button class="start-learning-btn" type="submit" aria-label="Start learning with AI Study Buddy">
+        <button class="start-learning-btn" type="submit" aria-label="Start learning with AI Study Buddy" data-start-learning-button>
             Start Learning
         </button>
     </form>
@@ -531,6 +557,553 @@ function showLoader() {
         loaderMessageIndex = (loaderMessageIndex + 1) % loaderMessages.length;
         loaderMessage.innerHTML = loaderMessages[loaderMessageIndex];
     }, 2000);
+}
+
+function initializeTextbookAutocomplete() {
+    const form = document.getElementById("lesson-form");
+    if (!form) {
+        return;
+    }
+
+    const classSelect = form.querySelector("[name='student_class']");
+    const subjectSelect = form.querySelector("[name='subject']");
+    const textbookInput = form.querySelector("[name='book_name']");
+    const textbookIdInput = form.querySelector("[name='textbook_id']");
+    const chapterInput = form.querySelector("[name='topic']");
+    const chapterIdInput = form.querySelector("[name='chapter_id']");
+    const textbookMenu = document.getElementById("textbook-suggestions");
+    const chapterMenu = document.getElementById("chapter-suggestions");
+    const textbookStatus = form.querySelector("[data-textbook-status]");
+    const chapterStatus = form.querySelector("[data-chapter-status]");
+    const textbookInfoCard = form.querySelector("[data-textbook-info-card]");
+    const chapterInfoCard = form.querySelector("[data-chapter-info-card]");
+    const popularChaptersPanel = form.querySelector("[data-popular-chapters-panel]");
+    const popularChaptersList = form.querySelector("[data-popular-chapters-list]");
+    const popularChaptersCount = form.querySelector("[data-popular-chapters-count]");
+    const startButton = form.querySelector("[data-start-learning-button]");
+    let textbookItems = [];
+    let chapterItems = [];
+    let loadedChapterItems = [];
+    let selectedTextbookInfo = null;
+    let selectedChapterInfo = null;
+    let activeTextbookIndex = -1;
+    let activeChapterIndex = -1;
+    let textbookController = null;
+    let chapterController = null;
+    let textbookSearchTimer = null;
+    let chapterSearchTimer = null;
+    const textbookInfoCache = {};
+    const textbookChapterCache = {};
+
+    function isEnglishSubject() {
+        return (subjectSelect.value || "").toLowerCase() === "english";
+    }
+
+    function setStatus(target, message) {
+        if (target) {
+            target.textContent = message || "";
+        }
+    }
+
+    function setStartButtonState() {
+        if (!startButton) {
+            return;
+        }
+        const locked = isEnglishSubject() && textbookIdInput.value && !chapterIdInput.value;
+        startButton.disabled = Boolean(locked);
+        startButton.setAttribute("aria-disabled", locked ? "true" : "false");
+    }
+
+    function escapeHtml(value) {
+        return String(value || "").replace(/[&<>"']/g, function (character) {
+            return {
+                "&": "&amp;",
+                "<": "&lt;",
+                ">": "&gt;",
+                "\"": "&quot;",
+                "'": "&#39;",
+            }[character];
+        });
+    }
+
+    function closeMenu(menu, input) {
+        menu.hidden = true;
+        input.setAttribute("aria-expanded", "false");
+    }
+
+    function renderMenu(menu, input, items, activeIndex, getLabel, selectItem) {
+        menu.innerHTML = "";
+        if (!items.length) {
+            closeMenu(menu, input);
+            return;
+        }
+
+        items.forEach(function (item, index) {
+            const option = document.createElement("button");
+            option.type = "button";
+            option.className = "autocomplete-option";
+            option.id = `${menu.id}-option-${index}`;
+            option.setAttribute("role", "option");
+            option.setAttribute("aria-selected", index === activeIndex ? "true" : "false");
+            const label = document.createElement("span");
+            label.textContent = getLabel(item);
+            option.appendChild(label);
+            if (item.ai_suggestion) {
+                const badge = document.createElement("span");
+                badge.className = "autocomplete-ai-badge";
+                badge.textContent = "\u2728 AI Suggestion";
+                option.appendChild(badge);
+            }
+            option.addEventListener("mousedown", function (event) {
+                event.preventDefault();
+            });
+            option.addEventListener("click", function () {
+                selectItem(item);
+            });
+            menu.appendChild(option);
+        });
+        menu.hidden = false;
+        input.setAttribute("aria-expanded", "true");
+        input.setAttribute("aria-activedescendant", activeIndex >= 0 ? `${menu.id}-option-${activeIndex}` : "");
+    }
+
+    function updateChapterState() {
+        if (isEnglishSubject() && textbookInput.value.trim() && !textbookIdInput.value) {
+            chapterInput.disabled = true;
+            chapterInput.placeholder = "Select textbook first";
+            setStartButtonState();
+            return;
+        }
+        chapterInput.disabled = false;
+        chapterInput.placeholder = textbookIdInput.value ? "Search chapter" : "Enter topic";
+        setStartButtonState();
+    }
+
+    function hideTextbookInfoCard() {
+        selectedTextbookInfo = null;
+        textbookInfoCard.hidden = true;
+        textbookInfoCard.innerHTML = "";
+    }
+
+    function renderTextbookInfoCard(info) {
+        selectedTextbookInfo = info;
+        textbookInfoCard.innerHTML = `
+            <div class="selection-card-title"><span aria-hidden="true">&#128218;</span><strong>${escapeHtml(info.name)}</strong></div>
+            <dl>
+                <div><dt>Board</dt><dd>${escapeHtml(info.board)}</dd></div>
+                <div><dt>Class</dt><dd>${escapeHtml(info.class)}</dd></div>
+                <div><dt>Subject</dt><dd>${escapeHtml(info.subject)}</dd></div>
+                <div><dt>Chapters</dt><dd>${escapeHtml(info.chapter_count)}</dd></div>
+                <div><dt>Status</dt><dd class="selection-status-ready">&#10003; Available</dd></div>
+            </dl>
+        `;
+        textbookInfoCard.hidden = false;
+    }
+
+    function hideChapterInfoCard() {
+        selectedChapterInfo = null;
+        chapterInfoCard.hidden = true;
+        chapterInfoCard.innerHTML = "";
+    }
+
+    function renderChapterInfoCard(chapter) {
+        selectedChapterInfo = chapter;
+        const bookName = selectedTextbookInfo ? selectedTextbookInfo.name : textbookInput.value;
+        const subject = selectedTextbookInfo ? selectedTextbookInfo.subject : subjectSelect.value;
+        chapterInfoCard.innerHTML = `
+            <div class="selection-card-title"><span aria-hidden="true">&#128214;</span><strong>${escapeHtml(chapter.title)}</strong></div>
+            <dl>
+                <div><dt>Book</dt><dd>${escapeHtml(bookName)}</dd></div>
+                <div><dt>Chapter</dt><dd>${escapeHtml(chapter.chapter_number || "")}</dd></div>
+                <div><dt>Subject</dt><dd>${escapeHtml(subject)}</dd></div>
+                <div><dt>Status</dt><dd class="selection-status-ready">&#10003; Ready to Generate</dd></div>
+            </dl>
+        `;
+        chapterInfoCard.hidden = false;
+    }
+
+    function hidePopularChapters() {
+        loadedChapterItems = [];
+        popularChaptersList.innerHTML = "";
+        popularChaptersPanel.hidden = true;
+        if (popularChaptersCount) {
+            popularChaptersCount.textContent = "";
+        }
+    }
+
+    function renderPopularChapters(items, filterText) {
+        const normalizedFilter = (filterText || "").trim().toLowerCase();
+        const visibleItems = items
+            .filter(function (item) {
+                return !normalizedFilter || item.title.toLowerCase().includes(normalizedFilter);
+            })
+            .slice(0, 12);
+
+        popularChaptersList.innerHTML = "";
+        if (!visibleItems.length) {
+            popularChaptersPanel.hidden = true;
+            return;
+        }
+
+        visibleItems.forEach(function (item) {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "popular-chapter-button";
+            button.innerHTML = `<span aria-hidden="true">&#11088;</span><span>${escapeHtml(item.title)}</span>`;
+            button.addEventListener("click", function () {
+                selectChapter(item);
+            });
+            popularChaptersList.appendChild(button);
+        });
+        if (popularChaptersCount) {
+            popularChaptersCount.textContent = `${visibleItems.length} shown`;
+        }
+        popularChaptersPanel.hidden = false;
+    }
+
+    function loadTextbookInfo(textbookId) {
+        if (textbookInfoCache[textbookId]) {
+            renderTextbookInfoCard(textbookInfoCache[textbookId]);
+            return Promise.resolve(textbookInfoCache[textbookId]);
+        }
+        textbookInfoCard.hidden = false;
+        textbookInfoCard.innerHTML = `<p class="selection-loading">Loading textbook details...</p>`;
+        return fetch(`/api/textbooks/${encodeURIComponent(textbookId)}`)
+            .then(function (response) {
+                return response.ok ? response.json() : null;
+            })
+            .then(function (info) {
+                if (!info || !info.available) {
+                    hideTextbookInfoCard();
+                    return null;
+                }
+                textbookInfoCache[textbookId] = info;
+                renderTextbookInfoCard(info);
+                return info;
+            })
+            .catch(function () {
+                hideTextbookInfoCard();
+                return null;
+            });
+    }
+
+    function loadPopularChapters(textbookId) {
+        if (textbookChapterCache[textbookId]) {
+            loadedChapterItems = textbookChapterCache[textbookId];
+            renderPopularChapters(loadedChapterItems, "");
+            return Promise.resolve(loadedChapterItems);
+        }
+        popularChaptersPanel.hidden = false;
+        popularChaptersList.innerHTML = `<p class="selection-loading">Loading chapters...</p>`;
+        const params = new URLSearchParams({ textbook_id: textbookId, q: "" });
+        return fetch(`/api/chapters/search?${params.toString()}`)
+            .then(function (response) {
+                return response.ok ? response.json() : [];
+            })
+            .then(function (items) {
+                textbookChapterCache[textbookId] = items;
+                loadedChapterItems = items;
+                renderPopularChapters(items, "");
+                return items;
+            })
+            .catch(function () {
+                hidePopularChapters();
+                return [];
+            });
+    }
+
+    function clearChapter() {
+        chapterIdInput.value = "";
+        chapterInput.value = "";
+        chapterItems = [];
+        activeChapterIndex = -1;
+        closeMenu(chapterMenu, chapterInput);
+        setStatus(chapterStatus, "");
+        hideChapterInfoCard();
+        if (textbookIdInput.value && loadedChapterItems.length) {
+            renderPopularChapters(loadedChapterItems, "");
+        }
+        updateChapterState();
+    }
+
+    function clearTextbookSelection(clearText) {
+        textbookIdInput.value = "";
+        textbookItems = [];
+        activeTextbookIndex = -1;
+        if (clearText) {
+            textbookInput.value = "";
+        }
+        closeMenu(textbookMenu, textbookInput);
+        setStatus(textbookStatus, "");
+        hideTextbookInfoCard();
+        hidePopularChapters();
+        clearChapter();
+    }
+
+    function selectTextbook(item) {
+        if (item.unavailable || !item.id) {
+            textbookIdInput.value = "";
+            setStatus(textbookStatus, "This textbook is not yet available.");
+            closeMenu(textbookMenu, textbookInput);
+            return;
+        }
+        textbookInput.value = item.name;
+        textbookIdInput.value = item.id;
+        loadedChapterItems = [];
+        hidePopularChapters();
+        activeTextbookIndex = -1;
+        closeMenu(textbookMenu, textbookInput);
+        setStatus(textbookStatus, "");
+        clearChapter();
+        chapterInput.disabled = false;
+        chapterInput.placeholder = "Search chapter";
+        loadTextbookInfo(item.id);
+        loadPopularChapters(item.id);
+        setStartButtonState();
+        chapterInput.focus();
+    }
+
+    function selectChapter(item) {
+        if (item.unavailable || !item.id) {
+            chapterIdInput.value = "";
+            setStatus(chapterStatus, "This chapter is not yet available.");
+            closeMenu(chapterMenu, chapterInput);
+            return;
+        }
+        chapterInput.value = item.title;
+        chapterIdInput.value = item.id;
+        activeChapterIndex = -1;
+        closeMenu(chapterMenu, chapterInput);
+        setStatus(chapterStatus, "");
+        renderChapterInfoCard(item);
+        renderPopularChapters(loadedChapterItems, chapterInput.value);
+        setStartButtonState();
+    }
+
+    function performTextbookSearch() {
+        const searchText = textbookInput.value.trim();
+        textbookIdInput.value = "";
+        hideTextbookInfoCard();
+        hidePopularChapters();
+        clearChapter();
+        if (!isEnglishSubject() || searchText.length < 2) {
+            closeMenu(textbookMenu, textbookInput);
+            setStatus(textbookStatus, "");
+            return;
+        }
+
+        if (textbookController) {
+            textbookController.abort();
+        }
+        textbookController = new AbortController();
+        const params = new URLSearchParams({
+            q: searchText,
+            class: classSelect.value || "",
+            subject: subjectSelect.value || "",
+        });
+
+        fetch(`/api/textbooks/search?${params.toString()}`, { signal: textbookController.signal })
+            .then(function (response) {
+                return response.ok ? response.json() : [];
+            })
+            .then(function (items) {
+                textbookItems = items;
+                activeTextbookIndex = items.length ? 0 : -1;
+                if (!items.length) {
+                    closeMenu(textbookMenu, textbookInput);
+                    setStatus(textbookStatus, "No matching CBSE textbook found.");
+                    return;
+                }
+                setStatus(textbookStatus, "");
+                renderMenu(
+                    textbookMenu,
+                    textbookInput,
+                    textbookItems,
+                    activeTextbookIndex,
+                    function (item) {
+                        return `${item.name} - Class ${item.class}`;
+                    },
+                    selectTextbook
+                );
+            })
+            .catch(function (error) {
+                if (error.name !== "AbortError") {
+                    closeMenu(textbookMenu, textbookInput);
+                }
+            });
+    }
+
+    function searchTextbooks() {
+        clearTimeout(textbookSearchTimer);
+        if (!textbookInput.value.trim()) {
+            clearTextbookSelection(false);
+        }
+        textbookSearchTimer = window.setTimeout(performTextbookSearch, 500);
+    }
+
+    function performChapterSearch() {
+        const textbookId = textbookIdInput.value;
+        const searchText = chapterInput.value.trim();
+        chapterIdInput.value = "";
+        hideChapterInfoCard();
+        if (loadedChapterItems.length) {
+            renderPopularChapters(loadedChapterItems, searchText);
+        }
+        if (!textbookId || searchText.length < 1) {
+            closeMenu(chapterMenu, chapterInput);
+            setStatus(chapterStatus, "");
+            setStartButtonState();
+            return;
+        }
+
+        if (chapterController) {
+            chapterController.abort();
+        }
+        chapterController = new AbortController();
+        const params = new URLSearchParams({
+            textbook_id: textbookId,
+            q: searchText,
+        });
+
+        fetch(`/api/chapters/search?${params.toString()}`, { signal: chapterController.signal })
+            .then(function (response) {
+                return response.ok ? response.json() : [];
+            })
+            .then(function (items) {
+                chapterItems = items;
+                activeChapterIndex = items.length ? 0 : -1;
+                if (!items.length) {
+                    closeMenu(chapterMenu, chapterInput);
+                    setStatus(chapterStatus, "No matching chapter found.");
+                    return;
+                }
+                setStatus(chapterStatus, "");
+                renderMenu(
+                    chapterMenu,
+                    chapterInput,
+                    chapterItems,
+                    activeChapterIndex,
+                    function (item) {
+                        return item.title;
+                    },
+                    selectChapter
+                );
+            })
+            .catch(function (error) {
+                if (error.name !== "AbortError") {
+                    closeMenu(chapterMenu, chapterInput);
+                }
+            });
+    }
+
+    function searchChapters() {
+        clearTimeout(chapterSearchTimer);
+        chapterSearchTimer = window.setTimeout(performChapterSearch, 500);
+    }
+
+    function handleMenuKey(event, items, activeIndex, setActiveIndex, menu, input, getLabel, selectItem) {
+        if (!items.length && event.key !== "Escape") {
+            return;
+        }
+        if (event.key === "ArrowDown") {
+            event.preventDefault();
+            activeIndex = (activeIndex + 1) % items.length;
+            setActiveIndex(activeIndex);
+        } else if (event.key === "ArrowUp") {
+            event.preventDefault();
+            activeIndex = activeIndex <= 0 ? items.length - 1 : activeIndex - 1;
+            setActiveIndex(activeIndex);
+        } else if (event.key === "Enter" && activeIndex >= 0) {
+            event.preventDefault();
+            selectItem(items[activeIndex]);
+        } else if (event.key === "Escape") {
+            closeMenu(menu, input);
+        } else {
+            return;
+        }
+        renderMenu(menu, input, items, activeIndex, getLabel, selectItem);
+    }
+
+    textbookInput.addEventListener("input", searchTextbooks);
+    textbookInput.addEventListener("keydown", function (event) {
+        handleMenuKey(
+            event,
+            textbookItems,
+            activeTextbookIndex,
+            function (index) {
+                activeTextbookIndex = index;
+            },
+            textbookMenu,
+            textbookInput,
+            function (item) {
+                return `${item.name} - Class ${item.class}`;
+            },
+            selectTextbook
+        );
+    });
+    chapterInput.addEventListener("input", searchChapters);
+    chapterInput.addEventListener("keydown", function (event) {
+        handleMenuKey(
+            event,
+            chapterItems,
+            activeChapterIndex,
+            function (index) {
+                activeChapterIndex = index;
+            },
+            chapterMenu,
+            chapterInput,
+            function (item) {
+                return item.title;
+            },
+            selectChapter
+        );
+    });
+    classSelect.addEventListener("change", function () {
+        clearTimeout(textbookSearchTimer);
+        clearTimeout(chapterSearchTimer);
+        clearTextbookSelection(true);
+    });
+    subjectSelect.addEventListener("change", function () {
+        clearTimeout(textbookSearchTimer);
+        clearTimeout(chapterSearchTimer);
+        clearTextbookSelection(true);
+        updateChapterState();
+    });
+    textbookInput.addEventListener("blur", function () {
+        window.setTimeout(function () {
+            closeMenu(textbookMenu, textbookInput);
+        }, 120);
+    });
+    chapterInput.addEventListener("blur", function () {
+        window.setTimeout(function () {
+            closeMenu(chapterMenu, chapterInput);
+        }, 120);
+    });
+
+    form.addEventListener("submit", function (event) {
+        if (!isEnglishSubject()) {
+            return;
+        }
+        if (textbookInput.value.trim() && !textbookIdInput.value) {
+            event.preventDefault();
+            setStatus(textbookStatus, "Select a textbook from the suggestions before starting.");
+            textbookInput.focus();
+            return;
+        }
+        if (textbookIdInput.value && !chapterIdInput.value) {
+            event.preventDefault();
+            setStatus(chapterStatus, "Select a chapter from the suggestions before starting.");
+            chapterInput.focus();
+        }
+    });
+
+    updateChapterState();
+}
+
+if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initializeTextbookAutocomplete);
+} else {
+    initializeTextbookAutocomplete();
 }
 </script>
 </body>

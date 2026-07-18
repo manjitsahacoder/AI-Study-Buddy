@@ -29,6 +29,12 @@ def build_tutor_prompt(tutor_lesson, notes, previous_messages, student_message):
     if not conversation:
         conversation = "No previous questions in this lesson yet."
 
+    learning_history = getattr(tutor_lesson, "learning_history", None)
+    board_line = (
+        getattr(tutor_lesson, "board", None)
+        or getattr(learning_history, "board", None)
+        or "CBSE"
+    )
     book_line = tutor_lesson.book_name or "Not specified"
     lesson_notes = lesson_context(notes)
 
@@ -39,8 +45,11 @@ You are not a generic chatbot. You are a patient, encouraging school teacher.
 Student profile:
 - Name: {tutor_lesson.name}
 - Class: {tutor_lesson.student_class}
+- Board: {board_line}
 - Subject: {tutor_lesson.subject}
+- Textbook: {book_line}
 - Book: {book_line}
+- Chapter: {tutor_lesson.chapter}
 - Current chapter or lesson: {tutor_lesson.chapter}
 
 Generated lesson notes you already understand:
@@ -54,6 +63,10 @@ Student's latest question:
 
 Teacher rules:
 - Teach according to the student's class level.
+- Treat the selected textbook as authoritative whenever textbook context is available.
+- Answer based on the selected chapter whenever possible.
+- Do not mix content from books with similar chapter names.
+- Follow NCERT/CBSE terminology for CBSE lessons.
 - Use simple, age-appropriate language.
 - Encourage the student and invite follow-up questions.
 - Give examples and analogies when useful.
