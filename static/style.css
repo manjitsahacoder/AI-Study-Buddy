@@ -1514,7 +1514,7 @@ body.modal-open {
 .study-form {
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    gap: 14px;
     padding: clamp(20px, 3vw, 30px);
     border: 1px solid rgba(49, 87, 213, 0.16);
     border-radius: 8px;
@@ -1530,8 +1530,9 @@ body.modal-open {
 
 .form-grid {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 18px;
+    grid-template-columns: repeat(2, minmax(280px, 1fr));
+    gap: 14px 18px;
+    align-items: start;
 }
 
 .form-field {
@@ -1548,6 +1549,29 @@ body.modal-open {
     color: var(--ink);
     font-size: 0.9rem;
     font-weight: 800;
+}
+
+.name-field {
+    grid-column: 1;
+}
+
+.subject-field {
+    grid-column: 1;
+}
+
+.class-field {
+    grid-column: 2;
+}
+
+.textbook-field {
+    grid-column: 2;
+}
+
+.chapter-field {
+    grid-column: 1 / -1;
+    margin-top: 2px;
+    padding-top: 14px;
+    border-top: 1px solid rgba(49, 87, 213, 0.12);
 }
 
 .subject-hints {
@@ -1674,6 +1698,11 @@ textarea:focus {
     background: rgba(49, 87, 213, 0.05);
 }
 
+.textbook-info-card {
+    align-self: stretch;
+    padding: 9px 10px;
+}
+
 .selection-info-card[hidden],
 .popular-chapters-panel[hidden] {
     display: none;
@@ -1681,11 +1710,17 @@ textarea:focus {
 
 .selection-card-title {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 7px;
-    margin-bottom: 8px;
+    margin-bottom: 7px;
     color: var(--ink);
-    font-size: 0.94rem;
+    font-size: 0.9rem;
+    line-height: 1.3;
+}
+
+.selection-card-title strong {
+    min-width: 0;
+    overflow-wrap: anywhere;
 }
 
 .selection-info-card dl {
@@ -1695,8 +1730,20 @@ textarea:focus {
     margin: 0;
 }
 
+.textbook-info-card dl {
+    grid-template-columns: 1fr;
+    gap: 5px;
+}
+
 .selection-info-card dl div {
     min-width: 0;
+}
+
+.textbook-info-card dl div {
+    display: grid;
+    grid-template-columns: 92px minmax(0, 1fr);
+    align-items: center;
+    gap: 8px;
 }
 
 .selection-info-card dt,
@@ -1707,15 +1754,37 @@ textarea:focus {
     text-transform: uppercase;
 }
 
+.selection-info-card dt {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
 .selection-info-card dd {
-    margin: 2px 0 0;
+    margin: 0;
     color: var(--ink);
     font-size: 0.86rem;
     font-weight: 800;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
 }
 
 .selection-status-ready {
     color: #16834a !important;
+}
+
+.selection-status-badge {
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
+    width: fit-content;
+    padding: 3px 8px;
+    border: 1px solid rgba(31, 122, 77, 0.2);
+    border-radius: 999px;
+    background: rgba(31, 122, 77, 0.09);
+    font-size: 0.76rem;
+    font-weight: 900;
+    line-height: 1;
 }
 
 .popular-chapters-heading {
@@ -1730,15 +1799,23 @@ textarea:focus {
 }
 
 .popular-chapters-list {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 7px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 188px), 1fr));
+    grid-auto-rows: 1fr;
+    gap: 8px;
+    align-items: stretch;
 }
 
 .popular-chapter-button {
+    display: flex;
     justify-content: flex-start;
-    min-height: 36px;
-    padding: 8px 10px;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    min-width: 0;
+    min-height: 48px;
+    height: 100%;
+    padding: 9px 11px;
     border: 1px solid rgba(49, 87, 213, 0.14);
     border-radius: 8px;
     color: var(--ink);
@@ -1746,14 +1823,32 @@ textarea:focus {
     box-shadow: none;
     font-size: 0.84rem;
     font-weight: 800;
+    line-height: 1.25;
+    text-align: left;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, background 0.18s ease, color 0.18s ease;
+}
+
+.popular-chapter-button span:last-child {
+    min-width: 0;
+    overflow-wrap: anywhere;
 }
 
 .popular-chapter-button:hover,
 .popular-chapter-button:focus-visible {
     color: var(--primary);
     background: rgba(49, 87, 213, 0.08);
-    box-shadow: none;
-    transform: none;
+    border-color: rgba(49, 87, 213, 0.28);
+    box-shadow: 0 10px 20px rgba(49, 87, 213, 0.1);
+    transform: translateY(-2px);
+}
+
+.popular-chapter-button.is-selected {
+    color: #ffffff;
+    border-color: rgba(49, 87, 213, 0.6);
+    background: var(--primary);
+    box-shadow: 0 12px 24px rgba(49, 87, 213, 0.2);
 }
 
 .selection-loading {
@@ -1827,7 +1922,7 @@ button:hover,
     box-shadow: 0 16px 30px rgba(49, 87, 213, 0.28);
 }
 
-.study-form button {
+.study-form > button {
     min-width: min(100%, 250px);
     min-height: 54px;
     align-self: center;
@@ -8781,6 +8876,11 @@ html.dark-mode body::before {
     color: #7ee2a8 !important;
 }
 
+.dark-mode .selection-status-badge {
+    border-color: rgba(126, 226, 168, 0.26);
+    background: rgba(126, 226, 168, 0.12);
+}
+
 .dark-mode .popular-chapter-button {
     color: var(--ink);
     background: rgba(17, 24, 39, 0.72);
@@ -8791,6 +8891,12 @@ html.dark-mode body::before {
 .dark-mode .popular-chapter-button:focus-visible {
     color: #b9c8ff;
     background: rgba(134, 161, 255, 0.12);
+}
+
+.dark-mode .popular-chapter-button.is-selected {
+    color: #ffffff;
+    border-color: rgba(134, 161, 255, 0.58);
+    background: #3157d5;
 }
 
 .dark-mode .diagram-data-list span {
@@ -10288,6 +10394,14 @@ textarea[aria-invalid="true"] {
         grid-template-columns: 1fr;
     }
 
+    .name-field,
+    .subject-field,
+    .class-field,
+    .textbook-field,
+    .chapter-field {
+        grid-column: 1 / -1;
+    }
+
     .features,
     .footer-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -10775,7 +10889,7 @@ textarea[aria-invalid="true"] {
     .notes-download-form,
     .quiz-start-form,
     .result-actions,
-    .study-form button,
+    .study-form > button,
     button,
     .button-link,
     .back-btn {

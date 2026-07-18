@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>AI Study Buddy</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=home-ui-20260703-profile-nav">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=home-ui-20260718-textbook-layout">
     {% include 'components/pwa_head.html' %}
 </head>
 
@@ -337,7 +337,7 @@
 
     <form id="lesson-form" class="study-form" action="{{ url_for('learn') }}" method="POST" data-tour-title="Live Lesson Generator" data-tour-body="This form starts the real learning workflow. It generates notes, a diagram, quiz questions, and saved history for logged-in students.">
         <div class="form-grid">
-            <div class="form-field">
+            <div class="form-field name-field">
                 <label for="name">&#128100; Your Name</label>
                 <input
                     id="name"
@@ -349,7 +349,7 @@
                 >
             </div>
 
-            <div class="form-field">
+            <div class="form-field class-field">
                 <label for="student_class">&#127891; Class</label>
                 <select id="student_class" name="student_class" required>
                     <option value="">Select class</option>
@@ -378,7 +378,7 @@
                     <option value="Artificial Intelligence / Computer Science" {% if current_user and current_user.default_subject == 'Artificial Intelligence / Computer Science' %}selected{% endif %}>Artificial Intelligence / Computer Science</option>
                 </select>
             </div>
-            <div class="form-field">
+            <div class="form-field textbook-field">
                 <label for="book_name">&#128214; Textbook Search</label>
                 <input
                     id="book_name"
@@ -396,7 +396,7 @@
                 <p class="autocomplete-status" data-textbook-status aria-live="polite"></p>
                 <article class="selection-info-card textbook-info-card" data-textbook-info-card aria-live="polite" hidden></article>
             </div>
-            <div class="form-field">
+            <div class="form-field chapter-field">
                 <label for="topic">&#128221; Chapter Search / Topic</label>
                 <input
                     id="topic"
@@ -421,13 +421,13 @@
                     </div>
                     <div class="popular-chapters-list" data-popular-chapters-list aria-label="Popular chapters"></div>
                 </div>
-                <article class="selection-info-card chapter-info-card" data-chapter-info-card aria-live="polite" hidden></article>
             </div>
         </div>
 
         <button class="start-learning-btn" type="submit" aria-label="Start learning with AI Study Buddy" data-start-learning-button>
             Start Learning
         </button>
+        <article class="selection-info-card chapter-info-card" data-chapter-info-card aria-live="polite" hidden></article>
     </form>
 
     <div class="home-actions">
@@ -589,7 +589,6 @@ function initializeTextbookAutocomplete() {
     let activeTextbookIndex = -1;
     let activeChapterIndex = -1;
     let textbookController = null;
-    let chapterController = null;
     let textbookSearchTimer = null;
     let chapterSearchTimer = null;
     const textbookInfoCache = {};
@@ -692,11 +691,11 @@ function initializeTextbookAutocomplete() {
         textbookInfoCard.innerHTML = `
             <div class="selection-card-title"><span aria-hidden="true">&#128218;</span><strong>${escapeHtml(info.name)}</strong></div>
             <dl>
-                <div><dt>Board</dt><dd>${escapeHtml(info.board)}</dd></div>
-                <div><dt>Class</dt><dd>${escapeHtml(info.class)}</dd></div>
-                <div><dt>Subject</dt><dd>${escapeHtml(info.subject)}</dd></div>
-                <div><dt>Chapters</dt><dd>${escapeHtml(info.chapter_count)}</dd></div>
-                <div><dt>Status</dt><dd class="selection-status-ready">&#10003; Available</dd></div>
+                <div><dt><span aria-hidden="true">&#127963;</span> Board</dt><dd>${escapeHtml(info.board)}</dd></div>
+                <div><dt><span aria-hidden="true">&#127891;</span> Class</dt><dd>${escapeHtml(info.class)}</dd></div>
+                <div><dt><span aria-hidden="true">&#128218;</span> Subject</dt><dd>${escapeHtml(info.subject)}</dd></div>
+                <div><dt><span aria-hidden="true">&#128196;</span> Chapters</dt><dd>${escapeHtml(info.chapter_count)}</dd></div>
+                <div><dt><span aria-hidden="true">&#10003;</span> Status</dt><dd><span class="selection-status-ready selection-status-badge">Available</span></dd></div>
             </dl>
         `;
         textbookInfoCard.hidden = false;
@@ -749,8 +748,10 @@ function initializeTextbookAutocomplete() {
 
         visibleItems.forEach(function (item) {
             const button = document.createElement("button");
+            const isSelected = chapterIdInput.value && String(item.id) === String(chapterIdInput.value);
             button.type = "button";
-            button.className = "popular-chapter-button";
+            button.className = isSelected ? "popular-chapter-button is-selected" : "popular-chapter-button";
+            button.setAttribute("aria-pressed", isSelected ? "true" : "false");
             button.innerHTML = `<span aria-hidden="true">&#11088;</span><span>${escapeHtml(item.title)}</span>`;
             button.addEventListener("click", function () {
                 selectChapter(item);
@@ -792,7 +793,7 @@ function initializeTextbookAutocomplete() {
     function loadPopularChapters(textbookId) {
         if (textbookChapterCache[textbookId]) {
             loadedChapterItems = textbookChapterCache[textbookId];
-            renderPopularChapters(loadedChapterItems, "");
+            renderPopularChapters(loadedChapterItems, chapterInput.value);
             return Promise.resolve(loadedChapterItems);
         }
         popularChaptersPanel.hidden = false;
@@ -805,7 +806,7 @@ function initializeTextbookAutocomplete() {
             .then(function (items) {
                 textbookChapterCache[textbookId] = items;
                 loadedChapterItems = items;
-                renderPopularChapters(items, "");
+                renderPopularChapters(items, chapterInput.value);
                 return items;
             })
             .catch(function () {
@@ -950,6 +951,37 @@ function initializeTextbookAutocomplete() {
         hideChapterInfoCard();
         if (loadedChapterItems.length) {
             renderPopularChapters(loadedChapterItems, searchText);
+            chapterItems = loadedChapterItems
+                .filter(function (item) {
+                    return !searchText || item.title.toLowerCase().includes(searchText.toLowerCase());
+                })
+                .slice(0, 12);
+            activeChapterIndex = chapterItems.length ? 0 : -1;
+            if (!searchText) {
+                closeMenu(chapterMenu, chapterInput);
+                setStatus(chapterStatus, "");
+                setStartButtonState();
+                return;
+            }
+            if (!chapterItems.length) {
+                closeMenu(chapterMenu, chapterInput);
+                setStatus(chapterStatus, "No matching chapter found.");
+                setStartButtonState();
+                return;
+            }
+            setStatus(chapterStatus, "");
+            renderMenu(
+                chapterMenu,
+                chapterInput,
+                chapterItems,
+                activeChapterIndex,
+                function (item) {
+                    return item.title;
+                },
+                selectChapter
+            );
+            setStartButtonState();
+            return;
         }
         if (!textbookId || searchText.length < 1) {
             closeMenu(chapterMenu, chapterInput);
@@ -957,50 +989,14 @@ function initializeTextbookAutocomplete() {
             setStartButtonState();
             return;
         }
-
-        if (chapterController) {
-            chapterController.abort();
-        }
-        chapterController = new AbortController();
-        const params = new URLSearchParams({
-            textbook_id: textbookId,
-            q: searchText,
-        });
-
-        fetch(`/api/chapters/search?${params.toString()}`, { signal: chapterController.signal })
-            .then(function (response) {
-                return response.ok ? response.json() : [];
-            })
-            .then(function (items) {
-                chapterItems = items;
-                activeChapterIndex = items.length ? 0 : -1;
-                if (!items.length) {
-                    closeMenu(chapterMenu, chapterInput);
-                    setStatus(chapterStatus, "No matching chapter found.");
-                    return;
-                }
-                setStatus(chapterStatus, "");
-                renderMenu(
-                    chapterMenu,
-                    chapterInput,
-                    chapterItems,
-                    activeChapterIndex,
-                    function (item) {
-                        return item.title;
-                    },
-                    selectChapter
-                );
-            })
-            .catch(function (error) {
-                if (error.name !== "AbortError") {
-                    closeMenu(chapterMenu, chapterInput);
-                }
-            });
+        closeMenu(chapterMenu, chapterInput);
+        setStatus(chapterStatus, "Loading chapters...");
+        setStartButtonState();
     }
 
     function searchChapters() {
         clearTimeout(chapterSearchTimer);
-        chapterSearchTimer = window.setTimeout(performChapterSearch, 500);
+        performChapterSearch();
     }
 
     function handleMenuKey(event, items, activeIndex, setActiveIndex, menu, input, getLabel, selectItem) {
