@@ -8167,16 +8167,61 @@ def extract_chapter_context(pdf_path, topic, max_chars=LEARN_MAX_TEXTBOOK_CONTEX
     return compact_text[start:end].strip()
 
 
-def textbook_pdf_paths(textbook_path):
+def order_textbook_pdf_paths_for_chapter(pdf_paths, chapter_number=None, chapter_count=None):
+    paths = list(pdf_paths)
+    if len(paths) <= 1 or not chapter_number or not chapter_count:
+        return paths
+
+    try:
+        chapter_number = int(chapter_number)
+        chapter_count = int(chapter_count)
+    except (TypeError, ValueError):
+        return paths
+    if chapter_number < 1 or chapter_count < 1:
+        return paths
+
+    content_paths = [
+        path
+        for path in paths
+        if not re.search(r"(?:a\d+|ps)$", path.stem.lower())
+    ]
+    if not content_paths:
+        return paths
+
+    chapters_per_pdf = max(1, (chapter_count + len(content_paths) - 1) // len(content_paths))
+    preferred_index = min(len(content_paths) - 1, (chapter_number - 1) // chapters_per_pdf)
+    preferred_path = content_paths[preferred_index]
+    ordered = [preferred_path]
+    ordered.extend(path for path in content_paths if path != preferred_path)
+    ordered.extend(path for path in paths if path not in content_paths)
+    return ordered
+
+
+def textbook_pdf_paths(textbook_path, chapter_number=None, chapter_count=None):
+    paths = []
     if textbook_path.is_file() and textbook_path.suffix.lower() == ".pdf":
-        return [textbook_path]
-    if textbook_path.is_dir():
-        return sorted(textbook_path.glob("*.pdf"))
-    return []
+        paths = [textbook_path]
+    elif textbook_path.is_dir():
+        paths = sorted(textbook_path.glob("*.pdf"))
+    return order_textbook_pdf_paths_for_chapter(
+        paths,
+        chapter_number=chapter_number,
+        chapter_count=chapter_count,
+    )
 
 
-def find_chapter_context(textbook_path, topic, max_chars=LEARN_MAX_TEXTBOOK_CONTEXT_CHARS):
-    for pdf_path in textbook_pdf_paths(textbook_path):
+def find_chapter_context(
+    textbook_path,
+    topic,
+    max_chars=LEARN_MAX_TEXTBOOK_CONTEXT_CHARS,
+    chapter_number=None,
+    chapter_count=None,
+):
+    for pdf_path in textbook_pdf_paths(
+        textbook_path,
+        chapter_number=chapter_number,
+        chapter_count=chapter_count,
+    ):
         chapter_context = extract_chapter_context(pdf_path, topic, max_chars=max_chars)
         if chapter_context:
             return pdf_path, chapter_context
@@ -8189,6 +8234,8 @@ def local_textbook_context_section(
     book_name,
     topic,
     max_chars=LEARN_MAX_TEXTBOOK_CONTEXT_CHARS,
+    chapter_number=None,
+    chapter_count=None,
 ):
     textbook_path = find_registered_textbook(student_class, subject, book_name)
     if not textbook_path:
@@ -8207,6 +8254,8 @@ Local Textbook PDF Context:
         textbook_path,
         topic,
         max_chars=max_chars,
+        chapter_number=chapter_number,
+        chapter_count=chapter_count,
     )
     if not chapter_context:
         return f"""
@@ -10164,6 +10213,9 @@ def learn():
         board = textbook.board or DEFAULT_BOARD
         book_name = textbook.name
         topic = chapter.title
+    chapter_count = 0
+    if textbook and chapter:
+        chapter_count = Chapter.query.filter_by(textbook_id=textbook.id).count()
 
     selected_textbook_context_section = selected_textbook_context_block(
         student_class,
@@ -10190,6 +10242,8 @@ def learn():
             book_name,
             topic,
             max_chars=LEARN_MAX_TEXTBOOK_CONTEXT_CHARS,
+            chapter_number=chapter.chapter_number if chapter else None,
+            chapter_count=chapter_count,
         )
 
     prompt = f"""

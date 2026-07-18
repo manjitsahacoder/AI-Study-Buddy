@@ -763,6 +763,25 @@ Q5. When are roots equal?
         self.assertIn("Textbook: Mathematics", prompt)
         self.assertIn("Chapter: Quadratic Equations", prompt)
 
+    def test_textbook_pdf_paths_prioritize_selected_chapter_candidate(self):
+        pdf_paths = [
+            Path(f"iebe10{index}.pdf")
+            for index in range(1, 9)
+        ] + [
+            Path("iebe1a1.pdf"),
+            Path("iebe1ps.pdf"),
+        ]
+
+        ordered_paths = app_module.order_textbook_pdf_paths_for_chapter(
+            pdf_paths,
+            chapter_number=16,
+            chapter_count=16,
+        )
+
+        self.assertEqual(ordered_paths[0], Path("iebe108.pdf"))
+        self.assertEqual(ordered_paths[-2:], [Path("iebe1a1.pdf"), Path("iebe1ps.pdf")])
+        self.assertCountEqual(ordered_paths, pdf_paths)
+
     @patch.object(app_module.model, "generate_content")
     def test_learn_rejects_selected_textbook_from_different_subject(self, generate_content):
         with app_module.app.app_context():

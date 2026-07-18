@@ -20,7 +20,7 @@ If `DATABASE_URL` is set, the app uses PostgreSQL through SQLAlchemy. If it is m
 ## Render Settings
 
 - Build command: `pip install -r requirements.txt`
-- Start command: `gunicorn app:app`
+- Start command: `gunicorn --workers 1 --threads 2 --timeout 120 app:app`
 - Environment: Python
 
 Add `GEMINI_API_KEY` in the Render dashboard before opening the live site.
