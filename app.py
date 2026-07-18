@@ -8436,6 +8436,8 @@ def textbook_result_payload(textbook):
         "name": textbook.name,
         "board": textbook.board,
         "class": textbook.class_level,
+        "subject": textbook.subject,
+        "chapter_count": Chapter.query.filter_by(textbook_id=textbook.id).count(),
     }
 
 
@@ -8657,6 +8659,8 @@ def textbook_ai_suggestion_payload(suggestion, class_level=None, subject=""):
             "name": suggestion,
             "board": "CBSE",
             "class": class_level,
+            "subject": subject,
+            "chapter_count": 0,
             "ai_suggestion": True,
             "unavailable": True,
         }
@@ -8816,6 +8820,7 @@ def search_chapters():
         return jsonify([])
 
     query_text = request.args.get("q", "").strip()
+    include_all = request.args.get("all", "").strip() == "1"
     normalized_query = normalize_catalog_value(query_text)
     textbook = db.session.get(Textbook, int(textbook_id))
     if not textbook or not textbook.is_active:
@@ -8838,6 +8843,8 @@ def search_chapters():
 
     if chapters:
         log_smart_search_event("database_hit", feature="chapter", count=len(chapters), query=query_text)
+        if include_all and not normalized_query:
+            return jsonify([chapter_result_payload(chapter) for chapter in chapters])
         limit = 12 if not normalized_query else 10
         return jsonify([chapter_result_payload(chapter) for chapter in chapters[:limit]])
 

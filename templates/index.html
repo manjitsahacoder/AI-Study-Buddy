@@ -424,7 +424,7 @@
             </div>
         </div>
 
-        <button class="start-learning-btn" type="submit" aria-label="Start learning with AI Study Buddy" data-start-learning-button>
+        <button class="start-learning-btn" type="submit" aria-label="Start learning with AI Study Buddy" title="Select a chapter first" data-start-learning-button>
             Start Learning
         </button>
         <article class="selection-info-card chapter-info-card" data-chapter-info-card aria-live="polite" hidden></article>
@@ -581,6 +581,10 @@ function initializeTextbookAutocomplete() {
     const popularChaptersList = form.querySelector("[data-popular-chapters-list]");
     const popularChaptersCount = form.querySelector("[data-popular-chapters-count]");
     const startButton = form.querySelector("[data-start-learning-button]");
+    const RECENT_TEXTBOOKS_KEY = "ai-study-buddy-recent-textbooks";
+    const RECENT_CHAPTERS_KEY = "ai-study-buddy-recent-chapters";
+    const MAX_RECENT_ITEMS = 5;
+    const SEARCH_DEBOUNCE_MS = 320;
     let textbookItems = [];
     let chapterItems = [];
     let loadedChapterItems = [];
@@ -589,15 +593,22 @@ function initializeTextbookAutocomplete() {
     let activeTextbookIndex = -1;
     let activeChapterIndex = -1;
     let textbookController = null;
+    let chapterLoadPromise = null;
     let textbookSearchTimer = null;
     let chapterSearchTimer = null;
     const textbookInfoCache = {};
     const textbookChapterCache = {};
+    const storageFallback = {};
 
     function isSmartTextbookSubject() {
         return ["english", "maths", "mathematics", "science", "social science"].includes(
             (subjectSelect.value || "").toLowerCase()
         );
+    }
+
+    function normalizeSubject(value) {
+        const normalized = (value || "").toLowerCase();
+        return normalized === "maths" ? "mathematics" : normalized;
     }
 
     function setStatus(target, message) {
@@ -610,9 +621,11 @@ function initializeTextbookAutocomplete() {
         if (!startButton) {
             return;
         }
-        const locked = isSmartTextbookSubject() && textbookIdInput.value && !chapterIdInput.value;
+        const locked = isSmartTextbookSubject() && (!textbookIdInput.value || !chapterIdInput.value);
         startButton.disabled = Boolean(locked);
         startButton.setAttribute("aria-disabled", locked ? "true" : "false");
+        startButton.title = locked ? "Select a chapter first" : "Start learning";
+        startButton.classList.toggle("is-enabled", !locked);
     }
 
     function escapeHtml(value) {
@@ -627,28 +640,243 @@ function initializeTextbookAutocomplete() {
         });
     }
 
+    function readStoredList(key) {
+        try {
+            if (!window.localStorage) {
+                return storageFallback[key] || [];
+            }
+            const storedValue = window.localStorage.getItem(key);
+            if (!storedValue) {
+                return storageFallback[key] || [];
+            }
+            const parsed = JSON.parse(storedValue);
+            return Array.isArray(parsed) ? parsed : [];
+        } catch (error) {
+            return storageFallback[key] || [];
+        }
+    }
+
+    function writeStoredList(key, items) {
+        const recentItems = items.slice(0, MAX_RECENT_ITEMS);
+        storageFallback[key] = recentItems;
+        try {
+            if (window.localStorage) {
+                window.localStorage.setItem(key, JSON.stringify(recentItems));
+            }
+        } catch (error) {
+            // Browsers can deny storage in private modes; the search still works without recents.
+        }
+    }
+
+    function rememberItem(key, item, identity) {
+        const existing = readStoredList(key).filter(function (storedItem) {
+            return identity(storedItem) !== identity(item);
+        });
+        writeStoredList(key, [item].concat(existing));
+    }
+
+    function rememberTextbook(item) {
+        rememberItem(
+            RECENT_TEXTBOOKS_KEY,
+            {
+                id: item.id,
+                name: item.name,
+                board: item.board || "CBSE",
+                class: item.class || classSelect.value || "",
+                subject: item.subject || subjectSelect.value || "",
+                chapter_count: item.chapter_count || 0,
+                recent: true,
+            },
+            function (storedItem) {
+                return String(storedItem.id || storedItem.name);
+            }
+        );
+    }
+
+    function rememberChapter(item) {
+        rememberItem(
+            RECENT_CHAPTERS_KEY,
+            {
+                id: item.id,
+                textbook_id: item.textbook_id || textbookIdInput.value,
+                chapter_number: item.chapter_number,
+                title: item.title,
+                textbook_name: textbookInput.value,
+                recent: true,
+            },
+            function (storedItem) {
+                return `${storedItem.textbook_id || ""}:${storedItem.id || storedItem.title}`;
+            }
+        );
+    }
+
+    function recentTextbooksForContext() {
+        const selectedClass = String(classSelect.value || "");
+        const selectedSubject = normalizeSubject(subjectSelect.value);
+        return readStoredList(RECENT_TEXTBOOKS_KEY).filter(function (item) {
+            const classMatches = !selectedClass || String(item.class || "") === selectedClass;
+            const subjectMatches = !selectedSubject || normalizeSubject(item.subject) === selectedSubject;
+            return item.id && classMatches && subjectMatches;
+        });
+    }
+
+    function recentChaptersForContext() {
+        const selectedTextbookId = String(textbookIdInput.value || "");
+        return readStoredList(RECENT_CHAPTERS_KEY).filter(function (item) {
+            return item.id && String(item.textbook_id || "") === selectedTextbookId;
+        });
+    }
+
     function closeMenu(menu, input) {
         menu.hidden = true;
         input.setAttribute("aria-expanded", "false");
+        input.removeAttribute("aria-activedescendant");
     }
 
-    function renderMenu(menu, input, items, activeIndex, getLabel, selectItem) {
+    function openMenu(menu, input) {
+        menu.hidden = false;
+        input.setAttribute("aria-expanded", "true");
+    }
+
+    function appendHighlightedText(target, text, query) {
+        const value = String(text || "");
+        const normalizedQuery = String(query || "").trim().toLowerCase();
+        if (!normalizedQuery) {
+            target.textContent = value;
+            return;
+        }
+
+        const lowerValue = value.toLowerCase();
+        let cursor = 0;
+        let matchIndex = lowerValue.indexOf(normalizedQuery);
+        if (matchIndex === -1) {
+            target.textContent = value;
+            return;
+        }
+
+        while (matchIndex !== -1) {
+            if (matchIndex > cursor) {
+                target.appendChild(document.createTextNode(value.slice(cursor, matchIndex)));
+            }
+            const mark = document.createElement("mark");
+            mark.textContent = value.slice(matchIndex, matchIndex + normalizedQuery.length);
+            target.appendChild(mark);
+            cursor = matchIndex + normalizedQuery.length;
+            matchIndex = lowerValue.indexOf(normalizedQuery, cursor);
+        }
+        if (cursor < value.length) {
+            target.appendChild(document.createTextNode(value.slice(cursor)));
+        }
+    }
+
+    function animateSelection(input) {
+        input.classList.remove("is-selecting");
+        window.requestAnimationFrame(function () {
+            input.classList.add("is-selecting");
+            window.setTimeout(function () {
+                input.classList.remove("is-selecting");
+            }, 240);
+        });
+    }
+
+    function updateActiveOption(menu, input, activeIndex) {
+        Array.from(menu.querySelectorAll(".autocomplete-option")).forEach(function (option, index) {
+            option.setAttribute("aria-selected", index === activeIndex ? "true" : "false");
+        });
+        input.setAttribute("aria-activedescendant", activeIndex >= 0 ? `${menu.id}-option-${activeIndex}` : "");
+        const activeOption = menu.querySelector(`#${menu.id}-option-${activeIndex}`);
+        if (activeOption) {
+            activeOption.scrollIntoView({ block: "nearest" });
+        }
+    }
+
+    function renderSkeletonMenu(menu, input, label) {
+        menu.innerHTML = `
+            <div class="autocomplete-section-label">${escapeHtml(label || "Searching")}</div>
+            <div class="autocomplete-skeleton" aria-hidden="true"><span></span><span></span><span></span></div>
+            <div class="autocomplete-skeleton" aria-hidden="true"><span></span><span></span><span></span></div>
+            <div class="autocomplete-skeleton" aria-hidden="true"><span></span><span></span><span></span></div>
+        `;
+        openMenu(menu, input);
+    }
+
+    function renderEmptyMenu(menu, input, title, detail, icon) {
+        menu.innerHTML = `
+            <div class="autocomplete-empty-state" role="status">
+                <span class="autocomplete-empty-icon" aria-hidden="true">${icon || "&#128214;"}</span>
+                <strong>${escapeHtml(title)}</strong>
+                ${detail ? `<small>${escapeHtml(detail)}</small>` : ""}
+            </div>
+        `;
+        openMenu(menu, input);
+    }
+
+    function renderMenu(menu, input, items, activeIndex, selectItem, options) {
+        const config = options || {};
         menu.innerHTML = "";
         if (!items.length) {
             closeMenu(menu, input);
             return;
         }
 
+        if (config.localMiss) {
+            const miss = document.createElement("div");
+            miss.className = "autocomplete-inline-empty";
+            miss.innerHTML = `<span aria-hidden="true">&#128269;</span><strong>No textbook found.</strong>`;
+            menu.appendChild(miss);
+        }
+
+        if (config.heading) {
+            const heading = document.createElement("div");
+            heading.className = "autocomplete-section-label";
+            heading.textContent = config.heading;
+            menu.appendChild(heading);
+        }
+
         items.forEach(function (item, index) {
             const option = document.createElement("button");
             option.type = "button";
-            option.className = "autocomplete-option";
+            option.className = `autocomplete-option autocomplete-option-${config.type || "textbook"}`;
+            if (item.recent) {
+                option.classList.add("is-recent");
+            }
+            if (item.unavailable) {
+                option.classList.add("is-unavailable");
+            }
             option.id = `${menu.id}-option-${index}`;
             option.setAttribute("role", "option");
             option.setAttribute("aria-selected", index === activeIndex ? "true" : "false");
-            const label = document.createElement("span");
-            label.textContent = getLabel(item);
-            option.appendChild(label);
+            const icon = document.createElement("span");
+            icon.className = "autocomplete-option-icon";
+            icon.setAttribute("aria-hidden", "true");
+            icon.innerHTML = config.type === "chapter" ? "&#11088;" : "&#128214;";
+            option.appendChild(icon);
+
+            const content = document.createElement("span");
+            content.className = "autocomplete-option-content";
+            const title = document.createElement("strong");
+            appendHighlightedText(title, config.type === "chapter" ? item.title : item.name, config.query);
+            content.appendChild(title);
+
+            const meta = document.createElement("small");
+            if (config.type === "chapter") {
+                meta.textContent = item.chapter_number ? `Chapter ${item.chapter_number}` : "Chapter";
+            } else {
+                const board = item.board || "CBSE";
+                const classLabel = item.class ? `Class ${item.class}` : "Class";
+                const subject = item.subject || subjectSelect.value || "Subject";
+                meta.textContent = `${board} \u2022 ${classLabel} \u2022 ${subject}`;
+            }
+            content.appendChild(meta);
+            option.appendChild(content);
+
+            if (config.type !== "chapter") {
+                const chapterCount = document.createElement("span");
+                chapterCount.className = "autocomplete-chapter-count";
+                const count = Number(item.chapter_count || 0);
+                chapterCount.textContent = count ? `${count} Chapters` : "Chapters";
+                option.appendChild(chapterCount);
+            }
             if (item.ai_suggestion) {
                 const badge = document.createElement("span");
                 badge.className = "autocomplete-ai-badge";
@@ -663,13 +891,12 @@ function initializeTextbookAutocomplete() {
             });
             menu.appendChild(option);
         });
-        menu.hidden = false;
-        input.setAttribute("aria-expanded", "true");
-        input.setAttribute("aria-activedescendant", activeIndex >= 0 ? `${menu.id}-option-${activeIndex}` : "");
+        openMenu(menu, input);
+        updateActiveOption(menu, input, activeIndex);
     }
 
     function updateChapterState() {
-        if (isSmartTextbookSubject() && textbookInput.value.trim() && !textbookIdInput.value) {
+        if (isSmartTextbookSubject() && !textbookIdInput.value) {
             chapterInput.disabled = true;
             chapterInput.placeholder = "Select textbook first";
             setStartButtonState();
@@ -689,13 +916,16 @@ function initializeTextbookAutocomplete() {
     function renderTextbookInfoCard(info) {
         selectedTextbookInfo = info;
         textbookInfoCard.innerHTML = `
-            <div class="selection-card-title"><span aria-hidden="true">&#128218;</span><strong>${escapeHtml(info.name)}</strong></div>
-            <dl>
-                <div><dt><span aria-hidden="true">&#127963;</span> Board</dt><dd>${escapeHtml(info.board)}</dd></div>
-                <div><dt><span aria-hidden="true">&#127891;</span> Class</dt><dd>${escapeHtml(info.class)}</dd></div>
-                <div><dt><span aria-hidden="true">&#128218;</span> Subject</dt><dd>${escapeHtml(info.subject)}</dd></div>
-                <div><dt><span aria-hidden="true">&#128196;</span> Chapters</dt><dd>${escapeHtml(info.chapter_count)}</dd></div>
-                <div><dt><span aria-hidden="true">&#10003;</span> Status</dt><dd><span class="selection-status-ready selection-status-badge">Available</span></dd></div>
+            <div class="selection-card-title">
+                <span aria-hidden="true">&#128214;</span>
+                <strong>${escapeHtml(info.name)}</strong>
+                <span class="selection-status-ready selection-status-badge">&#10003; Available</span>
+            </div>
+            <dl class="selection-metadata-grid">
+                <div><dt>Board</dt><dd>${escapeHtml(info.board || "CBSE")}</dd></div>
+                <div><dt>Class</dt><dd>${escapeHtml(info.class)}</dd></div>
+                <div><dt>Subject</dt><dd>${escapeHtml(info.subject || subjectSelect.value)}</dd></div>
+                <div><dt>Chapters</dt><dd>${escapeHtml(info.chapter_count || 0)}</dd></div>
             </dl>
         `;
         textbookInfoCard.hidden = false;
@@ -752,7 +982,8 @@ function initializeTextbookAutocomplete() {
             button.type = "button";
             button.className = isSelected ? "popular-chapter-button is-selected" : "popular-chapter-button";
             button.setAttribute("aria-pressed", isSelected ? "true" : "false");
-            button.innerHTML = `<span aria-hidden="true">&#11088;</span><span>${escapeHtml(item.title)}</span>`;
+            button.innerHTML = `<span aria-hidden="true">&#11088;</span><span></span>${isSelected ? `<span class="popular-chapter-check" aria-hidden="true">&#10003;</span>` : ""}`;
+            appendHighlightedText(button.querySelector("span:nth-child(2)"), item.title, filterText);
             button.addEventListener("click", function () {
                 selectChapter(item);
             });
@@ -796,23 +1027,38 @@ function initializeTextbookAutocomplete() {
             renderPopularChapters(loadedChapterItems, chapterInput.value);
             return Promise.resolve(loadedChapterItems);
         }
+        if (chapterLoadPromise) {
+            return chapterLoadPromise;
+        }
         popularChaptersPanel.hidden = false;
-        popularChaptersList.innerHTML = `<p class="selection-loading">Loading chapters...</p>`;
-        const params = new URLSearchParams({ textbook_id: textbookId, q: "" });
-        return fetch(`/api/chapters/search?${params.toString()}`)
+        popularChaptersList.innerHTML = `
+            <div class="chapter-card-skeleton" aria-hidden="true"><span></span><span></span></div>
+            <div class="chapter-card-skeleton" aria-hidden="true"><span></span><span></span></div>
+        `;
+        const params = new URLSearchParams({ textbook_id: textbookId, q: "", all: "1" });
+        const currentPromise = fetch(`/api/chapters/search?${params.toString()}`)
             .then(function (response) {
                 return response.ok ? response.json() : [];
             })
             .then(function (items) {
                 textbookChapterCache[textbookId] = items;
-                loadedChapterItems = items;
-                renderPopularChapters(items, chapterInput.value);
+                if (String(textbookIdInput.value || "") === String(textbookId)) {
+                    loadedChapterItems = items;
+                    renderPopularChapters(items, chapterInput.value);
+                }
                 return items;
             })
             .catch(function () {
                 hidePopularChapters();
                 return [];
+            })
+            .finally(function () {
+                if (chapterLoadPromise === currentPromise) {
+                    chapterLoadPromise = null;
+                }
             });
+        chapterLoadPromise = currentPromise;
+        return chapterLoadPromise;
     }
 
     function clearChapter() {
@@ -853,6 +1099,7 @@ function initializeTextbookAutocomplete() {
         textbookInput.value = item.name;
         textbookIdInput.value = item.id;
         loadedChapterItems = [];
+        chapterLoadPromise = null;
         hidePopularChapters();
         activeTextbookIndex = -1;
         closeMenu(textbookMenu, textbookInput);
@@ -860,7 +1107,23 @@ function initializeTextbookAutocomplete() {
         clearChapter();
         chapterInput.disabled = false;
         chapterInput.placeholder = "Search chapter";
-        loadTextbookInfo(item.id);
+        rememberTextbook(item);
+        animateSelection(textbookInput);
+        if (item.chapter_count !== undefined) {
+            const info = {
+                id: item.id,
+                name: item.name,
+                board: item.board || "CBSE",
+                class: item.class || classSelect.value,
+                subject: item.subject || subjectSelect.value,
+                chapter_count: item.chapter_count || 0,
+                available: true,
+            };
+            textbookInfoCache[item.id] = info;
+            renderTextbookInfoCard(info);
+        } else {
+            loadTextbookInfo(item.id);
+        }
         loadPopularChapters(item.id);
         setStartButtonState();
         chapterInput.focus();
@@ -878,9 +1141,47 @@ function initializeTextbookAutocomplete() {
         activeChapterIndex = -1;
         closeMenu(chapterMenu, chapterInput);
         setStatus(chapterStatus, "");
+        rememberChapter(item);
+        animateSelection(chapterInput);
         renderChapterInfoCard(item);
         renderPopularChapters(loadedChapterItems, chapterInput.value);
         setStartButtonState();
+    }
+
+    function showTextbookRecents() {
+        if (textbookInput.value.trim() || !isSmartTextbookSubject()) {
+            return false;
+        }
+        textbookItems = recentTextbooksForContext();
+        activeTextbookIndex = textbookItems.length ? 0 : -1;
+        if (!textbookItems.length) {
+            closeMenu(textbookMenu, textbookInput);
+            return false;
+        }
+        renderMenu(textbookMenu, textbookInput, textbookItems, activeTextbookIndex, selectTextbook, {
+            type: "textbook",
+            query: "",
+            heading: "Recent Textbooks",
+        });
+        return true;
+    }
+
+    function showChapterRecents() {
+        if (chapterInput.value.trim() || !textbookIdInput.value) {
+            return false;
+        }
+        chapterItems = recentChaptersForContext();
+        activeChapterIndex = chapterItems.length ? 0 : -1;
+        if (!chapterItems.length) {
+            closeMenu(chapterMenu, chapterInput);
+            return false;
+        }
+        renderMenu(chapterMenu, chapterInput, chapterItems, activeChapterIndex, selectChapter, {
+            type: "chapter",
+            query: "",
+            heading: "Recent Chapters",
+        });
+        return true;
     }
 
     function performTextbookSearch() {
@@ -890,7 +1191,11 @@ function initializeTextbookAutocomplete() {
         hidePopularChapters();
         clearChapter();
         if (!isSmartTextbookSubject() || searchText.length < 2) {
-            closeMenu(textbookMenu, textbookInput);
+            if (searchText.length === 1 && isSmartTextbookSubject()) {
+                renderEmptyMenu(textbookMenu, textbookInput, "Type one more letter.", "", "&#128214;");
+            } else {
+                closeMenu(textbookMenu, textbookInput);
+            }
             setStatus(textbookStatus, "");
             return;
         }
@@ -905,33 +1210,49 @@ function initializeTextbookAutocomplete() {
             subject: subjectSelect.value || "",
         });
 
+        renderSkeletonMenu(textbookMenu, textbookInput, "Searching textbooks");
         fetch(`/api/textbooks/search?${params.toString()}`, { signal: textbookController.signal })
             .then(function (response) {
                 return response.ok ? response.json() : [];
             })
             .then(function (items) {
+                if (textbookInput.value.trim() !== searchText) {
+                    return;
+                }
                 textbookItems = items;
                 activeTextbookIndex = items.length ? 0 : -1;
                 if (!items.length) {
-                    closeMenu(textbookMenu, textbookInput);
-                    setStatus(textbookStatus, "No matching CBSE textbook found.");
+                    renderEmptyMenu(
+                        textbookMenu,
+                        textbookInput,
+                        "We couldn't find this textbook.",
+                        "Try the official CBSE textbook name or adjust class and subject.",
+                        "&#128214;"
+                    );
+                    setStatus(textbookStatus, "");
                     return;
                 }
                 setStatus(textbookStatus, "");
+                const localMiss = items.every(function (item) {
+                    return item.ai_suggestion;
+                });
                 renderMenu(
                     textbookMenu,
                     textbookInput,
                     textbookItems,
                     activeTextbookIndex,
-                    function (item) {
-                        return `${item.name} - Class ${item.class}`;
-                    },
-                    selectTextbook
+                    selectTextbook,
+                    {
+                        type: "textbook",
+                        query: searchText,
+                        heading: localMiss ? "AI Suggestion" : "",
+                        localMiss: localMiss,
+                    }
                 );
             })
             .catch(function (error) {
                 if (error.name !== "AbortError") {
-                    closeMenu(textbookMenu, textbookInput);
+                    renderEmptyMenu(textbookMenu, textbookInput, "We couldn't find this textbook.", "", "&#128214;");
                 }
             });
     }
@@ -940,8 +1261,14 @@ function initializeTextbookAutocomplete() {
         clearTimeout(textbookSearchTimer);
         if (!textbookInput.value.trim()) {
             clearTextbookSelection(false);
+            showTextbookRecents();
+            setStartButtonState();
+            return;
         }
-        textbookSearchTimer = window.setTimeout(performTextbookSearch, 500);
+        if (isSmartTextbookSubject()) {
+            renderSkeletonMenu(textbookMenu, textbookInput, "Searching textbooks");
+        }
+        textbookSearchTimer = window.setTimeout(performTextbookSearch, SEARCH_DEBOUNCE_MS);
     }
 
     function performChapterSearch() {
@@ -958,14 +1285,14 @@ function initializeTextbookAutocomplete() {
                 .slice(0, 12);
             activeChapterIndex = chapterItems.length ? 0 : -1;
             if (!searchText) {
-                closeMenu(chapterMenu, chapterInput);
+                showChapterRecents();
                 setStatus(chapterStatus, "");
                 setStartButtonState();
                 return;
             }
             if (!chapterItems.length) {
-                closeMenu(chapterMenu, chapterInput);
-                setStatus(chapterStatus, "No matching chapter found.");
+                renderEmptyMenu(chapterMenu, chapterInput, "No matching chapter found.", "", "&#128269;");
+                setStatus(chapterStatus, "");
                 setStartButtonState();
                 return;
             }
@@ -975,10 +1302,11 @@ function initializeTextbookAutocomplete() {
                 chapterInput,
                 chapterItems,
                 activeChapterIndex,
-                function (item) {
-                    return item.title;
-                },
-                selectChapter
+                selectChapter,
+                {
+                    type: "chapter",
+                    query: searchText,
+                }
             );
             setStartButtonState();
             return;
@@ -990,7 +1318,8 @@ function initializeTextbookAutocomplete() {
             return;
         }
         closeMenu(chapterMenu, chapterInput);
-        setStatus(chapterStatus, "Loading chapters...");
+        renderSkeletonMenu(chapterMenu, chapterInput, "Loading chapters");
+        setStatus(chapterStatus, "");
         setStartButtonState();
     }
 
@@ -999,15 +1328,19 @@ function initializeTextbookAutocomplete() {
         performChapterSearch();
     }
 
-    function handleMenuKey(event, items, activeIndex, setActiveIndex, menu, input, getLabel, selectItem) {
-        if (!items.length && event.key !== "Escape") {
-            return;
-        }
+    function handleMenuKey(event, items, activeIndex, setActiveIndex, menu, input, selectItem) {
         if (event.key === "ArrowDown") {
+            if (!items.length) {
+                return;
+            }
             event.preventDefault();
             activeIndex = (activeIndex + 1) % items.length;
             setActiveIndex(activeIndex);
+            updateActiveOption(menu, input, activeIndex);
         } else if (event.key === "ArrowUp") {
+            if (!items.length) {
+                return;
+            }
             event.preventDefault();
             activeIndex = activeIndex <= 0 ? items.length - 1 : activeIndex - 1;
             setActiveIndex(activeIndex);
@@ -1019,10 +1352,13 @@ function initializeTextbookAutocomplete() {
         } else {
             return;
         }
-        renderMenu(menu, input, items, activeIndex, getLabel, selectItem);
+        if (event.key === "ArrowUp") {
+            updateActiveOption(menu, input, activeIndex);
+        }
     }
 
     textbookInput.addEventListener("input", searchTextbooks);
+    textbookInput.addEventListener("focus", showTextbookRecents);
     textbookInput.addEventListener("keydown", function (event) {
         handleMenuKey(
             event,
@@ -1033,13 +1369,11 @@ function initializeTextbookAutocomplete() {
             },
             textbookMenu,
             textbookInput,
-            function (item) {
-                return `${item.name} - Class ${item.class}`;
-            },
             selectTextbook
         );
     });
     chapterInput.addEventListener("input", searchChapters);
+    chapterInput.addEventListener("focus", showChapterRecents);
     chapterInput.addEventListener("keydown", function (event) {
         handleMenuKey(
             event,
@@ -1050,9 +1384,6 @@ function initializeTextbookAutocomplete() {
             },
             chapterMenu,
             chapterInput,
-            function (item) {
-                return item.title;
-            },
             selectChapter
         );
     });
@@ -1082,7 +1413,7 @@ function initializeTextbookAutocomplete() {
         if (!isSmartTextbookSubject()) {
             return;
         }
-        if (textbookInput.value.trim() && !textbookIdInput.value) {
+        if (!textbookIdInput.value) {
             event.preventDefault();
             setStatus(textbookStatus, "Select a textbook from the suggestions before starting.");
             textbookInput.focus();
