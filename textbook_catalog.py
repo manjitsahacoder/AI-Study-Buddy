@@ -7,9 +7,25 @@ def normalize_catalog_value(value):
     return re.sub(r"[^a-z0-9]+", " ", str(value or "").lower()).strip()
 
 
-CBSE_ENGLISH_TEXTBOOKS = [
+def normalize_catalog_subject(value):
+    normalized = normalize_catalog_value(value)
+    if normalized in {"math", "maths"}:
+        return "mathematics"
+    if normalized in {"sst", "social studies"}:
+        return "social science"
+    return normalized
+
+
+def subject_matches_catalog_subject(stored_subject, selected_subject):
+    if not selected_subject:
+        return True
+    return normalize_catalog_subject(stored_subject) == normalize_catalog_subject(selected_subject)
+
+
+CBSE_TEXTBOOKS = [
     {
         "class_level": 6,
+        "subject": "English",
         "name": "Poorvi",
         "chapters": [
             "A Bottle of Dew",
@@ -32,6 +48,7 @@ CBSE_ENGLISH_TEXTBOOKS = [
     },
     {
         "class_level": 7,
+        "subject": "English",
         "name": "Poorvi",
         "chapters": [
             "The Day the River Spoke",
@@ -53,6 +70,7 @@ CBSE_ENGLISH_TEXTBOOKS = [
     },
     {
         "class_level": 8,
+        "subject": "English",
         "name": "Poorvi",
         "chapters": [
             "The Wit that Won Hearts",
@@ -74,6 +92,7 @@ CBSE_ENGLISH_TEXTBOOKS = [
     },
     {
         "class_level": 9,
+        "subject": "English",
         "name": "Kaveri",
         "chapters": [
             "How I Taught My Grandmother to Read",
@@ -96,6 +115,7 @@ CBSE_ENGLISH_TEXTBOOKS = [
     },
     {
         "class_level": 10,
+        "subject": "English",
         "name": "First Flight",
         "chapters": [
             "A Letter to God",
@@ -126,6 +146,7 @@ CBSE_ENGLISH_TEXTBOOKS = [
     },
     {
         "class_level": 10,
+        "subject": "English",
         "name": "Footprints Without Feet",
         "chapters": [
             "A Triumph of Surgery",
@@ -139,22 +160,381 @@ CBSE_ENGLISH_TEXTBOOKS = [
             "The Book That Saved the Earth",
         ],
     },
+    {
+        "class_level": 6,
+        "subject": "Mathematics",
+        "name": "Ganita Prakash",
+        "chapters": [
+            "Patterns in Mathematics",
+            "Lines and Angles",
+            "Number Play",
+            "Data Handling and Presentation",
+            "Prime Time",
+            "Perimeter and Area",
+            "Fractions",
+            "Playing with Constructions",
+            "Symmetry",
+            "The Other Side of Zero",
+        ],
+    },
+    {
+        "class_level": 7,
+        "subject": "Mathematics",
+        "name": "Ganita Prakash",
+        "chapters": [
+            "Large Numbers Around Us",
+            "Arithmetic Expressions",
+            "A Peek Beyond the Point",
+            "Expressions using Letter-Numbers",
+            "Parallel and Intersecting Lines",
+            "Number Play",
+            "A Tale of Three Intersecting Lines",
+            "Working with Fractions",
+        ],
+    },
+    {
+        "class_level": 8,
+        "subject": "Mathematics",
+        "name": "Ganita Prakash Part-I",
+        "chapters": [
+            "A Square and A Cube",
+            "Power Play",
+            "A Story of Numbers",
+            "Quadrilaterals",
+            "Number Play",
+            "We Distribute, Yet Things Multiply",
+            "Proportional Reasoning-1",
+        ],
+    },
+    {
+        "class_level": 8,
+        "subject": "Mathematics",
+        "name": "Ganita Prakash Part-II",
+        "chapters": [
+            "Fractions in Disguise",
+            "The Baudhayana-Pythagoras Theorem",
+            "Proportional Reasoning-2",
+            "Exploring Some Geometric Themes",
+            "Tales by Dots and Lines",
+            "Algebra Play",
+            "Area",
+        ],
+    },
+    {
+        "class_level": 9,
+        "subject": "Mathematics",
+        "name": "Mathematics",
+        "chapters": [
+            "Number Systems",
+            "Polynomials",
+            "Coordinate Geometry",
+            "Linear Equations in Two Variables",
+            "Introduction to Euclid's Geometry",
+            "Lines and Angles",
+            "Triangles",
+            "Quadrilaterals",
+            "Circles",
+            "Heron's Formula",
+            "Surface Areas and Volumes",
+            "Statistics",
+        ],
+    },
+    {
+        "class_level": 10,
+        "subject": "Mathematics",
+        "name": "Mathematics",
+        "chapters": [
+            "Real Numbers",
+            "Polynomials",
+            "Pair of Linear Equations in Two Variables",
+            "Quadratic Equations",
+            "Arithmetic Progressions",
+            "Triangles",
+            "Coordinate Geometry",
+            "Introduction to Trigonometry",
+            "Some Applications of Trigonometry",
+            "Circles",
+            "Areas Related to Circles",
+            "Surface Areas and Volumes",
+            "Statistics",
+            "Probability",
+        ],
+    },
+    {
+        "class_level": 6,
+        "subject": "Science",
+        "name": "Curiosity",
+        "chapters": [
+            "The Wonderful World of Science",
+            "Diversity in the Living World",
+            "Mindful Eating: A Path to a Healthy Body",
+            "Exploring Magnets",
+            "Measurement of Length and Motion",
+            "Materials Around Us",
+            "Temperature and its Measurement",
+            "A Journey through States of Water",
+            "Methods of Separation in Everyday Life",
+            "Living Creatures: Exploring their Characteristics",
+            "Nature's Treasures",
+            "Beyond Earth",
+        ],
+    },
+    {
+        "class_level": 7,
+        "subject": "Science",
+        "name": "Curiosity",
+        "chapters": [
+            "The Ever-Evolving World of Science",
+            "Exploring Substances: Acidic, Basic, and Neutral",
+            "Electricity: Circuits and their Components",
+            "The World of Metals and Non-metals",
+            "Changes Around Us: Physical and Chemical",
+            "Adolescence: A Stage of Growth and Change",
+            "Heat Transfer in Nature",
+            "Measurement of Time and Motion",
+            "Life Processes in Animals",
+            "Life Processes in Plants",
+            "Light: Shadows and Reflections",
+            "Earth, Moon, and the Sun",
+        ],
+    },
+    {
+        "class_level": 8,
+        "subject": "Science",
+        "name": "Science",
+        "chapters": [
+            "Crop Production and Management",
+            "Microorganisms: Friend and Foe",
+            "Synthetic Fibres and Plastics",
+            "Materials: Metals and Non-Metals",
+            "Coal and Petroleum",
+            "Combustion and Flame",
+            "Conservation of Plants and Animals",
+            "Cell — Structure and Functions",
+            "Reproduction in Animals",
+            "Reaching the Age of Adolescence",
+            "Force and Pressure",
+            "Friction",
+            "Sound",
+            "Chemical Effects of Electric Current",
+            "Some Natural Phenomena",
+            "Light",
+            "Stars and the Solar System",
+            "Pollution of Air and Water",
+        ],
+    },
+    {
+        "class_level": 9,
+        "subject": "Science",
+        "name": "Science",
+        "chapters": [
+            "Matter in Our Surroundings",
+            "Is Matter Around Us Pure",
+            "Atoms and Molecules",
+            "Structure of the Atom",
+            "The Fundamental Unit of Life",
+            "Tissues",
+            "Motion",
+            "Force and Laws of Motion",
+            "Gravitation",
+            "Work and Energy",
+            "Sound",
+            "Improvement in Food Resources",
+        ],
+    },
+    {
+        "class_level": 10,
+        "subject": "Science",
+        "name": "Science",
+        "chapters": [
+            "Chemical Reactions and Equations",
+            "Acids, Bases and Salts",
+            "Metals and Non-metals",
+            "Carbon and its Compounds",
+            "Life Processes",
+            "Control and Coordination",
+            "How do Organisms Reproduce?",
+            "Heredity",
+            "Light - Reflection and Refraction",
+            "The Human Eye and the Colourful World",
+            "Electricity",
+            "Magnetic Effects of Electric Current",
+            "Our Environment",
+        ],
+    },
+    {
+        "class_level": 6,
+        "subject": "Social Science",
+        "name": "Exploring Society: India and Beyond",
+        "chapters": [
+            "Locating Places on the Earth",
+            "Oceans and Continents",
+            "Landforms and Life",
+            "Timeline and Sources of History",
+            "India, That Is Bharat",
+            "The Beginnings of Indian Civilisation",
+            "India's Cultural Roots",
+            "Unity in Diversity, or 'Many in the One'",
+            "Family and Community",
+            "Grassroots Democracy - Part 1: Governance",
+            "Grassroots Democracy - Part 2: Local Government in Rural Areas",
+            "Grassroots Democracy - Part 3: Local Government in Urban Areas",
+            "The Value of Work",
+            "Economic Activities Around Us",
+        ],
+    },
+    {
+        "class_level": 7,
+        "subject": "Social Science",
+        "name": "Exploring Society: India and Beyond",
+        "chapters": [
+            "Geographical Diversity of India",
+            "Understanding the Weather",
+            "Climates of India",
+            "New Beginnings: Cities and States",
+            "The Rise of Empires",
+            "The Age of Reorganisation",
+            "The Gupta Era: An Age of Tireless Creativity",
+            "How the Land Becomes Sacred",
+            "From the Rulers to the Ruled: Types of Governments",
+            "The Constitution of India - An Introduction",
+            "From Barter to Money",
+            "Understanding Markets",
+        ],
+    },
+    {
+        "class_level": 8,
+        "subject": "Social Science",
+        "name": "Exploring Society: India and Beyond Part-I",
+        "chapters": [
+            "Natural Resources and Their Use",
+            "Reshaping India's Political Map",
+            "The Rise of the Marathas",
+            "The Colonial Era in India",
+            "Universal Franchise and India's Electoral System",
+            "The Parliamentary System: Legislature and Executive",
+            "Factors of Production",
+        ],
+    },
+    {
+        "class_level": 9,
+        "subject": "Social Science",
+        "name": "India and the Contemporary World-I",
+        "chapters": [
+            "The French Revolution",
+            "Socialism in Europe and the Russian Revolution",
+            "Nazism and the Rise of Hitler",
+            "Forest Society and Colonialism",
+            "Pastoralists in the Modern World",
+        ],
+    },
+    {
+        "class_level": 9,
+        "subject": "Social Science",
+        "name": "Contemporary India-I",
+        "chapters": [
+            "India - Size and Location",
+            "Physical Features of India",
+            "Drainage",
+            "Climate",
+            "Natural Vegetation and Wildlife",
+            "Population",
+        ],
+    },
+    {
+        "class_level": 9,
+        "subject": "Social Science",
+        "name": "Democratic Politics-I",
+        "chapters": [
+            "What is Democracy? Why Democracy?",
+            "Constitutional Design",
+            "Electoral Politics",
+            "Working of Institutions",
+            "Democratic Rights",
+        ],
+    },
+    {
+        "class_level": 9,
+        "subject": "Social Science",
+        "name": "Economics",
+        "chapters": [
+            "The Story of Village Palampur",
+            "People as Resource",
+            "Poverty as a Challenge",
+            "Food Security in India",
+        ],
+    },
+    {
+        "class_level": 10,
+        "subject": "Social Science",
+        "name": "India and the Contemporary World-II",
+        "chapters": [
+            "The Rise of Nationalism in Europe",
+            "Nationalism in India",
+            "The Making of a Global World",
+            "The Age of Industrialisation",
+            "Print Culture and the Modern World",
+        ],
+    },
+    {
+        "class_level": 10,
+        "subject": "Social Science",
+        "name": "Contemporary India-II",
+        "chapters": [
+            "Resources and Development",
+            "Forest and Wildlife Resources",
+            "Water Resources",
+            "Agriculture",
+            "Minerals and Energy Resources",
+            "Manufacturing Industries",
+            "Lifelines of National Economy",
+        ],
+    },
+    {
+        "class_level": 10,
+        "subject": "Social Science",
+        "name": "Democratic Politics-II",
+        "chapters": [
+            "Power-sharing",
+            "Federalism",
+            "Gender, Religion and Caste",
+            "Political Parties",
+            "Outcomes of Democracy",
+        ],
+    },
+    {
+        "class_level": 10,
+        "subject": "Social Science",
+        "name": "Understanding Economic Development",
+        "chapters": [
+            "Development",
+            "Sectors of the Indian Economy",
+            "Money and Credit",
+            "Globalisation and the Indian Economy",
+            "Consumer Rights",
+        ],
+    },
+]
+
+
+CBSE_ENGLISH_TEXTBOOKS = [
+    textbook for textbook in CBSE_TEXTBOOKS if textbook["subject"] == "English"
 ]
 
 
 def seed_cbse_textbook_catalog(session):
-    for book_data in CBSE_ENGLISH_TEXTBOOKS:
+    for book_data in CBSE_TEXTBOOKS:
         normalized_name = normalize_catalog_value(book_data["name"])
         textbook = Textbook.query.filter_by(
             board="CBSE",
-            subject="English",
+            subject=book_data["subject"],
             class_level=book_data["class_level"],
             normalized_name=normalized_name,
         ).first()
         if textbook is None:
             textbook = Textbook(
                 board="CBSE",
-                subject="English",
+                subject=book_data["subject"],
                 class_level=book_data["class_level"],
                 name=book_data["name"],
                 normalized_name=normalized_name,

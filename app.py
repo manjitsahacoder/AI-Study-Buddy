@@ -88,7 +88,12 @@ from models import (
     TutorMessage,
     User,
 )
-from textbook_catalog import normalize_catalog_value, seed_cbse_textbook_catalog
+from textbook_catalog import (
+    normalize_catalog_subject,
+    normalize_catalog_value,
+    seed_cbse_textbook_catalog,
+    subject_matches_catalog_subject,
+)
 from diagram_library import diagram_record_to_view, get_or_create_diagram
 from tutor_repository import (
     get_or_create_tutor_lesson,
@@ -8339,8 +8344,8 @@ General Subject Instructions:
 """
 
 
-def learning_subject_prompt_section(subject):
-    if subject_matches(subject, TEXTBOOK_SUBJECTS):
+def learning_subject_prompt_section(subject, has_selected_textbook=False):
+    if has_selected_textbook or subject_matches(subject, TEXTBOOK_SUBJECTS):
         return textbook_prompt_section()
     if subject_matches(subject, SCIENCE_MATH_SUBJECTS):
         return science_math_prompt_section()
@@ -8445,6 +8450,25 @@ def smart_search_cache_set(cache_key, value):
     }
 
 
+def textbook_subject_filter_values(subject):
+    normalized_subject = normalize_catalog_subject(subject)
+    if not normalized_subject:
+        return []
+    values = {normalized_subject}
+    if normalized_subject == "mathematics":
+        values.update({"math", "maths"})
+    if normalized_subject == "social science":
+        values.update({"sst", "social studies"})
+    return sorted(values)
+
+
+def filter_textbooks_by_catalog_subject(query, subject):
+    subject_values = textbook_subject_filter_values(subject)
+    if not subject_values:
+        return query
+    return query.filter(func.lower(Textbook.subject).in_(subject_values))
+
+
 def parse_gemini_suggestions(response_text):
     payload = extract_json_payload(response_text)
     if not isinstance(payload, dict):
@@ -8489,7 +8513,7 @@ def build_textbook_fallback_prompt(class_level, subject, query_text, available_n
 The student is studying CBSE.
 
 Class: {class_label}
-Subject: {subject or "English"}
+Subject: {subject or "the selected subject"}
 
 The student entered:
 "{query_text}"
@@ -8497,7 +8521,7 @@ The student entered:
 Available official CBSE textbook names in this app:
 {available_line}
 
-Suggest up to 5 official CBSE English textbook names that are likely spelling corrections.
+Suggest up to 5 official CBSE textbook names for the selected subject that are likely spelling corrections.
 Only suggest names you are highly confident about.
 Prefer names from the available list when possible.
 Never invent textbooks.
@@ -8572,7 +8596,7 @@ def textbook_matches_for_suggestion(suggestion, class_level=None, subject=""):
     if class_level is not None:
         query = query.filter(Textbook.class_level == class_level)
     if subject:
-        query = query.filter(func.lower(Textbook.subject) == subject.lower())
+        query = filter_textbooks_by_catalog_subject(query, subject)
     return query.order_by(Textbook.class_level.asc(), Textbook.name.asc()).all()
 
 
@@ -8650,7 +8674,7 @@ def textbook_fallback_suggestions(class_level, subject, query_text):
 
     available_query = Textbook.query.filter(Textbook.is_active.is_(True), Textbook.board == "CBSE")
     if subject:
-        available_query = available_query.filter(func.lower(Textbook.subject) == subject.lower())
+        available_query = filter_textbooks_by_catalog_subject(available_query, subject)
     if class_level is not None:
         available_query = available_query.filter(Textbook.class_level == class_level)
     available_names = sorted({textbook.name for textbook in available_query.all()})
@@ -8703,7 +8727,7 @@ def search_textbooks():
     with performance_span("Smart textbook database search", detail=f"{class_level or '-'} {subject or '-'} {query_text}"):
         query = Textbook.query.filter(Textbook.is_active.is_(True), Textbook.board == "CBSE")
         if subject:
-            query = query.filter(func.lower(Textbook.subject) == subject.lower())
+            query = filter_textbooks_by_catalog_subject(query, subject)
         if class_level is not None:
             query = query.filter(Textbook.class_level == class_level)
         if normalized_query:
@@ -10095,11 +10119,13 @@ def validate_selected_textbook_chapter(form, student_class, subject):
     textbook = db.session.get(Textbook, int(textbook_id))
     if not textbook or not textbook.is_active:
         return None, None, "Selected textbook was not found. Please search and select it again."
+    if (textbook.board or "").strip().upper() != DEFAULT_BOARD:
+        return None, None, "Selected textbook does not match the selected board."
 
     selected_class_level = parse_class_level(student_class)
     if selected_class_level is not None and textbook.class_level != selected_class_level:
         return None, None, "Selected textbook does not match the selected class."
-    if subject and textbook.subject.lower() != subject.lower():
+    if not subject_matches_catalog_subject(textbook.subject, subject):
         return None, None, "Selected textbook does not match the selected subject."
 
     chapter = db.session.get(Chapter, int(chapter_id))
@@ -10147,7 +10173,10 @@ def learn():
         topic,
     )
     selected_textbook_rules_section = selected_textbook_rules_block(subject)
-    subject_prompt_section = learning_subject_prompt_section(subject)
+    subject_prompt_section = learning_subject_prompt_section(
+        subject,
+        has_selected_textbook=bool(textbook and chapter),
+    )
     adaptive_quiz_prompt_section = build_adaptive_quiz_prompt_section(
         subject,
         topic,

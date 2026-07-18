@@ -595,8 +595,10 @@ function initializeTextbookAutocomplete() {
     const textbookInfoCache = {};
     const textbookChapterCache = {};
 
-    function isEnglishSubject() {
-        return (subjectSelect.value || "").toLowerCase() === "english";
+    function isSmartTextbookSubject() {
+        return ["english", "maths", "mathematics", "science", "social science"].includes(
+            (subjectSelect.value || "").toLowerCase()
+        );
     }
 
     function setStatus(target, message) {
@@ -609,7 +611,7 @@ function initializeTextbookAutocomplete() {
         if (!startButton) {
             return;
         }
-        const locked = isEnglishSubject() && textbookIdInput.value && !chapterIdInput.value;
+        const locked = isSmartTextbookSubject() && textbookIdInput.value && !chapterIdInput.value;
         startButton.disabled = Boolean(locked);
         startButton.setAttribute("aria-disabled", locked ? "true" : "false");
     }
@@ -668,7 +670,7 @@ function initializeTextbookAutocomplete() {
     }
 
     function updateChapterState() {
-        if (isEnglishSubject() && textbookInput.value.trim() && !textbookIdInput.value) {
+        if (isSmartTextbookSubject() && textbookInput.value.trim() && !textbookIdInput.value) {
             chapterInput.disabled = true;
             chapterInput.placeholder = "Select textbook first";
             setStartButtonState();
@@ -886,7 +888,7 @@ function initializeTextbookAutocomplete() {
         hideTextbookInfoCard();
         hidePopularChapters();
         clearChapter();
-        if (!isEnglishSubject() || searchText.length < 2) {
+        if (!isSmartTextbookSubject() || searchText.length < 2) {
             closeMenu(textbookMenu, textbookInput);
             setStatus(textbookStatus, "");
             return;
@@ -1081,7 +1083,7 @@ function initializeTextbookAutocomplete() {
     });
 
     form.addEventListener("submit", function (event) {
-        if (!isEnglishSubject()) {
+        if (!isSmartTextbookSubject()) {
             return;
         }
         if (textbookInput.value.trim() && !textbookIdInput.value) {

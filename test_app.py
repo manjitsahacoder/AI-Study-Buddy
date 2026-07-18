@@ -35,7 +35,7 @@ from models import (
     TutorMessage,
     User,
 )
-from textbook_catalog import seed_cbse_textbook_catalog
+from textbook_catalog import CBSE_TEXTBOOKS, seed_cbse_textbook_catalog
 from diagram_library.metadata import DiagramCandidate, reusable_license
 from diagram_library.lookup import candidate_language_category, rank_diagram_candidates
 from diagram_library.providers import NcertProvider, ProviderRegistry
@@ -253,6 +253,86 @@ class RouteTests(unittest.TestCase):
                     title="A Letter to God",
                 ).first()
             )
+
+    def test_seed_cbse_textbook_catalog_covers_classes_6_to_10_for_core_subjects(self):
+        with app_module.app.app_context():
+            seed_cbse_textbook_catalog(db.session)
+
+            expected_pairs = {
+                (class_level, subject)
+                for class_level in range(6, 11)
+                for subject in ("English", "Mathematics", "Science", "Social Science")
+            }
+            actual_pairs = {
+                (textbook.class_level, textbook.subject)
+                for textbook in Textbook.query.filter_by(board="CBSE", is_active=True).all()
+            }
+
+            self.assertTrue(expected_pairs.issubset(actual_pairs))
+            self.assertEqual(Textbook.query.count(), len(CBSE_TEXTBOOKS))
+            self.assertEqual(
+                Chapter.query.count(),
+                sum(len(textbook["chapters"]) for textbook in CBSE_TEXTBOOKS),
+            )
+            self.assertIsNotNone(
+                Chapter.query.join(Textbook).filter(
+                    Textbook.class_level == 10,
+                    Textbook.subject == "Mathematics",
+                    Chapter.title == "Quadratic Equations",
+                ).first()
+            )
+            self.assertIsNotNone(
+                Chapter.query.join(Textbook).filter(
+                    Textbook.class_level == 8,
+                    Textbook.subject == "Science",
+                    Chapter.title == "Cell — Structure and Functions",
+                ).first()
+            )
+            self.assertIsNotNone(
+                Chapter.query.join(Textbook).filter(
+                    Textbook.class_level == 9,
+                    Textbook.subject == "Social Science",
+                    Chapter.title == "The French Revolution",
+                ).first()
+            )
+
+    def test_smart_textbook_search_examples_work_for_every_core_subject(self):
+        examples = [
+            ("10", "English", "Flight", "First Flight", "letter", "A Letter to God"),
+            ("10", "Mathematics", "Math", "Mathematics", "quad", "Quadratic Equations"),
+            ("8", "Science", "Science", "Science", "cell", "Cell — Structure and Functions"),
+            ("9", "Social Science", "India", "India and the Contemporary World-I", "french", "The French Revolution"),
+        ]
+        with app_module.app.app_context():
+            seed_cbse_textbook_catalog(db.session)
+
+        for class_level, subject, book_query, expected_book, chapter_query, expected_chapter in examples:
+            with self.subTest(subject=subject):
+                textbook_response = self.client.get(
+                    f"/api/textbooks/search?q={book_query}&class={class_level}&subject={subject}"
+                )
+                self.assertEqual(textbook_response.status_code, 200)
+                textbook_payload = textbook_response.get_json()
+                textbook = next(
+                    item for item in textbook_payload if item["name"] == expected_book
+                )
+
+                chapter_response = self.client.get(
+                    f"/api/chapters/search?textbook_id={textbook['id']}&q={chapter_query}"
+                )
+                self.assertEqual(chapter_response.status_code, 200)
+                chapter_titles = [item["title"] for item in chapter_response.get_json()]
+                self.assertIn(expected_chapter, chapter_titles)
+
+    def test_textbook_search_accepts_maths_alias_for_mathematics_catalog(self):
+        with app_module.app.app_context():
+            seed_cbse_textbook_catalog(db.session)
+
+        response = self.client.get("/api/textbooks/search?q=math&class=10&subject=Maths")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload[0]["name"], "Mathematics")
 
     def test_textbook_search_api_filters_and_ranks_matches(self):
         with app_module.app.app_context():
@@ -523,6 +603,10 @@ class RouteTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         page = response.get_data(as_text=True)
+        self.assertIn("function isSmartTextbookSubject()", page)
+        self.assertIn('"mathematics"', page)
+        self.assertIn('"science"', page)
+        self.assertIn('"social science"', page)
         self.assertIn("function renderPopularChapters(items, filterText)", page)
         self.assertIn("item.title.toLowerCase().includes(normalizedFilter)", page)
         self.assertIn("selectChapter(item)", page)
@@ -621,6 +705,139 @@ class RouteTests(unittest.TestCase):
         generate_content.assert_not_called()
 
     @patch.object(app_module.model, "generate_content")
+    def test_learn_validation_accepts_maths_alias_for_mathematics_textbook(self, generate_content):
+        generate_content.return_value = MockResponse(
+            """# Quadratic Equations
+Quadratic equations have degree two.
+
+## Quick Revision
+- Standard form is ax^2 + bx + c = 0.
+
+## Visualization Decision JSON
+{"visualization_required": false, "reason": "Formula lesson."}
+
+## Diagram JSON
+{"template":"generic","title":"Quadratic Equations","elements":{},"labels":[],"type":"none","nodes":[],"connections":[],"reason":"Text lesson.","confidence":0.1}
+
+## Questions
+Q1. What is the standard form?
+
+Q2. What is the degree?
+
+Q3. Name one solving method.
+
+Q4. What is the discriminant?
+
+Q5. When are roots equal?
+"""
+        )
+        with app_module.app.app_context():
+            seed_cbse_textbook_catalog(db.session)
+            textbook = Textbook.query.filter_by(
+                class_level=10,
+                subject="Mathematics",
+                name="Mathematics",
+            ).first()
+            chapter = Chapter.query.filter_by(
+                textbook_id=textbook.id,
+                title="Quadratic Equations",
+            ).first()
+            textbook_id = textbook.id
+            chapter_id = chapter.id
+
+        response = self.client.post(
+            "/learn",
+            data={
+                "name": "Asha",
+                "student_class": "10",
+                "subject": "Maths",
+                "book_name": "Mathematics",
+                "topic": "Quadratic Equations",
+                "textbook_id": str(textbook_id),
+                "chapter_id": str(chapter_id),
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        prompt = generate_content.call_args.args[0]
+        self.assertIn("Textbook: Mathematics", prompt)
+        self.assertIn("Chapter: Quadratic Equations", prompt)
+
+    @patch.object(app_module.model, "generate_content")
+    def test_learn_rejects_selected_textbook_from_different_subject(self, generate_content):
+        with app_module.app.app_context():
+            seed_cbse_textbook_catalog(db.session)
+            textbook = Textbook.query.filter_by(
+                class_level=10,
+                subject="Mathematics",
+                name="Mathematics",
+            ).first()
+            chapter = Chapter.query.filter_by(
+                textbook_id=textbook.id,
+                title="Quadratic Equations",
+            ).first()
+            textbook_id = textbook.id
+            chapter_id = chapter.id
+
+        response = self.client.post(
+            "/learn",
+            data={
+                "name": "Asha",
+                "student_class": "10",
+                "subject": "Science",
+                "book_name": "Mathematics",
+                "topic": "Quadratic Equations",
+                "textbook_id": str(textbook_id),
+                "chapter_id": str(chapter_id),
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Selected textbook does not match the selected subject.", response.get_data(as_text=True))
+        generate_content.assert_not_called()
+
+    @patch.object(app_module.model, "generate_content")
+    def test_learn_rejects_selected_textbook_from_different_board(self, generate_content):
+        with app_module.app.app_context():
+            textbook = Textbook(
+                board="ICSE",
+                subject="Science",
+                class_level=8,
+                name="Science",
+                normalized_name="science",
+                is_active=True,
+            )
+            db.session.add(textbook)
+            db.session.flush()
+            chapter = Chapter(
+                textbook_id=textbook.id,
+                chapter_number=1,
+                title="Cells",
+                normalized_title="cells",
+            )
+            db.session.add(chapter)
+            db.session.commit()
+            textbook_id = textbook.id
+            chapter_id = chapter.id
+
+        response = self.client.post(
+            "/learn",
+            data={
+                "name": "Asha",
+                "student_class": "8",
+                "subject": "Science",
+                "book_name": "Science",
+                "topic": "Cells",
+                "textbook_id": str(textbook_id),
+                "chapter_id": str(chapter_id),
+            },
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Selected textbook does not match the selected board.", response.get_data(as_text=True))
+        generate_content.assert_not_called()
+
+    @patch.object(app_module.model, "generate_content")
     def test_learn_prompt_and_history_include_selected_textbook_context(self, generate_content):
         self.register_user(extra_data={"student_class": "10"})
         self.login_user()
@@ -707,6 +924,116 @@ Q5. What is the main theme?
         self.assertIn("Subject: Science", prompt_context)
         self.assertIn("Textbook: N/A", prompt_context)
         self.assertIn("Chapter: Photosynthesis", prompt_context)
+
+    def test_selected_textbook_context_flows_to_history_tutor_pdf_diagram_and_quiz_for_all_subjects(self):
+        from io import BytesIO
+        from types import SimpleNamespace
+
+        from pypdf import PdfReader
+
+        examples = [
+            ("10", "English", "First Flight", "A Letter to God"),
+            ("10", "Mathematics", "Mathematics", "Quadratic Equations"),
+            ("8", "Science", "Science", "Cell — Structure and Functions"),
+            ("9", "Social Science", "India and the Contemporary World-I", "The French Revolution"),
+        ]
+
+        with app_module.app.app_context():
+            app_module.create_user(
+                "Asha Student",
+                "asha_context",
+                "asha_context@example.com",
+                "10",
+                "password123",
+            )
+            seed_cbse_textbook_catalog(db.session)
+
+            for student_class, subject, book_name, chapter_title in examples:
+                with self.subTest(subject=subject):
+                    textbook = Textbook.query.filter_by(
+                        board="CBSE",
+                        class_level=int(student_class),
+                        subject=subject,
+                        name=book_name,
+                    ).first()
+                    chapter = Chapter.query.filter_by(
+                        textbook_id=textbook.id,
+                        title=chapter_title,
+                    ).first()
+                    lesson_id = app_module.save_learning_history(
+                        1,
+                        subject,
+                        textbook.name,
+                        chapter.title,
+                        f"# {chapter.title}\nOfficial chapter notes.",
+                        {"available": False, "title": chapter.title},
+                        self.questions,
+                        board=textbook.board,
+                        textbook_id=textbook.id,
+                        chapter_id=chapter.id,
+                    )
+                    lesson = db.session.get(LearningHistory, lesson_id)
+
+                    self.assertEqual(lesson.board, "CBSE")
+                    self.assertEqual(lesson.subject, subject)
+                    self.assertEqual(lesson.book_name, book_name)
+                    self.assertEqual(lesson.topic, chapter_title)
+                    self.assertEqual(lesson.textbook_id, textbook.id)
+                    self.assertEqual(lesson.chapter_id, chapter.id)
+
+                    lesson_context = app_module.lesson_textbook_context_for_prompt(lesson, student_class)
+                    self.assertIn(f"Subject: {subject}", lesson_context)
+                    self.assertIn(f"Textbook: {book_name}", lesson_context)
+                    self.assertIn(f"Chapter: {chapter_title}", lesson_context)
+
+                    tutor_prompt = app_module.build_tutor_prompt(
+                        SimpleNamespace(
+                            name="Asha",
+                            student_class=student_class,
+                            subject=subject,
+                            book_name=book_name,
+                            chapter=chapter_title,
+                            learning_history=lesson,
+                        ),
+                        lesson.notes,
+                        [],
+                        "Explain this chapter.",
+                    )
+                    self.assertIn(f"- Subject: {subject}", tutor_prompt)
+                    self.assertIn(f"- Textbook: {book_name}", tutor_prompt)
+                    self.assertIn(f"- Chapter: {chapter_title}", tutor_prompt)
+
+                    diagram_prompt = app_module.build_diagram_explanation_prompt(
+                        lesson,
+                        {"title": chapter_title, "labels": ["Key idea"]},
+                        {},
+                        student_class,
+                    )
+                    self.assertIn(f"Subject: {subject}", diagram_prompt)
+                    self.assertIn(f"Textbook: {book_name}", diagram_prompt)
+                    self.assertIn(f"Chapter: {chapter_title}", diagram_prompt)
+
+                    quiz_prompt = app_module.build_adaptive_quiz_prompt_section(
+                        subject,
+                        chapter_title,
+                        book_name,
+                        student_class,
+                    )
+                    self.assertIn("Adaptive Quiz Engine:", quiz_prompt)
+
+                    pdf_file = app_module.create_learning_history_pdf(
+                        lesson,
+                        {"available": False},
+                        self.questions,
+                    )
+                    pdf_text = "\n".join(
+                        page.extract_text() or ""
+                        for page in PdfReader(BytesIO(pdf_file.getvalue())).pages
+                    )
+                    normalized_pdf_text = " ".join(pdf_text.split())
+                    self.assertIn("Board: CBSE", normalized_pdf_text)
+                    self.assertIn(f"Textbook: {book_name}", normalized_pdf_text)
+                    self.assertIn(f"Chapter: {chapter_title}", normalized_pdf_text)
 
     @patch.object(app_module.model, "generate_content")
     def test_saved_ai_tools_reject_legacy_unsupported_account_class(self, generate_content):
