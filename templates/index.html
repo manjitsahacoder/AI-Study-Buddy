@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>AI Study Buddy</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=home-ui-20260718-textbook-layout">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=premium-home-final-polish-20260720e">
     {% include 'components/pwa_head.html' %}
 </head>
 
@@ -34,25 +34,32 @@
     </div>
 </div>
 
-<div class="container">
-    <header class="exhibition-header">
-        <div class="school-mark">
-            <img
-                class="school-logo"
-                src="{{ url_for('static', filename='images/SCHOOL_LOGO.png') }}"
-                alt="Delhi Public School Dhaligaon logo">
-        </div>
+<div class="container premium-home-container">
+    <header class="exhibition-header premium-home-nav">
+        <a class="premium-brand" href="{{ url_for('home') }}" aria-label="AI Study Buddy home">
+            <span class="school-mark premium-school-mark">
+                <img
+                    class="school-logo"
+                    src="{{ url_for('static', filename='images/SCHOOL_LOGO.png') }}"
+                    alt="Delhi Public School Dhaligaon logo">
+            </span>
+            <span class="premium-brand-copy">
+                <strong>AI Study Buddy</strong>
+                <span>Your Intelligent Learning Companion</span>
+                <small>Delhi Public School Dhaligaon</small>
+            </span>
+        </a>
 
-        <div class="header-center">
-            <p class="school-name">DELHI PUBLIC SCHOOL DHALIGAON</p>
-            <p class="school-motto">Service Before Self</p>
-            <h1>AI Study Buddy</h1>
-            <p class="subtitle">AI-Powered Learning Companion</p>
-            <p class="hero-tagline">AI Notes &bull; Diagrams &bull; Quiz &bull; AI Tutor</p>
-            <div class="exhibition-badge">&#127942; IT-FESTIVAL 2026-27</div>
-        </div>
+        <nav class="premium-home-links" aria-label="Homepage sections">
+            <a href="#lesson-form">Start</a>
+            <a href="#quick-actions">Tools</a>
+            <a href="#feature-showcase-title">Features</a>
+            {% if user %}
+            <a href="{{ url_for('dashboard') }}">Dashboard</a>
+            {% endif %}
+        </nav>
 
-        <div class="header-actions">
+        <div class="header-actions premium-header-actions">
             {% include 'components/auth_nav.html' %}
         </div>
     </header>
@@ -61,7 +68,7 @@
     {% include 'components/mode_banner.html' %}
 
     {% if exhibition_mode %}
-    <section class="exhibition-welcome-screen" data-tour-title="Welcome to Exhibition Mode" data-tour-body="This welcome screen gives judges a fast overview of the project and a direct path into the student demo.">
+    <section class="exhibition-welcome-screen premium-glass-section" data-tour-title="Welcome to Exhibition Mode" data-tour-body="This welcome screen gives judges a fast overview of the project and a direct path into the student demo.">
         <div>
             <span class="eyebrow">Exhibition Mode</span>
             <h2>Understand AI Study Buddy in minutes</h2>
@@ -74,26 +81,326 @@
     </section>
     {% endif %}
 
-    <section class="welcome-card">
-        <span class="eyebrow">Smarter Learning</span>
-        <div class="welcome-card-copy">
-            <h2>Welcome to AI Study Buddy</h2>
-            <p class="welcome-subtitle">Your complete AI-powered learning platform for Classes 6-10.</p>
-            <p>AI Study Buddy is an AI-powered educational platform designed to help students from Classes 6-10 learn smarter through personalized notes, diagrams, quizzes, textbook support, and performance analysis.</p>
+    <section class="premium-home-hero" aria-labelledby="premium-home-title">
+        <div class="premium-hero-copy">
+            <span class="eyebrow">Premium AI Learning Platform</span>
+            <h1 id="premium-home-title"><span>Learn Smarter</span><span>with AI</span></h1>
+            <p class="premium-hero-subtitle">Personalized notes, smart textbook search, diagrams, quizzes, flashcards, tutor support, and progress tracking in one polished student workspace.</p>
+            <div class="hero-feature-badges premium-feature-chips" aria-label="AI Study Buddy platform features">
+                <span>&#128218; Smart Textbooks</span>
+                <span>&#129302; AI Tutor</span>
+                <span>&#129504; AI Quiz</span>
+                <span>&#128200; Analytics</span>
+                <span>&#9889; Instant Notes</span>
+            </div>
+            <div class="premium-hero-actions">
+                <a class="button-link" href="#lesson-form">Start Learning</a>
+                {% if user %}
+                <a class="button-link secondary-link" href="{{ url_for('dashboard') }}">Open Dashboard</a>
+                {% else %}
+                <a class="button-link secondary-link" href="{{ url_for('register') }}">Create Account</a>
+                {% endif %}
+            </div>
         </div>
-        <div class="hero-feature-badges" aria-label="AI Study Buddy platform features">
-            <span>&#129302; AI Powered</span>
-            <span>&#128218; NCERT Support</span>
-            <span>&#129504; Personalized Learning</span>
-            <span>&#128202; Progress Tracking</span>
-            <span>&#128241; Installable PWA</span>
-            <span>&#127769; Dark Mode</span>
-            <span>&#9889; Fast &amp; Responsive</span>
+
+        <div class="premium-learning-stage">
+            <form id="lesson-form" class="study-form premium-learning-card" action="{{ url_for('learn') }}" method="POST" data-tour-title="Live Lesson Generator" data-tour-body="This form starts the real learning workflow. It generates notes, a diagram, quiz questions, and saved history for logged-in students.">
+                <div class="learning-card-header">
+                    <div>
+                        <span class="eyebrow">Start Learning</span>
+                        <h2>Build a study session</h2>
+                    </div>
+                    <div class="learning-card-visual">
+                        <span class="learning-card-status">Live AI</span>
+                        <div class="premium-ai-orbit" aria-hidden="true">
+                            <img src="{{ url_for('static', filename='images/study_banner.png') }}" alt="">
+                        </div>
+                    </div>
+                </div>
+                <div class="form-grid">
+                    <div class="form-field name-field">
+                        <label for="name">&#128100; Student Name</label>
+                        <input
+                            id="name"
+                            type="text"
+                            name="name"
+                            value="{{ current_user.full_name if current_user else '' }}"
+                            placeholder="Enter your name"
+                            required
+                        >
+                    </div>
+
+                    <div class="form-field class-field">
+                        <label for="student_class">&#127891; Class</label>
+                        <select id="student_class" name="student_class" required>
+                            <option value="">Select class</option>
+                            {% set selected_class = (current_user.default_class or current_user.student_class) if current_user else '' %}
+                            {% for class_number in class_options %}
+                            <option value="{{ class_number }}" {% if selected_class == class_number %}selected{% endif %}>Class {{ class_number }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="form-field subject-field">
+                        <label for="subject">&#128218; Subject</label>
+                        <div class="subject-hints" aria-hidden="true">
+                            <span>&#8721; Maths</span>
+                            <span>&#128300; Science</span>
+                            <span>Aa English</span>
+                            <span>&#127758; Social</span>
+                            <span>&#128187; AI / CS</span>
+                        </div>
+                        <select id="subject" name="subject" required>
+                            <option value="">Select subject</option>
+                            <option value="Maths" {% if current_user and current_user.default_subject == 'Maths' %}selected{% endif %}>Maths</option>
+                            <option value="Science" {% if current_user and current_user.default_subject == 'Science' %}selected{% endif %}>Science</option>
+                            <option value="English" {% if current_user and current_user.default_subject == 'English' %}selected{% endif %}>English</option>
+                            <option value="Social Science" {% if current_user and current_user.default_subject == 'Social Science' %}selected{% endif %}>Social Science</option>
+                            <option value="Artificial Intelligence / Computer Science" {% if current_user and current_user.default_subject == 'Artificial Intelligence / Computer Science' %}selected{% endif %}>Artificial Intelligence / Computer Science</option>
+                        </select>
+                    </div>
+                    <div class="form-field textbook-field">
+                        <label for="book_name">&#128214; Textbook Search (Optional)</label>
+                        <p class="textbook-helper">Select a textbook for more accurate, chapter-aware explanations.</p>
+                        <input
+                            id="book_name"
+                            type="text"
+                            name="book_name"
+                            placeholder="Search textbook"
+                            autocomplete="off"
+                            role="combobox"
+                            aria-autocomplete="list"
+                            aria-expanded="false"
+                            aria-controls="textbook-suggestions"
+                        >
+                        <input id="textbook_id" type="hidden" name="textbook_id">
+                        <div id="textbook-suggestions" class="autocomplete-menu" role="listbox" hidden></div>
+                        <p class="autocomplete-status" data-textbook-status aria-live="polite"></p>
+                        <article class="selection-info-card textbook-info-card" data-textbook-info-card aria-live="polite" hidden></article>
+                    </div>
+                    <div class="form-field chapter-field">
+                        <label for="topic">&#128221; Chapter Search / Topic</label>
+                        <input
+                            id="topic"
+                            type="text"
+                            name="topic"
+                            placeholder="Enter a topic or select a textbook"
+                            autocomplete="off"
+                            role="combobox"
+                            aria-autocomplete="list"
+                            aria-expanded="false"
+                            aria-controls="chapter-suggestions"
+                            required
+                        >
+                        <input id="chapter_id" type="hidden" name="chapter_id">
+                        <div id="chapter-suggestions" class="autocomplete-menu" role="listbox" hidden></div>
+                        <p class="autocomplete-status" data-chapter-status aria-live="polite"></p>
+                        <div class="popular-chapters-panel" data-popular-chapters-panel hidden>
+                            <div class="popular-chapters-heading">
+                                <span>Popular Chapters</span>
+                                <small data-popular-chapters-count></small>
+                            </div>
+                            <div class="popular-chapters-list" data-popular-chapters-list aria-label="Popular chapters"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <button class="start-learning-btn" type="submit" aria-label="Start learning with AI Study Buddy" title="Start learning" data-start-learning-button>
+                    Start Learning
+                </button>
+                <article class="selection-info-card chapter-info-card" data-chapter-info-card aria-live="polite" hidden></article>
+            </form>
+        </div>
+    </section>
+
+    <section class="premium-stat-strip" aria-label="Learning statistics">
+        <article>
+            <span class="premium-stat-icon" aria-hidden="true">&#128218;</span>
+            <div>
+                <span>Lessons Studied</span>
+                <strong>AI Notes</strong>
+            </div>
+        </article>
+        <article>
+            <span class="premium-stat-icon" aria-hidden="true">&#128221;</span>
+            <div>
+                <span>Quizzes Completed</span>
+                <strong>Smart MCQs</strong>
+            </div>
+        </article>
+        <article>
+            <span class="premium-stat-icon" aria-hidden="true">&#127891;</span>
+            <div>
+                <span>Current Level</span>
+                <strong>Classes 6-10</strong>
+            </div>
+        </article>
+        <article>
+            <span class="premium-stat-icon" aria-hidden="true">&#9889;</span>
+            <div>
+                <span>XP</span>
+                <strong>Gamified</strong>
+            </div>
+        </article>
+        <article>
+            <span class="premium-stat-icon" aria-hidden="true">&#128293;</span>
+            <div>
+                <span>Current Streak</span>
+                <strong>Tracked</strong>
+            </div>
+        </article>
+        <article>
+            <span class="premium-stat-icon" aria-hidden="true">&#128200;</span>
+            <div>
+                <span>Average Score</span>
+                <strong>Analytics</strong>
+            </div>
+        </article>
+    </section>
+
+    {% if exhibition_mode %}
+    <section class="exhibition-demo-panel premium-glass-section" data-tour-title="Quick Demo Buttons" data-tour-body="Pick a demo topic to fill the lesson form instantly, then press Start Learning to run the real app flow.">
+        <div class="dashboard-section-heading">
+            <div>
+                <span class="eyebrow">Quick Demo</span>
+                <h2>Choose a ready-made example</h2>
+            </div>
+            <p>Great for showing judges the project quickly.</p>
+        </div>
+        <div class="exhibition-demo-grid">
+            <button type="button" data-demo-name="Exhibition Visitor" data-demo-class="9" data-demo-subject="Science" data-demo-book="" data-demo-topic="Photosynthesis">
+                <span aria-hidden="true">&#128300;</span>
+                <strong>Science Demo</strong>
+                <small>Photosynthesis</small>
+            </button>
+            <button type="button" data-demo-name="Exhibition Visitor" data-demo-class="9" data-demo-subject="Maths" data-demo-book="" data-demo-topic="Linear Equations">
+                <span aria-hidden="true">&#8721;</span>
+                <strong>Maths Demo</strong>
+                <small>Linear Equations</small>
+            </button>
+            <button type="button" data-demo-name="Exhibition Visitor" data-demo-class="9" data-demo-subject="English" data-demo-book="" data-demo-topic="Grammar Revision">
+                <span aria-hidden="true">Aa</span>
+                <strong>English Demo</strong>
+                <small>Grammar Revision</small>
+            </button>
+        </div>
+    </section>
+    {% endif %}
+
+    <section class="premium-section" id="quick-actions" aria-labelledby="quick-actions-title">
+        <div class="section-heading feature-showcase-heading">
+            <div>
+                <span class="eyebrow">Quick Actions</span>
+                <h2 id="quick-actions-title">Open your AI learning tools</h2>
+            </div>
+            <p>Every existing tool remains available with a cleaner launch surface.</p>
+        </div>
+        <div class="premium-action-grid">
+            {% if user %}
+            <a href="{{ url_for('learning_history') }}" class="premium-action-card"><span aria-hidden="true">&#129302;</span><strong>AI Tutor</strong><small>Ask questions from saved lessons.</small></a>
+            <a href="{{ url_for('learning_history') }}" class="premium-action-card"><span aria-hidden="true">&#127183;</span><strong>Flashcards</strong><small>Generate cards from lesson history.</small></a>
+            <a href="{{ url_for('learning_history') }}" class="premium-action-card"><span aria-hidden="true">&#128214;</span><strong>Revision</strong><small>Create quick revision sheets.</small></a>
+            <a href="{{ url_for('history') }}" class="premium-action-card"><span aria-hidden="true">&#128221;</span><strong>Quiz History</strong><small>Review every quiz attempt.</small></a>
+            <a href="{{ url_for('learning_history') }}" class="premium-action-card"><span aria-hidden="true">&#128218;</span><strong>Learning History</strong><small>Resume saved study sessions.</small></a>
+            <a href="{{ url_for('performance') }}" class="premium-action-card"><span aria-hidden="true">&#128200;</span><strong>Performance</strong><small>Track progress and scores.</small></a>
+            <a href="{{ url_for('downloaded_reports') }}" class="premium-action-card"><span aria-hidden="true">&#128196;</span><strong>Downloads</strong><small>Open saved reports and PDFs.</small></a>
+            <a href="{{ url_for('favourite_notes') }}" class="premium-action-card"><span aria-hidden="true">&#11088;</span><strong>Saved Notes</strong><small>Return to favorite material.</small></a>
+            {% else %}
+            <button type="button" class="premium-action-card" data-locked-feature><span aria-hidden="true">&#129302;</span><strong>AI Tutor</strong><small>Ask questions from saved lessons.</small></button>
+            <button type="button" class="premium-action-card" data-locked-feature><span aria-hidden="true">&#127183;</span><strong>Flashcards</strong><small>Generate cards from lesson history.</small></button>
+            <button type="button" class="premium-action-card" data-locked-feature><span aria-hidden="true">&#128214;</span><strong>Revision</strong><small>Create quick revision sheets.</small></button>
+            <button type="button" class="premium-action-card" data-locked-feature><span aria-hidden="true">&#128221;</span><strong>Quiz History</strong><small>Review every quiz attempt.</small></button>
+            <button type="button" class="premium-action-card" data-locked-feature><span aria-hidden="true">&#128218;</span><strong>Learning History</strong><small>Resume saved study sessions.</small></button>
+            <button type="button" class="premium-action-card" data-locked-feature><span aria-hidden="true">&#128200;</span><strong>Performance</strong><small>Track progress and scores.</small></button>
+            <button type="button" class="premium-action-card" data-locked-feature><span aria-hidden="true">&#128196;</span><strong>Downloads</strong><small>Open saved reports and PDFs.</small></button>
+            <button type="button" class="premium-action-card" data-locked-feature><span aria-hidden="true">&#11088;</span><strong>Saved Notes</strong><small>Return to favorite material.</small></button>
+            {% endif %}
+        </div>
+    </section>
+
+    <section class="feature-showcase-section premium-section" aria-labelledby="feature-showcase-title" data-tour-title="Student Features" data-tour-body="These are the core features students use: notes, tutor support, diagrams, quizzes, analytics, PDFs, and saved learning resources.">
+        <div class="section-heading feature-showcase-heading">
+            <div>
+                <span class="eyebrow">AI Learning Toolkit</span>
+                <h2 id="feature-showcase-title">Advanced study tools in one place</h2>
+            </div>
+            <p>Generate, practice, visualize, revise, and track progress from the same learning flow.</p>
+        </div>
+
+        <div class="features premium-feature-grid">
+            <article class="feature-card exhibition-feature-highlight">
+                <div class="feature-icon" aria-hidden="true">&#129302;</div>
+                <h3>AI Powered Learning</h3>
+                <p>Generate detailed, student-friendly notes that turn any topic into a complete study pack.</p>
+                <ul class="feature-list">
+                    <li>AI explanations</li>
+                    <li>Diagrams</li>
+                    <li>Flashcards</li>
+                    <li>Quick Revision</li>
+                    <li>PDF Export</li>
+                </ul>
+            </article>
+
+            <article class="feature-card exhibition-feature-highlight">
+                <div class="feature-icon" aria-hidden="true">&#128218;</div>
+                <h3>Smart Textbooks</h3>
+                <p>Search supported textbooks and select chapters with fast autocomplete and metadata.</p>
+                <ul class="feature-list">
+                    <li>Textbook search</li>
+                    <li>Chapter search</li>
+                    <li>Recent books</li>
+                </ul>
+            </article>
+
+            <article class="feature-card exhibition-feature-highlight">
+                <div class="feature-icon" aria-hidden="true">&#129504;</div>
+                <h3>Interactive Diagrams</h3>
+                <p>Explore educational diagrams that make abstract concepts easier to inspect and explain.</p>
+                <ul class="feature-list">
+                    <li>Zoom</li>
+                    <li>Fullscreen</li>
+                    <li>AI explanations</li>
+                    <li>Download PNG</li>
+                </ul>
+            </article>
+
+            <article class="feature-card exhibition-feature-highlight">
+                <div class="feature-icon" aria-hidden="true">&#127908;</div>
+                <h3>Voice Tutor <span class="coming-soon-pill">Coming Soon</span></h3>
+                <p>Voice-first tutoring is planned while the current AI Tutor chat remains available.</p>
+                <ul class="feature-list">
+                    <li>Text tutor today</li>
+                    <li>Voice-ready vision</li>
+                </ul>
+            </article>
+
+            <article class="feature-card">
+                <div class="feature-icon" aria-hidden="true">&#128200;</div>
+                <h3>Progress Analytics</h3>
+                <p>Track learning progress with clear performance signals and AI-supported study insights.</p>
+                <ul class="feature-list">
+                    <li>Grades</li>
+                    <li>Accuracy</li>
+                    <li>XP</li>
+                    <li>Learning insights</li>
+                </ul>
+            </article>
+
+            <article class="feature-card">
+                <div class="feature-icon" aria-hidden="true">&#10067;</div>
+                <h3>Quiz Generator</h3>
+                <p>Generate intelligent practice quizzes that help students test recall and improve accuracy.</p>
+                <ul class="feature-list">
+                    <li>MCQs</li>
+                    <li>Instant scoring</li>
+                    <li>Performance tracking</li>
+                </ul>
+            </article>
         </div>
     </section>
 
     {% if not user %}
-    <section class="account-motivation-card">
+    <section class="account-motivation-card premium-glass-section">
         <div>
             <span class="eyebrow">Guest Mode = Explore</span>
             <h2>Why create an account?</h2>
@@ -108,92 +415,38 @@
         </div>
         <a class="button-link" href="{{ url_for('register') }}">Create Free Account</a>
     </section>
-    {% endif %}
 
-    <section class="feature-showcase-section" aria-labelledby="feature-showcase-title" data-tour-title="Student Features" data-tour-body="These are the core features students use: notes, tutor support, diagrams, quizzes, analytics, PDFs, and saved learning resources.">
-        <div class="section-heading feature-showcase-heading">
-            <div>
-                <span class="eyebrow">AI Learning Toolkit</span>
-                <h2 id="feature-showcase-title">Advanced study tools in one place</h2>
-            </div>
-            <p>Generate, practice, visualize, revise, and track progress from the same learning flow.</p>
+    <section class="guest-locked-card premium-glass-section">
+        <div class="section-heading">
+            <span class="eyebrow">Account Mode = Personalized Learning Platform</span>
+            <h2>Unlock with a free student account</h2>
         </div>
-
-        <div class="features">
-            <article class="feature-card exhibition-feature-highlight">
-                <div class="feature-icon" aria-hidden="true">&#129302;</div>
-                <h3>AI Notes</h3>
-                <p>Generate detailed, student-friendly notes that turn any topic into a complete study pack.</p>
-                <ul class="feature-list">
-                    <li>AI explanations</li>
-                    <li>Diagrams</li>
-                    <li>Flashcards</li>
-                    <li>Quick Revision</li>
-                    <li>PDF Export</li>
-                </ul>
-            </article>
-
-            <article class="feature-card exhibition-feature-highlight">
-                <div class="feature-icon" aria-hidden="true">&#128104;&#8205;&#127979;</div>
-                <h3>AI Tutor</h3>
-                <p>Learn interactively by asking questions and getting guidance that follows the lesson context.</p>
-                <ul class="feature-list">
-                    <li>Step-by-step explanations</li>
-                    <li>Personalized guidance</li>
-                    <li>Follow-up learning</li>
-                </ul>
-            </article>
-
-            <article class="feature-card exhibition-feature-highlight">
-                <div class="feature-icon" aria-hidden="true">&#129504;</div>
-                <h3>AI Diagram Library</h3>
-                <p>Explore educational diagrams that make abstract concepts easier to inspect and explain.</p>
-                <ul class="feature-list">
-                    <li>Zoom</li>
-                    <li>Fullscreen</li>
-                    <li>AI explanations</li>
-                    <li>Download PNG</li>
-                </ul>
-            </article>
-
-            <article class="feature-card exhibition-feature-highlight">
-                <div class="feature-icon" aria-hidden="true">&#10067;</div>
-                <h3>AI Smart Quiz</h3>
-                <p>Generate intelligent practice quizzes that help students test recall and improve accuracy.</p>
-                <ul class="feature-list">
-                    <li>MCQs</li>
-                    <li>Instant scoring</li>
-                    <li>Performance tracking</li>
-                </ul>
-            </article>
-
-            <article class="feature-card">
-                <div class="feature-icon" aria-hidden="true">&#128200;</div>
-                <h3>Performance Analytics</h3>
-                <p>Track learning progress with clear performance signals and AI-supported study insights.</p>
-                <ul class="feature-list">
-                    <li>Grades</li>
-                    <li>Accuracy</li>
-                    <li>XP</li>
-                    <li>Learning insights</li>
-                </ul>
-            </article>
-
-            <article class="feature-card">
-                <div class="feature-icon" aria-hidden="true">&#128196;</div>
-                <h3>Reports &amp; Downloads</h3>
-                <p>Export learning resources and return to saved study work whenever revision time arrives.</p>
-                <ul class="feature-list">
-                    <li>Notes</li>
-                    <li>Reports</li>
-                    <li>PDFs</li>
-                    <li>Saved history</li>
-                </ul>
-            </article>
+        <div class="locked-feature-grid">
+            <button type="button" data-locked-feature>
+                <span aria-hidden="true">&#128274;</span>
+                <strong>Dashboard</strong>
+                <small>Track your learning progress</small>
+            </button>
+            <button type="button" data-locked-feature>
+                <span aria-hidden="true">&#128274;</span>
+                <strong>Saved Quiz History</strong>
+                <small>Review every attempt</small>
+            </button>
+            <button type="button" data-locked-feature>
+                <span aria-hidden="true">&#128274;</span>
+                <strong>Performance Analytics</strong>
+                <small>Understand your growth</small>
+            </button>
+            <button type="button" data-locked-feature>
+                <span aria-hidden="true">&#128274;</span>
+                <strong>AI Recommendations</strong>
+                <small>Personalized study ideas</small>
+            </button>
         </div>
     </section>
+    {% endif %}
 
-    <section class="platform-highlights-card" aria-labelledby="platform-highlights-title">
+    <section class="platform-highlights-card premium-glass-section" aria-labelledby="platform-highlights-title">
         <div class="section-heading">
             <div>
                 <span class="eyebrow">Platform Highlights</span>
@@ -221,7 +474,7 @@
         </div>
     </section>
 
-    <section class="why-study-card" aria-labelledby="why-study-title">
+    <section class="why-study-card premium-glass-section" aria-labelledby="why-study-title">
         <div class="section-heading">
             <div>
                 <span class="eyebrow">Why Choose</span>
@@ -257,7 +510,7 @@
         </div>
     </section>
 
-    <section class="project-team-card" aria-labelledby="project-team-title">
+    <section class="project-team-card premium-glass-section" aria-labelledby="project-team-title">
         <div class="section-heading">
             <span class="eyebrow">Exhibition Team</span>
             <h2 id="project-team-title">Project Team</h2>
@@ -301,179 +554,7 @@
         </div>
     </section>
 
-    <div class="lesson-preview">
-        <span class="preview-icon">&#9889;</span>
-        <span><strong>Science</strong> + <strong>Photosynthesis</strong> = notes, diagram, quiz</span>
-    </div>
-
-    {% if exhibition_mode %}
-    <section class="exhibition-demo-panel" data-tour-title="Quick Demo Buttons" data-tour-body="Pick a demo topic to fill the lesson form instantly, then press Start Learning to run the real app flow.">
-        <div class="dashboard-section-heading">
-            <div>
-                <span class="eyebrow">Quick Demo</span>
-                <h2>Choose a ready-made example</h2>
-            </div>
-            <p>Great for showing judges the project quickly.</p>
-        </div>
-        <div class="exhibition-demo-grid">
-            <button type="button" data-demo-name="Exhibition Visitor" data-demo-class="9" data-demo-subject="Science" data-demo-book="" data-demo-topic="Photosynthesis">
-                <span aria-hidden="true">&#128300;</span>
-                <strong>Science Demo</strong>
-                <small>Photosynthesis</small>
-            </button>
-            <button type="button" data-demo-name="Exhibition Visitor" data-demo-class="9" data-demo-subject="Maths" data-demo-book="" data-demo-topic="Linear Equations">
-                <span aria-hidden="true">&#8721;</span>
-                <strong>Maths Demo</strong>
-                <small>Linear Equations</small>
-            </button>
-            <button type="button" data-demo-name="Exhibition Visitor" data-demo-class="9" data-demo-subject="English" data-demo-book="" data-demo-topic="Grammar Revision">
-                <span aria-hidden="true">Aa</span>
-                <strong>English Demo</strong>
-                <small>Grammar Revision</small>
-            </button>
-        </div>
-    </section>
-    {% endif %}
-
-    <form id="lesson-form" class="study-form" action="{{ url_for('learn') }}" method="POST" data-tour-title="Live Lesson Generator" data-tour-body="This form starts the real learning workflow. It generates notes, a diagram, quiz questions, and saved history for logged-in students.">
-        <div class="form-grid">
-            <div class="form-field name-field">
-                <label for="name">&#128100; Your Name</label>
-                <input
-                    id="name"
-                    type="text"
-                    name="name"
-                    value="{{ current_user.full_name if current_user else '' }}"
-                    placeholder="Enter your name"
-                    required
-                >
-            </div>
-
-            <div class="form-field class-field">
-                <label for="student_class">&#127891; Class</label>
-                <select id="student_class" name="student_class" required>
-                    <option value="">Select class</option>
-                    {% set selected_class = (current_user.default_class or current_user.student_class) if current_user else '' %}
-                    {% for class_number in class_options %}
-                    <option value="{{ class_number }}" {% if selected_class == class_number %}selected{% endif %}>Class {{ class_number }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-
-            <div class="form-field subject-field">
-                <label for="subject">&#128218; Subject</label>
-                <div class="subject-hints" aria-hidden="true">
-                    <span>&#8721; Maths</span>
-                    <span>&#128300; Science</span>
-                    <span>Aa English</span>
-                    <span>&#127758; Social</span>
-                    <span>&#128187; AI / CS</span>
-                </div>
-                <select id="subject" name="subject" required>
-                    <option value="">Select subject</option>
-                    <option value="Maths" {% if current_user and current_user.default_subject == 'Maths' %}selected{% endif %}>Maths</option>
-                    <option value="Science" {% if current_user and current_user.default_subject == 'Science' %}selected{% endif %}>Science</option>
-                    <option value="English" {% if current_user and current_user.default_subject == 'English' %}selected{% endif %}>English</option>
-                    <option value="Social Science" {% if current_user and current_user.default_subject == 'Social Science' %}selected{% endif %}>Social Science</option>
-                    <option value="Artificial Intelligence / Computer Science" {% if current_user and current_user.default_subject == 'Artificial Intelligence / Computer Science' %}selected{% endif %}>Artificial Intelligence / Computer Science</option>
-                </select>
-            </div>
-            <div class="form-field textbook-field">
-                <label for="book_name">&#128214; Textbook Search</label>
-                <input
-                    id="book_name"
-                    type="text"
-                    name="book_name"
-                    placeholder="Search textbook"
-                    autocomplete="off"
-                    role="combobox"
-                    aria-autocomplete="list"
-                    aria-expanded="false"
-                    aria-controls="textbook-suggestions"
-                >
-                <input id="textbook_id" type="hidden" name="textbook_id">
-                <div id="textbook-suggestions" class="autocomplete-menu" role="listbox" hidden></div>
-                <p class="autocomplete-status" data-textbook-status aria-live="polite"></p>
-                <article class="selection-info-card textbook-info-card" data-textbook-info-card aria-live="polite" hidden></article>
-            </div>
-            <div class="form-field chapter-field">
-                <label for="topic">&#128221; Chapter Search / Topic</label>
-                <input
-                    id="topic"
-                    type="text"
-                    name="topic"
-                    placeholder="Select textbook first"
-                    autocomplete="off"
-                    role="combobox"
-                    aria-autocomplete="list"
-                    aria-expanded="false"
-                    aria-controls="chapter-suggestions"
-                    disabled
-                    required
-                >
-                <input id="chapter_id" type="hidden" name="chapter_id">
-                <div id="chapter-suggestions" class="autocomplete-menu" role="listbox" hidden></div>
-                <p class="autocomplete-status" data-chapter-status aria-live="polite"></p>
-                <div class="popular-chapters-panel" data-popular-chapters-panel hidden>
-                    <div class="popular-chapters-heading">
-                        <span>Popular Chapters</span>
-                        <small data-popular-chapters-count></small>
-                    </div>
-                    <div class="popular-chapters-list" data-popular-chapters-list aria-label="Popular chapters"></div>
-                </div>
-            </div>
-        </div>
-
-        <button class="start-learning-btn" type="submit" aria-label="Start learning with AI Study Buddy" title="Select a chapter first" data-start-learning-button>
-            Start Learning
-        </button>
-        <article class="selection-info-card chapter-info-card" data-chapter-info-card aria-live="polite" hidden></article>
-    </form>
-
-    <div class="home-actions">
-        {% if user %}
-        <a class="button-link secondary-link" href="{{ url_for('history') }}">
-            View Quiz History
-        </a>
-        {% else %}
-        <button class="secondary-link" type="button" data-locked-feature>
-            View Quiz History
-        </button>
-        {% endif %}
-    </div>
-
-    {% if not user %}
-    <section class="guest-locked-card">
-        <div class="section-heading">
-            <span class="eyebrow">Account Mode = Personalized Learning Platform</span>
-            <h2>Unlock with a free student account</h2>
-        </div>
-        <div class="locked-feature-grid">
-            <button type="button" data-locked-feature>
-                <span aria-hidden="true">&#128274;</span>
-                <strong>Dashboard</strong>
-                <small>Track your learning progress</small>
-            </button>
-            <button type="button" data-locked-feature>
-                <span aria-hidden="true">&#128274;</span>
-                <strong>Saved Quiz History</strong>
-                <small>Review every attempt</small>
-            </button>
-            <button type="button" data-locked-feature>
-                <span aria-hidden="true">&#128274;</span>
-                <strong>Performance Analytics</strong>
-                <small>Understand your growth</small>
-            </button>
-            <button type="button" data-locked-feature>
-                <span aria-hidden="true">&#128274;</span>
-                <strong>AI Recommendations</strong>
-                <small>Personalized study ideas</small>
-            </button>
-        </div>
-    </section>
-    {% endif %}
-
-    <section class="about-card">
+    <section class="about-card premium-glass-section">
         <div class="about-intro">
             <span class="eyebrow">About</span>
             <h2>Project Overview</h2>
@@ -621,7 +702,7 @@ function initializeTextbookAutocomplete() {
         if (!startButton) {
             return;
         }
-        const locked = isSmartTextbookSubject() && (!textbookIdInput.value || !chapterIdInput.value);
+        const locked = Boolean(textbookIdInput.value && !chapterIdInput.value);
         startButton.disabled = Boolean(locked);
         startButton.setAttribute("aria-disabled", locked ? "true" : "false");
         startButton.title = locked ? "Select a chapter first" : "Start learning";
@@ -896,14 +977,8 @@ function initializeTextbookAutocomplete() {
     }
 
     function updateChapterState() {
-        if (isSmartTextbookSubject() && !textbookIdInput.value) {
-            chapterInput.disabled = true;
-            chapterInput.placeholder = "Select textbook first";
-            setStartButtonState();
-            return;
-        }
         chapterInput.disabled = false;
-        chapterInput.placeholder = textbookIdInput.value ? "Search chapter" : "Enter topic";
+        chapterInput.placeholder = textbookIdInput.value ? "Search chapter" : "Enter a topic or select a textbook";
         setStartButtonState();
     }
 
@@ -1414,9 +1489,6 @@ function initializeTextbookAutocomplete() {
             return;
         }
         if (!textbookIdInput.value) {
-            event.preventDefault();
-            setStatus(textbookStatus, "Select a textbook from the suggestions before starting.");
-            textbookInput.focus();
             return;
         }
         if (textbookIdInput.value && !chapterIdInput.value) {

@@ -366,17 +366,60 @@
                     <span aria-hidden="true">&#128221;</span>
                     <strong>Take Quiz</strong>
                 </a>
+                {% if recent_tutor_conversation %}
+                <a href="{{ url_for('ai_tutor', tutor_lesson_id=recent_tutor_conversation.tutor_lesson_id, next=current_page_url) }}">
+                    <span aria-hidden="true">&#129302;</span>
+                    <strong>AI Tutor</strong>
+                </a>
+                {% elif continue_lesson %}
+                <a href="{{ url_for('view_learning_history', lesson_id=continue_lesson.id) }}">
+                    <span aria-hidden="true">&#129302;</span>
+                    <strong>AI Tutor</strong>
+                </a>
+                {% else %}
+                <a href="{{ url_for('home') }}#lesson-form">
+                    <span aria-hidden="true">&#129302;</span>
+                    <strong>AI Tutor</strong>
+                </a>
+                {% endif %}
+                {% if continue_lesson %}
+                <a href="{{ url_for('flashcards', lesson_id=continue_lesson.id, next=current_page_url) }}">
+                    <span aria-hidden="true">&#127183;</span>
+                    <strong>Flashcards</strong>
+                </a>
+                <a href="{{ url_for('revision', lesson_id=continue_lesson.id, next=current_page_url) }}">
+                    <span aria-hidden="true">&#128214;</span>
+                    <strong>Revision</strong>
+                </a>
+                {% else %}
+                <a href="{{ url_for('home') }}#lesson-form">
+                    <span aria-hidden="true">&#127183;</span>
+                    <strong>Flashcards</strong>
+                </a>
+                <a href="{{ url_for('home') }}#lesson-form">
+                    <span aria-hidden="true">&#128214;</span>
+                    <strong>Revision</strong>
+                </a>
+                {% endif %}
+                <a href="{{ url_for('history') }}">
+                    <span aria-hidden="true">&#128221;</span>
+                    <strong>Quiz History</strong>
+                </a>
                 <a href="{{ url_for('learning_history') }}">
                     <span aria-hidden="true">&#128218;</span>
-                    <strong>My Learning History</strong>
+                    <strong>Learning History</strong>
+                </a>
+                <a href="{{ url_for('performance') }}">
+                    <span aria-hidden="true">&#128200;</span>
+                    <strong>Performance</strong>
                 </a>
                 <a href="{{ url_for('downloaded_reports') }}">
                     <span aria-hidden="true">&#128196;</span>
-                    <strong>My Downloaded PDFs</strong>
+                    <strong>Downloads</strong>
                 </a>
                 <a href="{{ url_for('favourite_notes') }}">
                     <span aria-hidden="true">&#11088;</span>
-                    <strong>My Favourite Notes</strong>
+                    <strong>Saved Notes</strong>
                 </a>
             </div>
         </section>
