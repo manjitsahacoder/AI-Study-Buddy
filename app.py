@@ -7702,7 +7702,7 @@ def _create_learning_history_pdf(entry, diagram_payload, questions, diagram_view
     elif diagram_payload.get("available"):
         story.append(Spacer(1, 12))
         story.append(Paragraph("Educational Diagram", styles["SectionHeading"]))
-        story.append(Paragraph("No suitable educational diagram is currently available for this lesson.", styles["ReportBody"]))
+        story.append(Paragraph("No suitable educational diagram found.", styles["ReportBody"]))
     else:
         story.append(Spacer(1, 12))
         story.append(Paragraph("Educational Diagram", styles["SectionHeading"]))

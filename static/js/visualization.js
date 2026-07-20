@@ -191,7 +191,7 @@
                     ]);
                 } else {
                     renderInfoCard(card, "Educational Diagram", [
-                        "No suitable educational diagram is currently available for this lesson.",
+                        "No suitable educational diagram found.",
                         "Continue learning using:"
                     ], ["Notes", "Revision", "Flashcards", "Memory Challenge", "AI Tutor", "Quiz"]);
                 }

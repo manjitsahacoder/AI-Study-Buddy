@@ -37,7 +37,14 @@ from models import (
 )
 from textbook_catalog import CBSE_TEXTBOOKS, seed_cbse_textbook_catalog
 from diagram_library.metadata import DiagramCandidate, reusable_license
-from diagram_library.lookup import candidate_language_category, rank_diagram_candidates
+from diagram_library.lookup import (
+    build_search_queries,
+    candidate_language_category,
+    candidate_relevance_score,
+    rank_diagram_candidates,
+    relevant_diagram_candidates,
+    subject_mismatch_terms,
+)
 from diagram_library.providers import NcertProvider, ProviderRegistry
 from diagram_library.ai_review import (
     DiagramReviewDecision,
@@ -1129,7 +1136,7 @@ Q5. What is question five?
         self.assertIn("Plant Notes", page)
         self.assertIn("<strong>Subject</strong> Biology", page)
         self.assertIn("Educational Diagram", page)
-        self.assertIn("No suitable educational diagram is currently available for this lesson.", page)
+        self.assertIn("No suitable educational diagram found.", page)
         self.assertNotIn("ai-visualization-svg", page)
         self.assertNotIn('<img class="diagram-library-image"', page)
         self.assertNotIn("D1: Seed", page)
@@ -1697,6 +1704,139 @@ She said, "I am tired."
             categories=categories,
             commons_metadata=commons_metadata or {},
         )
+
+    def test_diagram_search_queries_expand_science_motion_with_class_context(self):
+        queries = build_search_queries(subject="Science", topic="Motion", student_class="9")
+
+        normalized_queries = [query.lower() for query in queries]
+        self.assertTrue(any("science" in query and "class 9" in query for query in normalized_queries))
+        self.assertIn("physics motion diagram", normalized_queries)
+        self.assertIn("distance displacement velocity diagram", normalized_queries)
+        self.assertIn("class 9 motion physics", normalized_queries)
+
+    def test_diagram_relevance_motion_prefers_physics_over_plate_motion(self):
+        plate_motion = self.diagram_candidate(
+            "Tectonic plate motion diagram English.svg",
+            width=2200,
+            height=1500,
+            description="Geology diagram showing continental drift, subduction, volcanoes, and earthquake zones.",
+            categories=("Plate tectonics", "Geology diagrams", "Earth science"),
+            commons_metadata={"ImageDescription": "Tectonic plate motion and mantle convection."},
+        )
+        physics_motion = self.diagram_candidate(
+            "Distance displacement velocity motion diagram English.svg",
+            width=900,
+            height=650,
+            description="Class 9 physics educational diagram comparing distance, displacement, speed, velocity, and acceleration.",
+            categories=("Physics education", "Mechanics diagrams", "Motion graphs"),
+            commons_metadata={"ImageDescription": "School physics motion diagram with distance-time graph."},
+        )
+
+        relevant = relevant_diagram_candidates(
+            [plate_motion, physics_motion],
+            topic="Motion",
+            subject="Science",
+            student_class="9",
+        )
+        ranked = rank_diagram_candidates(relevant, topic="Motion", subject="Science")
+
+        self.assertEqual([candidate.title for candidate in ranked], [physics_motion.title])
+        self.assertIn("tectonic", subject_mismatch_terms(plate_motion, topic="Motion", subject="Science"))
+        self.assertGreater(candidate_relevance_score(physics_motion, "Motion", "Science", "9"), 58)
+
+    def test_diagram_relevance_cell_prefers_biology_over_non_biology_cell(self):
+        phone_cell = self.diagram_candidate(
+            "Cellular network cell tower diagram English.svg",
+            description="Telecommunication diagram showing mobile phone cells and radio network coverage.",
+            categories=("Cellular networks", "Telecommunication diagrams"),
+            commons_metadata={"ImageDescription": "Mobile phone cellular network diagram."},
+        )
+        biology_cell = self.diagram_candidate(
+            "Animal cell structure labelled biology diagram English.svg",
+            description="Biology educational diagram showing cell membrane, nucleus, cytoplasm, and mitochondria.",
+            categories=("Cell biology", "Biology education", "Cell diagrams"),
+            commons_metadata={"ImageDescription": "Class 8 biology cell organelles labelled diagram."},
+        )
+
+        relevant = relevant_diagram_candidates([phone_cell, biology_cell], topic="Cell", subject="Science")
+        ranked = rank_diagram_candidates(relevant, topic="Cell", subject="Science")
+
+        self.assertEqual([candidate.title for candidate in ranked], [biology_cell.title])
+        self.assertIn("cellular network", subject_mismatch_terms(phone_cell, topic="Cell", subject="Science"))
+
+    def test_diagram_relevance_french_revolution_prefers_history_illustration(self):
+        chemistry = self.diagram_candidate(
+            "Chemical revolution laboratory diagram English.svg",
+            description="Chemistry illustration about changes in laboratory science.",
+            categories=("Chemistry history", "Scientific revolution"),
+        )
+        history = self.diagram_candidate(
+            "French Revolution estates general history illustration English.svg",
+            description="Historical educational illustration and timeline for the French Revolution.",
+            categories=("French Revolution", "History education", "Historical illustrations"),
+            commons_metadata={"ImageDescription": "French Revolution history illustration with timeline context."},
+        )
+
+        relevant = relevant_diagram_candidates(
+            [chemistry, history],
+            topic="French Revolution",
+            subject="Social Science",
+            student_class="9",
+        )
+        ranked = rank_diagram_candidates(relevant, topic="French Revolution", subject="Social Science")
+
+        self.assertEqual([candidate.title for candidate in ranked], [history.title])
+
+    def test_diagram_relevance_plate_tectonics_accepts_geography_diagram(self):
+        dinner_plate = self.diagram_candidate(
+            "Dinner plate illustration English.svg",
+            description="Decorative illustration of a ceramic dinner plate.",
+            categories=("Kitchenware", "Illustrations"),
+        )
+        tectonics = self.diagram_candidate(
+            "Plate tectonics boundary geography diagram English.svg",
+            description="Geography educational diagram showing tectonic plates, continental drift, subduction, and earthquake zones.",
+            categories=("Plate tectonics", "Geography education", "Earth science diagrams"),
+            commons_metadata={"ImageDescription": "Plate boundary diagram for geography class."},
+        )
+
+        relevant = relevant_diagram_candidates(
+            [dinner_plate, tectonics],
+            topic="Plate Tectonics",
+            subject="Geography",
+            student_class="9",
+        )
+        ranked = rank_diagram_candidates(relevant, topic="Plate Tectonics", subject="Geography")
+
+        self.assertEqual([candidate.title for candidate in ranked], [tectonics.title])
+        self.assertEqual(subject_mismatch_terms(tectonics, topic="Plate Tectonics", subject="Geography"), ())
+
+    def test_diagram_service_rejects_unrelated_generic_topic_candidates(self):
+        stored_relative = self.write_test_diagram("unrelated-generic.png")
+        stored_path = Path(app_module.app.static_folder) / stored_relative
+        unrelated = self.diagram_candidate(
+            "Tectonic plate motion diagram English.svg",
+            description="Geology diagram of continental drift, subduction, volcano arcs, and earthquake zones.",
+            categories=("Plate tectonics", "Geology diagrams"),
+        )
+
+        class FakeRegistry:
+            def search(self, queries, limit_per_query=8):
+                return [unrelated]
+
+        with patch("diagram_library.service.download_and_store", return_value=stored_path) as download:
+            with app_module.app.app_context():
+                diagram = get_or_create_diagram(
+                    lesson_id=1,
+                    subject="Science",
+                    topic="Motion",
+                    student_class="9",
+                    static_folder=app_module.app.static_folder,
+                    provider_registry=FakeRegistry(),
+                )
+
+        self.assertIsNone(diagram)
+        download.assert_not_called()
 
     def test_diagram_ranking_prefers_english_result_over_arabic(self):
         arabic = self.diagram_candidate("Mitochondrion diagram ar.svg", width=1800, height=1200)
@@ -5175,7 +5315,7 @@ Q5. What is question five?
         self.assertIn("Plant Notes", detail_page)
         self.assertIn("Quick Revision", detail_page)
         self.assertIn("Educational Diagram", detail_page)
-        self.assertIn("No suitable educational diagram is currently available for this lesson.", detail_page)
+        self.assertIn("No suitable educational diagram found.", detail_page)
         self.assertNotIn("ai-visualization-svg", detail_page)
         self.assertNotIn("Download Diagram", detail_page)
         self.assertIn("What is question one?", detail_page)

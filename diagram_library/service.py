@@ -13,6 +13,7 @@ from .lookup import (
     build_search_queries,
     candidate_language_category,
     rank_diagram_candidates,
+    relevant_diagram_candidates,
 )
 from .providers import NcertProvider, ProviderRegistry, WikimediaCommonsProvider
 from .storage import download_and_store, repair_cached_image_extension
@@ -112,6 +113,13 @@ def get_or_create_diagram(
             candidates = [
                 candidate for candidate in candidates if acceptable_candidate_title(candidate.title)
             ]
+            candidates = relevant_diagram_candidates(
+                candidates,
+                topic=topic,
+                subject=subject,
+                student_class=student_class,
+                visualization_type=visualization_type,
+            )
             for candidate in _reviewed_candidate_order(
                 candidates,
                 topic=topic,

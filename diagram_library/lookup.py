@@ -132,6 +132,227 @@ EDUCATIONAL_TERMS = (
     "illustration",
 )
 
+TOPIC_ALIASES = {
+    "mitochondria": ("mitochondrion",),
+    "mitochondrion": ("mitochondria",),
+    "cell": ("cells",),
+    "cells": ("cell",),
+}
+
+MIN_RELEVANCE_SCORE = 58
+
+SUBJECT_AREA_PROFILES = {
+    "physics": {
+        "subject_markers": ("physics",),
+        "topic_markers": (
+            "motion",
+            "velocity",
+            "speed",
+            "displacement",
+            "distance",
+            "acceleration",
+            "force",
+            "gravitation",
+            "work",
+            "energy",
+            "sound",
+            "light",
+            "electricity",
+            "magnet",
+            "pressure",
+            "refraction",
+            "reflection",
+        ),
+        "query_terms": (
+            "physics",
+            "mechanics",
+            "velocity",
+            "displacement",
+            "acceleration",
+            "force",
+            "distance time graph",
+            "motion graph",
+        ),
+    },
+    "biology": {
+        "subject_markers": ("biology", "botany", "zoology"),
+        "topic_markers": (
+            "cell",
+            "photosynthesis",
+            "plant",
+            "animal",
+            "tissue",
+            "organ",
+            "digestive",
+            "respiration",
+            "reproduction",
+            "mitosis",
+            "meiosis",
+            "microorganism",
+        ),
+        "query_terms": (
+            "biology",
+            "cell structure",
+            "organelles",
+            "plant cell",
+            "animal cell",
+            "life process",
+            "anatomy",
+        ),
+    },
+    "chemistry": {
+        "subject_markers": ("chemistry",),
+        "topic_markers": (
+            "atom",
+            "molecule",
+            "compound",
+            "element",
+            "reaction",
+            "acid",
+            "base",
+            "salt",
+            "matter",
+            "solution",
+        ),
+        "query_terms": ("chemistry", "chemical", "molecule", "reaction", "laboratory"),
+    },
+    "history": {
+        "subject_markers": ("history",),
+        "topic_markers": (
+            "revolution",
+            "empire",
+            "war",
+            "independence",
+            "nationalism",
+            "civilization",
+            "kingdom",
+            "french revolution",
+        ),
+        "query_terms": ("history", "historical", "timeline", "map", "illustration", "revolution"),
+    },
+    "geography": {
+        "subject_markers": ("geography",),
+        "topic_markers": (
+            "plate tectonics",
+            "tectonic",
+            "earthquake",
+            "volcano",
+            "river",
+            "climate",
+            "map",
+            "continent",
+            "drainage",
+            "resources",
+            "population",
+        ),
+        "query_terms": (
+            "geography",
+            "earth science",
+            "map",
+            "tectonic plates",
+            "plate boundary",
+            "continental drift",
+        ),
+    },
+    "mathematics": {
+        "subject_markers": ("mathematics", "maths", "math"),
+        "topic_markers": (
+            "triangle",
+            "circle",
+            "quadrilateral",
+            "equation",
+            "graph",
+            "coordinate",
+            "number",
+            "fraction",
+            "geometry",
+        ),
+        "query_terms": ("mathematics", "geometry", "graph", "coordinate", "proof"),
+    },
+    "computer science": {
+        "subject_markers": ("computer science", "computer", "informatics"),
+        "topic_markers": ("database", "network", "algorithm", "program", "er diagram"),
+        "query_terms": ("computer science", "database", "network", "algorithm", "schema"),
+    },
+}
+
+SUBJECT_QUERY_EXPANSIONS = {
+    ("physics", "motion"): (
+        "physics motion diagram",
+        "distance displacement velocity diagram",
+        "class {class_level} motion physics",
+        "uniform motion velocity time graph",
+        "distance time graph motion",
+    ),
+    ("biology", "cell"): (
+        "biology cell diagram",
+        "plant animal cell structure diagram",
+        "class {class_level} cell biology",
+        "cell organelles labelled diagram",
+    ),
+    ("history", "french revolution"): (
+        "French Revolution history illustration",
+        "French Revolution timeline diagram",
+        "class {class_level} French Revolution history",
+        "French Revolution estates general illustration",
+    ),
+    ("geography", "plate tectonics"): (
+        "plate tectonics geography diagram",
+        "tectonic plates boundary diagram",
+        "class {class_level} plate tectonics geography",
+        "continental drift plate boundary diagram",
+    ),
+}
+
+SUBJECT_NEGATIVE_PROFILES = (
+    {
+        "area": "physics",
+        "topic_markers": ("motion", "velocity", "displacement", "acceleration"),
+        "negative": (
+            "tectonic",
+            "plate",
+            "geology",
+            "volcano",
+            "earthquake",
+            "continental drift",
+            "subduction",
+            "lithosphere",
+            "mantle convection",
+        ),
+    },
+    {
+        "area": "biology",
+        "topic_markers": ("cell", "cells"),
+        "negative": (
+            "prison",
+            "jail",
+            "battery",
+            "solar cell",
+            "cellular network",
+            "mobile phone",
+            "telephone",
+            "spreadsheet",
+        ),
+    },
+    {
+        "area": "history",
+        "topic_markers": ("french revolution", "revolution"),
+        "negative": (
+            "chemical revolution",
+            "industrial revolution",
+            "cell",
+            "volcano",
+            "tectonic",
+            "plate boundary",
+        ),
+    },
+    {
+        "area": "geography",
+        "topic_markers": ("plate tectonics", "tectonic plates", "tectonic"),
+        "negative": ("dinner plate", "license plate", "number plate", "armor plate"),
+    },
+)
+
 BROAD_TOPIC_PROFILES = {
     "cell division": {
         "preferred": (
@@ -199,28 +420,36 @@ def build_search_queries(subject="", topic="", student_class="", book_name="", v
     student_class = str(student_class or "").strip()
     book_name = str(book_name or "").strip()
     visualization_type = str(visualization_type or "").strip().replace("_", " ")
-    context = " ".join(part for part in [subject, f"class {student_class}" if student_class else "", book_name] if part)
+    class_context = f"class {student_class}" if student_class else ""
+    context = " ".join(part for part in [subject, class_context, book_name] if part)
     topic_lower = topic.lower()
-    if any(term in topic_lower for term in ("photosynthesis", "plant cell", "animal cell", "human heart", "digestive system")):
+    subject_area = infer_subject_area(subject, topic)
+    if subject_area == "biology" or any(term in topic_lower for term in ("photosynthesis", "plant cell", "animal cell", "human heart", "digestive system")):
         domain = "biology educational diagram"
+    elif subject_area == "physics":
+        domain = "physics educational diagram"
+    elif subject_area == "geography":
+        domain = "geography educational diagram"
     elif any(term in topic_lower for term in ("solar system", "planet", "orbit")):
         domain = "astronomy educational diagram"
     elif any(term in topic_lower for term in ("water cycle", "river", "map")):
         domain = "geography educational diagram"
     elif any(term in topic_lower for term in ("database", "er diagram", "network")):
         domain = "computer science diagram"
-    elif "timeline" in visualization_type or "history" in subject.lower():
+    elif subject_area == "history" or "timeline" in visualization_type or "history" in subject.lower():
         domain = "timeline educational diagram"
     else:
         domain = "educational diagram"
 
+    area_label = subject_area or subject
+    expansion_terms = _subject_query_expansions(subject_area, topic, student_class)
     queries = [
-        f"{topic} {subject} {domain}".strip(),
-        f"{topic} {domain}".strip(),
-        f"{topic} {visualization_type} diagram".strip(),
-        f"{topic} diagram".strip(),
-        f"{topic} overview diagram".strip(),
+        f"{context} {topic} {domain}".strip(),
+        f"{topic} {subject} {class_context} {domain}".strip(),
+        f"{topic} {area_label} {visualization_type} diagram".strip(),
+        f"{topic} {area_label} overview diagram".strip(),
     ]
+    queries.extend(expansion_terms)
     if context:
         queries.append(f"{topic} {context} educational diagram")
     return _unique_queries(queries)
@@ -268,6 +497,7 @@ def candidate_rank_score(candidate, topic="", subject="", visualization_type="")
         score += 45
 
     score += _semantic_relevance_score(candidate, topic, subject)
+    score += candidate_relevance_score(candidate, topic, subject, visualization_type=visualization_type)
     score += _topic_relevance_score(title, topic)
     score += _educational_style_score(haystack)
     score += _format_score(mime_type)
@@ -278,6 +508,100 @@ def candidate_rank_score(candidate, topic="", subject="", visualization_type="")
     visualization_words = str(visualization_type or "").lower().replace("_", " ").split()
     score += sum(3 for word in visualization_words if len(word) > 3 and word in haystack)
     return score
+
+
+def relevant_diagram_candidates(candidates, topic="", subject="", student_class="", visualization_type=""):
+    return [
+        candidate
+        for candidate in candidates
+        if candidate_relevance_score(
+            candidate,
+            topic=topic,
+            subject=subject,
+            student_class=student_class,
+            visualization_type=visualization_type,
+        )
+        >= MIN_RELEVANCE_SCORE
+    ]
+
+
+def candidate_relevance_score(candidate, topic="", subject="", student_class="", visualization_type=""):
+    if subject_mismatch_terms(candidate, topic=topic, subject=subject):
+        return -220
+
+    topic_text = _normalize_text(topic)
+    if not topic_text:
+        return 0
+
+    fields = _candidate_text_fields(candidate)
+    normalized_fields = {name: _normalize_text(value) for name, value in fields.items()}
+    score = 0
+    score += _weighted_phrase_score(topic_text, normalized_fields, base=9, cap=90)
+    for alias in _topic_aliases(topic_text):
+        score += _weighted_phrase_score(alias, normalized_fields, base=8, cap=72)
+    score += _topic_word_coverage_score(topic_text, normalized_fields)
+    score += _subject_area_score(normalized_fields, subject, topic)
+
+    subject_text = _normalize_text(subject)
+    if subject_text and subject_text not in {"science", "social science", "sst"}:
+        score += _weighted_phrase_score(subject_text, normalized_fields, base=3, cap=36)
+
+    visualization_text = _normalize_text(visualization_type)
+    if visualization_text:
+        score += _weighted_phrase_score(visualization_text, normalized_fields, base=2, cap=20)
+
+    if _has_general_school_diagram_match(normalized_fields):
+        score += 14
+    if _has_educational_match(normalized_fields):
+        score += 10
+    return score
+
+
+def subject_mismatch_terms(candidate, topic="", subject=""):
+    subject_area = infer_subject_area(subject, topic)
+    topic_text = _normalize_text(topic)
+    if not subject_area or not topic_text:
+        return ()
+
+    fields = _candidate_text_fields(candidate)
+    haystack = _normalize_text(" ".join(fields.values()))
+    mismatches = []
+    for profile in SUBJECT_NEGATIVE_PROFILES:
+        if profile["area"] != subject_area:
+            continue
+        if not any(_contains_phrase(topic_text, marker) for marker in profile["topic_markers"]):
+            continue
+        for term in profile["negative"]:
+            if _contains_phrase(haystack, term):
+                mismatches.append(term)
+    return tuple(mismatches)
+
+
+def infer_subject_area(subject="", topic=""):
+    subject_text = _normalize_text(subject)
+    topic_text = _normalize_text(topic)
+    combined_text = f"{subject_text} {topic_text}".strip()
+
+    for area, profile in SUBJECT_AREA_PROFILES.items():
+        if any(_contains_phrase(subject_text, marker) for marker in profile["subject_markers"]):
+            return area
+
+    if "social science" in subject_text or subject_text in {"sst", "social studies"}:
+        for area in ("history", "geography"):
+            profile = SUBJECT_AREA_PROFILES[area]
+            if any(_contains_phrase(topic_text, marker) for marker in profile["topic_markers"]):
+                return area
+
+    if "science" in subject_text:
+        for area in ("biology", "physics", "chemistry", "geography"):
+            profile = SUBJECT_AREA_PROFILES[area]
+            if any(_contains_phrase(topic_text, marker) for marker in profile["topic_markers"]):
+                return area
+
+    for area, profile in SUBJECT_AREA_PROFILES.items():
+        if any(_contains_phrase(combined_text, marker) for marker in profile["topic_markers"]):
+            return area
+    return ""
 
 
 def candidate_language_category(candidate):
@@ -372,15 +696,20 @@ def _candidate_text_fields(candidate):
     categories = " ".join(str(category or "") for category in getattr(candidate, "categories", ()) or ())
     metadata = getattr(candidate, "commons_metadata", {}) or {}
     if isinstance(metadata, dict):
-        metadata_text = " ".join(str(value or "") for value in metadata.values())
+        metadata_text = " ".join(_flatten_metadata_values(metadata))
     else:
         metadata_text = str(metadata or "")
+    provider_metadata = getattr(candidate, "provider_metadata", {}) or {}
+    if isinstance(provider_metadata, dict):
+        provider_metadata_text = " ".join(_flatten_metadata_values(provider_metadata))
+    else:
+        provider_metadata_text = str(provider_metadata or "")
     return {
         "title": title,
         "filename": _candidate_filename(title, image_url, source_url),
         "description": description,
         "categories": categories,
-        "metadata": metadata_text,
+        "metadata": " ".join(part for part in [metadata_text, provider_metadata_text] if part),
     }
 
 
@@ -400,6 +729,55 @@ def _normalize_text(value):
     normalized = re.sub(r"[_+/|:;.,()[\]{}-]+", " ", normalized)
     normalized = re.sub(r"\s+", " ", normalized)
     return normalized.strip()
+
+
+def _contains_phrase(value, phrase):
+    normalized_value = _normalize_text(value)
+    normalized_phrase = _normalize_text(phrase)
+    if not normalized_value or not normalized_phrase:
+        return False
+    return bool(re.search(rf"\b{re.escape(normalized_phrase)}s?\b", normalized_value))
+
+
+def _flatten_metadata_values(value):
+    if isinstance(value, dict):
+        for nested in value.values():
+            yield from _flatten_metadata_values(nested)
+    elif isinstance(value, (list, tuple, set)):
+        for nested in value:
+            yield from _flatten_metadata_values(nested)
+    elif value is not None:
+        yield str(value)
+
+
+def _subject_query_expansions(subject_area, topic, student_class):
+    topic_text = _normalize_text(topic)
+    class_level = str(student_class or "").strip() or "9"
+    expansions = []
+    for (area, topic_key), templates in SUBJECT_QUERY_EXPANSIONS.items():
+        if area == subject_area and _contains_phrase(topic_text, topic_key):
+            expansions.extend(template.format(class_level=class_level) for template in templates)
+    return expansions
+
+
+def _subject_area_score(normalized_fields, subject, topic):
+    subject_area = infer_subject_area(subject, topic)
+    if not subject_area:
+        return 0
+    profile = SUBJECT_AREA_PROFILES.get(subject_area, {})
+    score = 0
+    for term in profile.get("query_terms", ()):
+        score += _weighted_phrase_score(term, normalized_fields, base=4, cap=30)
+    if subject_area in {"physics", "biology", "chemistry", "history", "geography", "mathematics"}:
+        score += _weighted_phrase_score(subject_area, normalized_fields, base=5, cap=40)
+    return min(score, 95)
+
+
+def _topic_aliases(topic_text):
+    aliases = list(TOPIC_ALIASES.get(_normalize_text(topic_text), ()))
+    if topic_text.endswith("ia"):
+        aliases.append(topic_text[:-2] + "ion")
+    return _unique_queries(aliases)
 
 
 def _weighted_phrase_score(phrase, normalized_fields, *, base, cap):
