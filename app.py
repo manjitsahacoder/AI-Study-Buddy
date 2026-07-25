@@ -7929,6 +7929,9 @@ SCIENCE_MATH_SUBJECTS = (
 
 TEXTBOOK_REGISTRY = {
     ("9", "english", "kaveri"): Path("textbooks") / "class_9" / "english" / "kaveri",
+    ("9", "social science", "understanding society: india and beyond"): (
+        Path("textbooks") / "class_9" / "social_science" / "understanding_society"
+    ),
 }
 
 
@@ -8106,6 +8109,38 @@ def find_registered_textbook(student_class, subject, book_name):
     return Path(app.root_path) / relative_path
 
 
+def log_textbook_context_diagnostic(
+    status,
+    student_class,
+    subject,
+    book_name,
+    topic,
+    registry_key,
+    expected_path=None,
+    actual_path=None,
+    pdf_found=False,
+    chapter_found=False,
+    extracted_context_length=0,
+):
+    log_method = app.logger.info if status == "context_found" else app.logger.warning
+    log_method(
+        "local_textbook_context status=%s class=%s subject=%r textbook=%r chapter=%r "
+        "registry_key=%r expected_path=%s actual_path=%s pdf_found=%s chapter_found=%s "
+        "extracted_context_length=%s",
+        status,
+        student_class,
+        subject,
+        book_name,
+        topic,
+        registry_key,
+        expected_path or "",
+        actual_path or "",
+        bool(pdf_found),
+        bool(chapter_found),
+        extracted_context_length,
+    )
+
+
 @lru_cache(maxsize=16)
 def extract_pdf_text(pdf_path, max_chars=LEARN_MAX_PDF_TEXT_CHARS):
     try:
@@ -8255,16 +8290,61 @@ def local_textbook_context_section(
     chapter_number=None,
     chapter_count=None,
 ):
+    registry_key = textbook_lookup_key(student_class, subject, book_name)
+    relative_path = TEXTBOOK_REGISTRY.get(registry_key)
     textbook_path = find_registered_textbook(student_class, subject, book_name)
     if not textbook_path:
+        if book_name:
+            log_textbook_context_diagnostic(
+                "registry_missing",
+                student_class,
+                subject,
+                book_name,
+                topic,
+                registry_key,
+            )
         return ""
 
     if not textbook_path.exists():
+        log_textbook_context_diagnostic(
+            "path_missing",
+            student_class,
+            subject,
+            book_name,
+            topic,
+            registry_key,
+            expected_path=Path(app.root_path) / relative_path if relative_path else textbook_path,
+            actual_path=textbook_path,
+        )
         return f"""
 Local Textbook PDF Context:
 - A textbook is registered for this class, subject, and book name.
 - Expected PDF path: {textbook_path}
 - The PDF file is not available locally.
+- Do not guess chapter content.
+"""
+
+    pdf_paths = textbook_pdf_paths(
+        textbook_path,
+        chapter_number=chapter_number,
+        chapter_count=chapter_count,
+    )
+    if not pdf_paths:
+        log_textbook_context_diagnostic(
+            "pdf_missing",
+            student_class,
+            subject,
+            book_name,
+            topic,
+            registry_key,
+            expected_path=textbook_path,
+            actual_path=textbook_path,
+        )
+        return f"""
+Local Textbook PDF Context:
+- A textbook is registered for this class, subject, and book name.
+- Registered textbook path exists at: {textbook_path}
+- No PDF files were found in the registered path.
 - Do not guess chapter content.
 """
 
@@ -8276,6 +8356,17 @@ Local Textbook PDF Context:
         chapter_count=chapter_count,
     )
     if not chapter_context:
+        log_textbook_context_diagnostic(
+            "chapter_missing",
+            student_class,
+            subject,
+            book_name,
+            topic,
+            registry_key,
+            expected_path=textbook_path,
+            actual_path=textbook_path,
+            pdf_found=True,
+        )
         return f"""
 Local Textbook PDF Context:
 - Registered textbook files were found at: {textbook_path}
@@ -8284,6 +8375,19 @@ Local Textbook PDF Context:
 - Clearly state: "I do not have enough information about this chapter."
 """
 
+    log_textbook_context_diagnostic(
+        "context_found",
+        student_class,
+        subject,
+        book_name,
+        topic,
+        registry_key,
+        expected_path=textbook_path,
+        actual_path=chapter_pdf_path,
+        pdf_found=True,
+        chapter_found=True,
+        extracted_context_length=len(chapter_context),
+    )
     return f"""
 Local Textbook PDF Context:
 Matched PDF: {chapter_pdf_path}

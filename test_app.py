@@ -868,6 +868,51 @@ Q5. When are roots equal?
         self.assertEqual(ordered_paths[-2:], [Path("iebe1a1.pdf"), Path("iebe1ps.pdf")])
         self.assertCountEqual(ordered_paths, pdf_paths)
 
+    def test_understanding_society_registered_and_extracts_local_context(self):
+        with app_module.app.app_context():
+            seed_cbse_textbook_catalog(db.session)
+            textbook = Textbook.query.filter_by(
+                class_level=9,
+                subject="Social Science",
+                name="Understanding Society: India and Beyond",
+                is_active=True,
+            ).first()
+            chapter = Chapter.query.filter_by(
+                textbook_id=textbook.id,
+                title="Atmosphere and Climate",
+            ).first()
+            chapter_count = Chapter.query.filter_by(textbook_id=textbook.id).count()
+
+        context = app_module.local_textbook_context_section(
+            "9",
+            "Social Science",
+            textbook.name,
+            chapter.title,
+            chapter_number=chapter.chapter_number,
+            chapter_count=chapter_count,
+        )
+
+        self.assertIn("Local Textbook PDF Context:", context)
+        self.assertIn("Matched PDF:", context)
+        self.assertIn("Atmosphere and Climate", context)
+        self.assertGreater(len(context), 500)
+
+    def test_local_textbook_context_logs_missing_registry_diagnostic(self):
+        with self.assertLogs(app_module.app.logger.name, level="WARNING") as logs:
+            context = app_module.local_textbook_context_section(
+                "10",
+                "English",
+                "First Flight",
+                "A Letter to God",
+            )
+
+        self.assertEqual(context, "")
+        diagnostic = "\n".join(logs.output)
+        self.assertIn("status=registry_missing", diagnostic)
+        self.assertIn("First Flight", diagnostic)
+        self.assertIn("A Letter to God", diagnostic)
+        self.assertIn("('10', 'english', 'first flight')", diagnostic)
+
     @patch.object(app_module.model, "generate_content")
     def test_learn_rejects_selected_textbook_from_different_subject(self, generate_content):
         with app_module.app.app_context():
