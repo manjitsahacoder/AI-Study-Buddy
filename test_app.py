@@ -1050,6 +1050,17 @@ Q5. What is the main theme?
         self.assertIn("Main characters", prompt)
         self.assertIn("Literary devices", prompt)
         self.assertIn("Difficult vocabulary with meanings", prompt)
+        self.assertIn("Teach this topic like an experienced CBSE teacher.", prompt)
+        self.assertIn("Assume the student has no prior knowledge of the topic.", prompt)
+        self.assertIn("## Introduction", prompt)
+        self.assertIn("## Main Explanation", prompt)
+        self.assertIn("## Important Concepts", prompt)
+        self.assertIn("## Real-Life Examples", prompt)
+        self.assertIn("## Applications", prompt)
+        self.assertIn("## Key Facts", prompt)
+        self.assertIn("## Common Mistakes / Misconceptions", prompt)
+        self.assertIn("## Conclusion", prompt)
+        self.assertIn("Use paragraphs for explanation and bullet points only where they improve clarity.", prompt)
         self.assertIn("Create exactly 5 teacher-style quiz questions from the selected chapter", prompt)
         with app_module.app.app_context():
             lesson = LearningHistory.query.first()
@@ -2649,6 +2660,7 @@ Q5. What is question five?
         prompt = generate_content.call_args.args[0]
         self.assertLessEqual(len(prompt), app_module.LEARN_MAX_PROMPT_CHARS)
         self.assertIn("Rules:", prompt)
+        self.assertIn("Teach this topic like an experienced CBSE teacher.", prompt)
         self.assertIn("## Questions", prompt)
         self.assertIn("Prompt shortened automatically", prompt)
 

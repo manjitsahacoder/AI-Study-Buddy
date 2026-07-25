@@ -8415,6 +8415,60 @@ Textbook Subject Instructions:
 """
 
 
+def lesson_quality_prompt_section():
+    return """
+Lesson Quality Requirements:
+- Teach this topic like an experienced CBSE teacher.
+- Assume the student has no prior knowledge of the topic.
+- Explain concepts gradually, in a logical classroom flow.
+- Help the student understand the topic without needing to refer to the textbook while reading your answer.
+- Do not write a short summary. Write a complete lesson explanation whose depth matches the topic.
+- Use the selected class level to decide vocabulary, examples, and depth.
+- Use encouraging, clear language and avoid unnecessary technical jargon.
+- Use examples before definitions whenever that makes the concept easier to understand.
+- If Local Textbook PDF Context is available, use it as guidance and expand naturally; do not merely summarize the extracted text.
+- If Local Textbook PDF Context is unavailable, continue teaching the topic using reliable CBSE-level knowledge while obeying the no-guessing rules for unknown textbook chapters.
+
+Structure the main lesson before Quick Revision with markdown headings such as:
+## Introduction
+Introduce the chapter, what the student will learn, and one curiosity-building idea.
+
+## Main Explanation
+Explain every important concept in short paragraphs. Break large ideas into smaller subsections with clear headings.
+
+## Important Concepts
+Define important terms individually and clearly.
+
+## Real-Life Examples
+Give practical examples that match the student's class level.
+
+## Applications
+Explain where the student may see or use these ideas in daily life.
+
+## Key Facts
+List important facts students should remember.
+
+## Common Mistakes / Misconceptions
+Explain common misunderstandings where appropriate.
+
+## Conclusion
+Summarize the lesson naturally and connect the ideas together.
+
+Length Guidance:
+- Simple topics: about 700 to 900 words.
+- Medium topics: about 900 to 1300 words.
+- Large chapters: about 1300 to 1800 words.
+- Do not pad the lesson. Use the length needed to explain the concepts completely.
+
+Formatting Guidance:
+- Use proper markdown headings.
+- Use short paragraphs.
+- Use bullets only when they make information easier to scan.
+- Use bold for important terms.
+- Avoid giant walls of text.
+"""
+
+
 def trim_learn_prompt(prompt, max_chars=LEARN_MAX_PROMPT_CHARS):
     prompt = (prompt or "").strip()
     if len(prompt) <= max_chars:
@@ -10397,6 +10451,7 @@ def learn():
         subject,
         has_selected_textbook=bool(textbook and chapter),
     )
+    lesson_quality_section = lesson_quality_prompt_section()
     adaptive_quiz_prompt_section = build_adaptive_quiz_prompt_section(
         subject,
         topic,
@@ -10433,19 +10488,19 @@ Topic: {topic}
 {textbook_context_section}
 
 Rules:
+{lesson_quality_section}
 - Use very simple language
 - Use short sentences
 - Use headings
-- Use bullet points
+- Use paragraphs for explanation and bullet points only where they improve clarity.
 - Give examples
 - Make the notes easy to read for a school student.
-- Highlight each main point in bold.
-- After each main point, give a brief explanation in 1 to 2 short sentences.
+- Highlight important terms in bold.
+- Explain each important idea fully enough for the student to understand it.
 - Do not put many facts in one long paragraph.
-- Put each important point on a separate line or bullet.
+- Keep paragraphs short and focused.
 - Do not use inline asterisks as separators.
-- For chapter notes, prefer this format:
-  - **Main point:** Brief explanation.
+- For chapter notes, prefer clear markdown sections with short classroom-style paragraphs.
 
 After the explanation create:
 
