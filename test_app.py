@@ -299,8 +299,45 @@ class RouteTests(unittest.TestCase):
                 Chapter.query.join(Textbook).filter(
                     Textbook.class_level == 9,
                     Textbook.subject == "Social Science",
-                    Chapter.title == "The French Revolution",
+                    Textbook.name == "Understanding Society: India and Beyond",
+                    Chapter.title == "Understanding Social Science",
                 ).first()
+            )
+
+    def test_seed_cbse_textbook_catalog_uses_latest_class_9_social_science_book_only(self):
+        expected_chapters = [
+            "Understanding Social Science",
+            "Shaping of the Earth's Surface",
+            "Atmosphere and Climate",
+            "Early Humans and Beginning of Civilisation",
+            "State and Society up to 1000 CE",
+            "Democracy",
+            "Elections",
+            "Building Blocks in Economics: The Problem of Choice",
+            "The Price Puzzle: What Drives the Market",
+        ]
+
+        with app_module.app.app_context():
+            seed_cbse_textbook_catalog(db.session)
+            seed_cbse_textbook_catalog(db.session)
+
+            active_books = Textbook.query.filter_by(
+                board="CBSE",
+                subject="Social Science",
+                class_level=9,
+                is_active=True,
+            ).all()
+
+            self.assertEqual(len(active_books), 1)
+            self.assertEqual(active_books[0].name, "Understanding Society: India and Beyond")
+            chapters = Chapter.query.filter_by(
+                textbook_id=active_books[0].id,
+            ).order_by(Chapter.chapter_number.asc()).all()
+            self.assertEqual([chapter.title for chapter in chapters], expected_chapters)
+            self.assertEqual(Textbook.query.count(), len(CBSE_TEXTBOOKS))
+            self.assertEqual(
+                Chapter.query.count(),
+                sum(len(textbook["chapters"]) for textbook in CBSE_TEXTBOOKS),
             )
 
     def test_smart_textbook_search_examples_work_for_every_core_subject(self):
@@ -308,7 +345,7 @@ class RouteTests(unittest.TestCase):
             ("10", "English", "Flight", "First Flight", "letter", "A Letter to God"),
             ("10", "Mathematics", "Math", "Mathematics", "quad", "Quadratic Equations"),
             ("8", "Science", "Science", "Science", "cell", "Cell — Structure and Functions"),
-            ("9", "Social Science", "India", "India and the Contemporary World-I", "french", "The French Revolution"),
+            ("9", "Social Science", "India", "Understanding Society: India and Beyond", "democracy", "Democracy"),
         ]
         with app_module.app.app_context():
             seed_cbse_textbook_catalog(db.session)
@@ -419,6 +456,19 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.get_json()
         self.assertEqual(payload[0]["name"], "Kaveri")
+        self.assertFalse(payload[0].get("ai_suggestion", False))
+        gemini_request.assert_not_called()
+
+    def test_textbook_search_by_latest_class_9_social_science_keyword_skips_gemini(self):
+        with app_module.app.app_context():
+            seed_cbse_textbook_catalog(db.session)
+
+        with patch("app.gemini_request") as gemini_request:
+            response = self.client.get("/api/textbooks/search?q=monsoon&class=9&subject=Social%20Science")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload[0]["name"], "Understanding Society: India and Beyond")
         self.assertFalse(payload[0].get("ai_suggestion", False))
         gemini_request.assert_not_called()
 
@@ -561,6 +611,35 @@ class RouteTests(unittest.TestCase):
         self.assertEqual(response.get_json()[0]["title"], "A Letter to God")
         gemini_request.assert_not_called()
 
+    def test_latest_class_9_social_science_keyword_search_skips_gemini(self):
+        examples = [
+            ("monsoon", "Atmosphere and Climate"),
+            ("weather", "Atmosphere and Climate"),
+            ("democracy", "Democracy"),
+            ("voting", "Elections"),
+            ("opportunity cost", "Building Blocks in Economics: The Problem of Choice"),
+            ("demand", "The Price Puzzle: What Drives the Market"),
+        ]
+        with app_module.app.app_context():
+            seed_cbse_textbook_catalog(db.session)
+            textbook = Textbook.query.filter_by(
+                board="CBSE",
+                subject="Social Science",
+                class_level=9,
+                name="Understanding Society: India and Beyond",
+            ).first()
+            textbook_id = textbook.id
+
+        for query_text, expected_chapter in examples:
+            with self.subTest(query=query_text), patch("app.gemini_request") as gemini_request:
+                response = self.client.get(
+                    f"/api/chapters/search?textbook_id={textbook_id}&q={query_text}"
+                )
+
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.get_json()[0]["title"], expected_chapter)
+                gemini_request.assert_not_called()
+
     def test_chapter_search_database_miss_calls_gemini_for_spelling_correction(self):
         with app_module.app.app_context():
             seed_cbse_textbook_catalog(db.session)
@@ -615,7 +694,7 @@ class RouteTests(unittest.TestCase):
         self.assertIn('"science"', page)
         self.assertIn('"social science"', page)
         self.assertIn("function renderPopularChapters(items, filterText)", page)
-        self.assertIn("item.title.toLowerCase().includes(normalizedFilter)", page)
+        self.assertIn("chapterSearchText(item).includes(normalizedFilter)", page)
         self.assertIn("selectChapter(item)", page)
         self.assertIn("hideTextbookInfoCard()", page)
         self.assertIn("hidePopularChapters()", page)
@@ -961,7 +1040,7 @@ Q5. What is the main theme?
             ("10", "English", "First Flight", "A Letter to God"),
             ("10", "Mathematics", "Mathematics", "Quadratic Equations"),
             ("8", "Science", "Science", "Cell — Structure and Functions"),
-            ("9", "Social Science", "India and the Contemporary World-I", "The French Revolution"),
+            ("9", "Social Science", "Understanding Society: India and Beyond", "Democracy"),
         ]
 
         with app_module.app.app_context():

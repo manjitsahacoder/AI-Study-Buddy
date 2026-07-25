@@ -102,6 +102,7 @@ class Chapter(ModelMappingMixin, db.Model):
     __table_args__ = (
         db.Index("ix_chapters_textbook_id", "textbook_id"),
         db.Index("ix_chapters_normalized_title", "normalized_title"),
+        db.Index("ix_chapters_search_keywords", "search_keywords"),
     )
 
     id = db.Column(db.Integer, primary_key=True)
@@ -109,6 +110,7 @@ class Chapter(ModelMappingMixin, db.Model):
     chapter_number = db.Column(db.Integer, nullable=False)
     title = db.Column(db.Text, nullable=False)
     normalized_title = db.Column(db.Text, nullable=False)
+    search_keywords = db.Column(db.Text)
     created_at = db.Column(db.DateTime, nullable=False, default=utc_now)
 
     textbook = db.relationship("Textbook", back_populates="chapters")

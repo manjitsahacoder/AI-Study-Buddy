@@ -1042,7 +1042,11 @@ function initializeTextbookAutocomplete() {
         const normalizedFilter = (filterText || "").trim().toLowerCase();
         const visibleItems = items
             .filter(function (item) {
-                return !normalizedFilter || item.title.toLowerCase().includes(normalizedFilter);
+                return !normalizedFilter || chapterSearchText(item).includes(normalizedFilter);
+            })
+            .sort(function (left, right) {
+                return chapterSearchScore(left, normalizedFilter) - chapterSearchScore(right, normalizedFilter)
+                    || Number(left.chapter_number || 0) - Number(right.chapter_number || 0);
             })
             .slice(0, 12);
 
@@ -1069,6 +1073,36 @@ function initializeTextbookAutocomplete() {
             popularChaptersCount.textContent = `${visibleItems.length} shown`;
         }
         popularChaptersPanel.hidden = false;
+    }
+
+    function chapterSearchText(item) {
+        return `${item.title || ""} ${item.search_keywords || ""}`.toLowerCase();
+    }
+
+    function chapterSearchScore(item, normalizedFilter) {
+        if (!normalizedFilter) {
+            return 0;
+        }
+        const title = (item.title || "").toLowerCase();
+        const keywords = (item.search_keywords || "").toLowerCase();
+        const escapedFilter = normalizedFilter.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const exactKeywordPattern = new RegExp(`(^|\\s)${escapedFilter}($|\\s)`);
+        if (title === normalizedFilter) {
+            return 0;
+        }
+        if (title.startsWith(normalizedFilter)) {
+            return 1;
+        }
+        if (title.includes(normalizedFilter)) {
+            return 2;
+        }
+        if (exactKeywordPattern.test(keywords)) {
+            return 3;
+        }
+        if (keywords.includes(normalizedFilter)) {
+            return 4;
+        }
+        return 5;
     }
 
     function loadTextbookInfo(textbookId) {
@@ -1354,9 +1388,14 @@ function initializeTextbookAutocomplete() {
         hideChapterInfoCard();
         if (loadedChapterItems.length) {
             renderPopularChapters(loadedChapterItems, searchText);
+            const normalizedSearchText = searchText.toLowerCase();
             chapterItems = loadedChapterItems
                 .filter(function (item) {
-                    return !searchText || item.title.toLowerCase().includes(searchText.toLowerCase());
+                    return !searchText || chapterSearchText(item).includes(normalizedSearchText);
+                })
+                .sort(function (left, right) {
+                    return chapterSearchScore(left, normalizedSearchText) - chapterSearchScore(right, normalizedSearchText)
+                        || Number(left.chapter_number || 0) - Number(right.chapter_number || 0);
                 })
                 .slice(0, 12);
             activeChapterIndex = chapterItems.length ? 0 : -1;

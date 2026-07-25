@@ -22,6 +22,26 @@ def subject_matches_catalog_subject(stored_subject, selected_subject):
     return normalize_catalog_subject(stored_subject) == normalize_catalog_subject(selected_subject)
 
 
+def chapter_title(chapter_data):
+    if isinstance(chapter_data, dict):
+        return chapter_data["title"]
+    return chapter_data
+
+
+def chapter_search_keywords(chapter_data):
+    if not isinstance(chapter_data, dict):
+        return ""
+    keywords = chapter_data.get("keywords", [])
+    return " ".join(
+        dict.fromkeys(
+            normalized_keyword
+            for keyword in keywords
+            for normalized_keyword in [normalize_catalog_value(keyword)]
+            if normalized_keyword
+        )
+    )
+
+
 CBSE_TEXTBOOKS = [
     {
         "class_level": 6,
@@ -419,49 +439,180 @@ CBSE_TEXTBOOKS = [
     {
         "class_level": 9,
         "subject": "Social Science",
-        "name": "India and the Contemporary World-I",
+        "name": "Understanding Society: India and Beyond",
         "chapters": [
-            "The French Revolution",
-            "Socialism in Europe and the Russian Revolution",
-            "Nazism and the Rise of Hitler",
-            "Forest Society and Colonialism",
-            "Pastoralists in the Modern World",
-        ],
-    },
-    {
-        "class_level": 9,
-        "subject": "Social Science",
-        "name": "Contemporary India-I",
-        "chapters": [
-            "India - Size and Location",
-            "Physical Features of India",
-            "Drainage",
-            "Climate",
-            "Natural Vegetation and Wildlife",
-            "Population",
-        ],
-    },
-    {
-        "class_level": 9,
-        "subject": "Social Science",
-        "name": "Democratic Politics-I",
-        "chapters": [
-            "What is Democracy? Why Democracy?",
-            "Constitutional Design",
-            "Electoral Politics",
-            "Working of Institutions",
-            "Democratic Rights",
-        ],
-    },
-    {
-        "class_level": 9,
-        "subject": "Social Science",
-        "name": "Economics",
-        "chapters": [
-            "The Story of Village Palampur",
-            "People as Resource",
-            "Poverty as a Challenge",
-            "Food Security in India",
+            {
+                "title": "Understanding Social Science",
+                "keywords": [
+                    "social science",
+                    "society",
+                    "history",
+                    "geography",
+                    "political science",
+                    "economics",
+                    "culture",
+                    "India",
+                    "community",
+                    "social studies",
+                    "sst",
+                ],
+            },
+            {
+                "title": "Shaping of the Earth's Surface",
+                "keywords": [
+                    "earth surface",
+                    "landforms",
+                    "mountains",
+                    "plains",
+                    "plateaus",
+                    "rivers",
+                    "erosion",
+                    "weathering",
+                    "deposition",
+                    "tectonic plates",
+                    "earthquake",
+                    "volcano",
+                    "soil",
+                    "rocks",
+                    "relief features",
+                ],
+            },
+            {
+                "title": "Atmosphere and Climate",
+                "keywords": [
+                    "climate",
+                    "weather",
+                    "monsoon",
+                    "rainfall",
+                    "temperature",
+                    "winds",
+                    "humidity",
+                    "air pressure",
+                    "atmosphere",
+                    "seasons",
+                    "clouds",
+                    "precipitation",
+                    "cyclone",
+                    "greenhouse effect",
+                    "climatic regions",
+                ],
+            },
+            {
+                "title": "Early Humans and Beginning of Civilisation",
+                "keywords": [
+                    "early humans",
+                    "human evolution",
+                    "hunter gatherers",
+                    "stone age",
+                    "palaeolithic",
+                    "neolithic",
+                    "tools",
+                    "fire",
+                    "farming",
+                    "domestication",
+                    "settlements",
+                    "civilisation",
+                    "river valleys",
+                    "archaeology",
+                ],
+            },
+            {
+                "title": "State and Society up to 1000 CE",
+                "keywords": [
+                    "state",
+                    "society",
+                    "kingdoms",
+                    "empires",
+                    "janapadas",
+                    "mauryas",
+                    "guptas",
+                    "administration",
+                    "trade",
+                    "towns",
+                    "religion",
+                    "culture",
+                    "medieval",
+                    "ancient India",
+                    "1000 CE",
+                    "early historical period",
+                ],
+            },
+            {
+                "title": "Democracy",
+                "keywords": [
+                    "democracy",
+                    "government",
+                    "citizens",
+                    "constitution",
+                    "rights",
+                    "participation",
+                    "equality",
+                    "freedom",
+                    "representatives",
+                    "people's rule",
+                    "accountability",
+                    "rule of law",
+                    "civic life",
+                ],
+            },
+            {
+                "title": "Elections",
+                "keywords": [
+                    "election",
+                    "voting",
+                    "candidate",
+                    "political parties",
+                    "Election Commission",
+                    "ballot",
+                    "vote",
+                    "electoral roll",
+                    "constituency",
+                    "campaign",
+                    "polling",
+                    "voter",
+                    "universal adult franchise",
+                    "free and fair elections",
+                ],
+            },
+            {
+                "title": "Building Blocks in Economics: The Problem of Choice",
+                "keywords": [
+                    "economics",
+                    "choice",
+                    "scarcity",
+                    "resources",
+                    "needs",
+                    "wants",
+                    "opportunity cost",
+                    "production",
+                    "consumption",
+                    "goods",
+                    "services",
+                    "allocation",
+                    "decision making",
+                    "economic problem",
+                ],
+            },
+            {
+                "title": "The Price Puzzle: What Drives the Market",
+                "keywords": [
+                    "price",
+                    "market",
+                    "demand",
+                    "supply",
+                    "buyers",
+                    "sellers",
+                    "competition",
+                    "cost",
+                    "profit",
+                    "market price",
+                    "equilibrium",
+                    "consumer",
+                    "producer",
+                    "trade",
+                    "inflation",
+                ],
+            },
         ],
     },
     {
@@ -551,8 +702,10 @@ def seed_cbse_textbook_catalog(session):
             chapter.normalized_title: chapter
             for chapter in Chapter.query.filter_by(textbook_id=textbook.id).all()
         }
-        for chapter_number, title in enumerate(book_data["chapters"], start=1):
+        for chapter_number, chapter_data in enumerate(book_data["chapters"], start=1):
+            title = chapter_title(chapter_data)
             normalized_title = normalize_catalog_value(title)
+            search_keywords = chapter_search_keywords(chapter_data)
             chapter = existing_chapters.get(normalized_title)
             if chapter is None:
                 session.add(
@@ -561,10 +714,26 @@ def seed_cbse_textbook_catalog(session):
                         chapter_number=chapter_number,
                         title=title,
                         normalized_title=normalized_title,
+                        search_keywords=search_keywords,
                     )
                 )
             else:
                 chapter.chapter_number = chapter_number
                 chapter.title = title
                 chapter.normalized_title = normalized_title
+                chapter.search_keywords = search_keywords
+
+    latest_class_9_sst = Textbook.query.filter_by(
+        board="CBSE",
+        subject="Social Science",
+        class_level=9,
+        normalized_name=normalize_catalog_value("Understanding Society: India and Beyond"),
+    ).order_by(Textbook.id.asc()).first()
+    if latest_class_9_sst is not None:
+        Textbook.query.filter(
+            Textbook.board == "CBSE",
+            Textbook.subject == "Social Science",
+            Textbook.class_level == 9,
+            Textbook.id != latest_class_9_sst.id,
+        ).update({"is_active": False}, synchronize_session=False)
     session.commit()

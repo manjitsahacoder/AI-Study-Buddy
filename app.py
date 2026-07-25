@@ -331,6 +331,7 @@ def initialize_database():
         ensure_memory_challenge_schema_compatibility()
         ensure_learning_history_schema_compatibility()
         ensure_favourite_notes_schema_compatibility()
+        ensure_chapter_search_schema_compatibility()
         ensure_performance_indexes()
         seed_cbse_textbook_catalog(db.session)
         ensure_user_roles()
@@ -969,12 +970,29 @@ def ensure_favourite_notes_schema_compatibility():
     db.session.commit()
 
 
+def ensure_chapter_search_schema_compatibility():
+    inspector = inspect(db.engine)
+    if "chapters" not in inspector.get_table_names():
+        return
+
+    inspected_columns = {column["name"] for column in inspector.get_columns("chapters")}
+    if "search_keywords" in inspected_columns:
+        return
+
+    if db.engine.dialect.name == "sqlite":
+        db.session.execute(text("ALTER TABLE chapters ADD COLUMN search_keywords TEXT"))
+    elif db.engine.dialect.name == "postgresql":
+        db.session.execute(text("ALTER TABLE chapters ADD COLUMN IF NOT EXISTS search_keywords TEXT"))
+    db.session.commit()
+
+
 def ensure_performance_indexes():
     index_statements = (
         "CREATE INDEX IF NOT EXISTS ix_textbooks_board_subject_class ON textbooks (board, subject, class_level)",
         "CREATE INDEX IF NOT EXISTS ix_textbooks_normalized_name ON textbooks (normalized_name)",
         "CREATE INDEX IF NOT EXISTS ix_chapters_textbook_id ON chapters (textbook_id)",
         "CREATE INDEX IF NOT EXISTS ix_chapters_normalized_title ON chapters (normalized_title)",
+        "CREATE INDEX IF NOT EXISTS ix_chapters_search_keywords ON chapters (search_keywords)",
         "CREATE INDEX IF NOT EXISTS ix_quiz_history_user_created_id ON quiz_history (user_id, created_at, id)",
         "CREATE INDEX IF NOT EXISTS ix_quiz_history_user_subject_topic ON quiz_history (user_id, subject, topic)",
         "CREATE INDEX IF NOT EXISTS ix_learning_sessions_user_created_id ON learning_sessions (user_id, created_at, id)",
@@ -8421,13 +8439,18 @@ def textbook_search_rank(textbook, normalized_query):
 def chapter_search_rank(chapter, normalized_query):
     if not normalized_query:
         return 0
+    search_keywords = chapter.search_keywords or ""
     if chapter.normalized_title == normalized_query:
         return 0
     if chapter.normalized_title.startswith(normalized_query):
         return 1
     if normalized_query in chapter.normalized_title:
         return 2
-    return 3
+    if re.search(rf"(^|\s){re.escape(normalized_query)}($|\s)", search_keywords):
+        return 3
+    if normalized_query in search_keywords:
+        return 4
+    return 5
 
 
 def textbook_result_payload(textbook):
@@ -8459,6 +8482,7 @@ def chapter_result_payload(chapter):
         "textbook_id": chapter.textbook_id,
         "chapter_number": chapter.chapter_number,
         "title": chapter.title,
+        "search_keywords": chapter.search_keywords or "",
     }
 
 
@@ -8800,6 +8824,34 @@ def search_textbooks():
         log_smart_search_event("database_hit", feature="textbook", count=len(textbooks), query=query_text)
         return jsonify([textbook_result_payload(textbook) for textbook in textbooks[:8]])
 
+    if normalized_query:
+        with performance_span("Smart textbook chapter keyword database search", detail=f"{class_level or '-'} {subject or '-'} {query_text}"):
+            chapter_query = Textbook.query.join(Chapter).filter(
+                Textbook.is_active.is_(True),
+                Textbook.board == "CBSE",
+                or_(
+                    Chapter.normalized_title.like(f"%{normalized_query}%"),
+                    func.coalesce(Chapter.search_keywords, "").like(f"%{normalized_query}%"),
+                ),
+            )
+            if subject:
+                chapter_query = filter_textbooks_by_catalog_subject(chapter_query, subject)
+            if class_level is not None:
+                chapter_query = chapter_query.filter(Textbook.class_level == class_level)
+
+            textbooks = sorted(
+                {textbook.id: textbook for textbook in chapter_query.all()}.values(),
+                key=lambda textbook: (
+                    textbook.class_level,
+                    textbook.name.lower(),
+                    textbook.id,
+                ),
+            )
+
+        if textbooks:
+            log_smart_search_event("database_hit", feature="textbook", source="chapter", count=len(textbooks), query=query_text)
+            return jsonify([textbook_result_payload(textbook) for textbook in textbooks[:8]])
+
     log_smart_search_event("database_miss", feature="textbook", query=query_text)
     fallback_payloads = textbook_fallback_suggestions(class_level, subject, query_text)
     return jsonify(fallback_payloads[:8])
@@ -8829,7 +8881,12 @@ def search_chapters():
     with performance_span("Smart chapter database search", detail=f"{textbook_id} {query_text}"):
         query = Chapter.query.filter(Chapter.textbook_id == int(textbook_id))
         if normalized_query:
-            query = query.filter(Chapter.normalized_title.like(f"%{normalized_query}%"))
+            query = query.filter(
+                or_(
+                    Chapter.normalized_title.like(f"%{normalized_query}%"),
+                    func.coalesce(Chapter.search_keywords, "").like(f"%{normalized_query}%"),
+                )
+            )
 
         chapters = sorted(
             query.all(),
