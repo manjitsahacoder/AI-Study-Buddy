@@ -909,7 +909,7 @@ Q5. When are roots equal?
                     return "Cached chapter text"
 
             class FakePdfReader:
-                def __init__(self, path):
+                def __init__(self, path, **kwargs):
                     reader_calls.append(path)
                     self.pages = [FakePage()]
 
@@ -926,6 +926,34 @@ Q5. When are roots equal?
         self.assertEqual(first_text, "Cached chapter text")
         self.assertEqual(second_text, "Cached chapter text")
         self.assertEqual(len(reader_calls), 1)
+
+    def test_textbook_context_returns_empty_when_pdf_extraction_fails(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            textbook_dir = Path(temporary_directory) / "broken_book"
+            textbook_dir.mkdir()
+            (textbook_dir / "broken.pdf").write_bytes(b"%PDF malformed")
+            registry_key = ("8", "science", "broken book")
+
+            with patch.dict(app_module.TEXTBOOK_REGISTRY, {registry_key: textbook_dir}):
+                with patch.object(
+                    app_module,
+                    "_extract_pdf_text_with_timeout",
+                    side_effect=TimeoutError("pypdf extraction timed out"),
+                ):
+                    app_module.extract_pdf_text.cache_clear()
+                    with self.assertLogs(app_module.app.logger.name, level="WARNING") as logs:
+                        context = app_module.local_textbook_context_section(
+                            "8",
+                            "Science",
+                            "Broken Book",
+                            "Plants",
+                        )
+                    app_module.extract_pdf_text.cache_clear()
+
+        self.assertEqual(context, "")
+        log_output = "\n".join(logs.output)
+        self.assertIn("textbook_pdf_extraction_failed", log_output)
+        self.assertIn("context_load_failed", log_output)
 
     def test_local_textbook_context_logs_missing_registry_diagnostic(self):
         with self.assertLogs(app_module.app.logger.name, level="WARNING") as logs:
@@ -1159,6 +1187,62 @@ Plants make food using sunlight.
         )
         self.assertEqual(saved_questions[2], "What does the lesson explain about sunlight?")
         self.assertEqual(len(saved_questions), 5)
+
+    @patch.object(app_module.model, "generate_content")
+    def test_learn_continues_when_textbook_pdf_extraction_fails(self, generate_content):
+        generate_content.return_value = MockResponse(
+            """# Plants
+Plants need sunlight and water.
+
+## Quick Revision
+- Plants are living things.
+
+## Questions
+Q1. What do plants need?
+
+Q2. Why is sunlight useful for plants?
+
+Q3. Name one thing plants need to grow.
+
+Q4. What are plants?
+
+Q5. Write one important point about plants.
+"""
+        )
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            textbook_dir = Path(temporary_directory) / "broken_book"
+            textbook_dir.mkdir()
+            (textbook_dir / "broken.pdf").write_bytes(b"%PDF malformed")
+            registry_key = ("8", "science", "broken book")
+
+            with patch.dict(app_module.TEXTBOOK_REGISTRY, {registry_key: textbook_dir}):
+                with patch.object(
+                    app_module,
+                    "_extract_pdf_text_with_timeout",
+                    side_effect=TimeoutError("pypdf extraction timed out"),
+                ):
+                    app_module.extract_pdf_text.cache_clear()
+                    with self.assertLogs(app_module.app.logger.name, level="WARNING") as logs:
+                        response = self.client.post(
+                            "/learn",
+                            data={
+                                "name": "Asha",
+                                "student_class": "8",
+                                "subject": "Science",
+                                "book_name": "Broken Book",
+                                "topic": "Plants",
+                            },
+                        )
+                    app_module.extract_pdf_text.cache_clear()
+
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        self.assertIn("Plants need sunlight and water.", page)
+        self.assertIn("What do plants need?", page)
+        self.assertEqual(generate_content.call_count, 1)
+        log_output = "\n".join(logs.output)
+        self.assertIn("textbook_pdf_extraction_failed", log_output)
+        self.assertIn("context_load_failed", log_output)
 
     def test_legacy_lesson_prompt_context_falls_back_without_textbook_ids(self):
         legacy_lesson = {

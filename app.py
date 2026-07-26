@@ -42,8 +42,10 @@ from sqlalchemy.orm import load_only
 import json
 import hashlib
 import markdown
+import multiprocessing
 import os
 import platform
+import queue as queue_module
 import random
 import re
 import threading
@@ -136,6 +138,8 @@ SMART_SEARCH_GEMINI_TIMEOUT_SECONDS = 8
 SMART_SEARCH_MIN_CONFIDENCE = 0.78
 DEFAULT_BOARD = "CBSE"
 _smart_search_cache = {}
+_pdf_text_extraction_failures = set()
+_pdf_text_extraction_failure_lock = threading.Lock()
 
 
 AUTH_TIMING_ENABLED = performance_timing_enabled()
@@ -417,6 +421,8 @@ LEARN_MAX_PROMPT_CHARS = int(os.environ.get("LEARN_MAX_PROMPT_CHARS", "12000"))
 LEARN_MAX_RESPONSE_CHARS = int(os.environ.get("LEARN_MAX_RESPONSE_CHARS", "55000"))
 LEARN_MAX_OUTPUT_TOKENS = int(os.environ.get("LEARN_MAX_OUTPUT_TOKENS", "4500"))
 LEARN_GEMINI_TIMEOUT_SECONDS = int(os.environ.get("LEARN_GEMINI_TIMEOUT_SECONDS", "45"))
+LEARN_PDF_EXTRACTION_TIMEOUT_SECONDS = float(os.environ.get("LEARN_PDF_EXTRACTION_TIMEOUT_SECONDS", "10"))
+LEARN_PDF_EXTRACTION_MAX_PAGES = int(os.environ.get("LEARN_PDF_EXTRACTION_MAX_PAGES", "50"))
 LEARN_TEXTBOOK_TEXT_CACHE_DIR = Path(
     os.environ.get(
         "LEARN_TEXTBOOK_TEXT_CACHE_DIR",
@@ -8278,36 +8284,160 @@ def write_pdf_text_cache(pdf_path, max_chars, text):
         return
 
 
+def log_pdf_extraction_event(event, pdf_path, started_at=None, **fields):
+    if started_at is not None:
+        fields["duration_ms"] = round((time.perf_counter() - started_at) * 1000, 2)
+    detail = " ".join(f"{key}={value}" for key, value in fields.items())
+    log_method = app.logger.warning if event == "textbook_pdf_extraction_failed" else app.logger.info
+    log_method("textbook_pdf_extraction event=%s pdf_path=%s %s", event, pdf_path, detail)
+
+
+def pdf_extraction_failure_key(pdf_path, max_chars):
+    try:
+        path_key = str(Path(pdf_path).resolve())
+    except OSError:
+        path_key = str(pdf_path)
+    return path_key, int(max_chars)
+
+
+def mark_pdf_extraction_failure(pdf_path, max_chars):
+    with _pdf_text_extraction_failure_lock:
+        _pdf_text_extraction_failures.add(pdf_extraction_failure_key(pdf_path, max_chars))
+
+
+def clear_pdf_extraction_failure(pdf_path, max_chars):
+    with _pdf_text_extraction_failure_lock:
+        _pdf_text_extraction_failures.discard(pdf_extraction_failure_key(pdf_path, max_chars))
+
+
+def pdf_extraction_failed(pdf_path, max_chars):
+    with _pdf_text_extraction_failure_lock:
+        return pdf_extraction_failure_key(pdf_path, max_chars) in _pdf_text_extraction_failures
+
+
+def _extract_pdf_text_with_pypdf(pdf_path, max_chars, max_pages):
+    try:
+        from pypdf import PdfReader
+    except ImportError:
+        raise RuntimeError("PDF extraction unavailable: install pypdf.")
+
+    reader = PdfReader(pdf_path, strict=False)
+    chunks = []
+    total_chars = 0
+    for page_number, page in enumerate(reader.pages, start=1):
+        if page_number > max_pages:
+            break
+        remaining_chars = max_chars - total_chars
+        if remaining_chars <= 0:
+            break
+        try:
+            page_text = page.extract_text() or ""
+        except Exception as error:
+            app.logger.warning(
+                "textbook_pdf_extraction page_failed pdf_path=%s page=%s error=%s",
+                pdf_path,
+                page_number,
+                error,
+            )
+            continue
+        if not page_text:
+            continue
+        chunks.append(page_text[:remaining_chars])
+        total_chars += min(len(page_text), remaining_chars)
+
+    return "\n".join(chunks)
+
+
+def _extract_pdf_text_process_worker(pdf_path, max_chars, max_pages, result_queue):
+    try:
+        result_queue.put(("ok", _extract_pdf_text_with_pypdf(pdf_path, max_chars, max_pages)))
+    except Exception as error:
+        result_queue.put(("error", str(error)))
+
+
+def _extract_pdf_text_with_timeout(pdf_path, max_chars, max_pages):
+    if os.name == "nt" or app.config.get("TESTING"):
+        return _extract_pdf_text_with_pypdf(pdf_path, max_chars, max_pages)
+
+    result_queue = multiprocessing.Queue(maxsize=1)
+    process = multiprocessing.Process(
+        target=_extract_pdf_text_process_worker,
+        args=(pdf_path, max_chars, max_pages, result_queue),
+    )
+    process.daemon = True
+    process.start()
+    process.join(LEARN_PDF_EXTRACTION_TIMEOUT_SECONDS)
+
+    if process.is_alive():
+        process.terminate()
+        process.join(1)
+        raise TimeoutError(
+            f"pypdf extraction exceeded {LEARN_PDF_EXTRACTION_TIMEOUT_SECONDS} seconds"
+        )
+
+    try:
+        status, payload = result_queue.get_nowait()
+    except queue_module.Empty:
+        if process.exitcode not in (0, None):
+            raise RuntimeError(f"pypdf extraction process exited with code {process.exitcode}")
+        return ""
+    finally:
+        result_queue.close()
+        result_queue.join_thread()
+
+    if status == "error":
+        raise RuntimeError(payload)
+    return payload
+
+
 @lru_cache(maxsize=16)
 def extract_pdf_text(pdf_path, max_chars=LEARN_MAX_PDF_TEXT_CHARS):
     cached_text = read_pdf_text_cache(pdf_path, max_chars)
     if cached_text is not None:
+        clear_pdf_extraction_failure(pdf_path, max_chars)
+        log_pdf_extraction_event(
+            "textbook_pdf_extraction_complete",
+            pdf_path,
+            from_cache=True,
+            extracted_chars=len(cached_text),
+        )
         return cached_text
 
+    started_at = time.perf_counter()
+    log_pdf_extraction_event(
+        "textbook_pdf_extraction_start",
+        pdf_path,
+        max_chars=max_chars,
+        max_pages=LEARN_PDF_EXTRACTION_MAX_PAGES,
+        timeout_seconds=LEARN_PDF_EXTRACTION_TIMEOUT_SECONDS,
+    )
     try:
-        from pypdf import PdfReader
-    except ImportError:
-        print("PDF extraction unavailable: install pypdf.")
-        return ""
-
-    try:
-        reader = PdfReader(pdf_path)
-        chunks = []
-        total_chars = 0
-        for page in reader.pages:
-            page_text = page.extract_text() or ""
-            if not page_text:
-                continue
-            remaining_chars = max_chars - total_chars
-            if remaining_chars <= 0:
-                break
-            chunks.append(page_text[:remaining_chars])
-            total_chars += min(len(page_text), remaining_chars)
+        extracted_text = _extract_pdf_text_with_timeout(
+            pdf_path,
+            max_chars,
+            LEARN_PDF_EXTRACTION_MAX_PAGES,
+        )
     except Exception as error:
-        print("PDF EXTRACTION ERROR:", error)
+        log_pdf_extraction_event(
+            "textbook_pdf_extraction_failed",
+            pdf_path,
+            started_at=started_at,
+            error=repr(error),
+        )
+        mark_pdf_extraction_failure(pdf_path, max_chars)
+        try:
+            extract_pdf_text.cache_clear()
+        except AttributeError:
+            pass
         return ""
 
-    extracted_text = "\n".join(chunks)
+    clear_pdf_extraction_failure(pdf_path, max_chars)
+    log_pdf_extraction_event(
+        "textbook_pdf_extraction_complete",
+        pdf_path,
+        started_at=started_at,
+        extracted_chars=len(extracted_text),
+    )
     write_pdf_text_cache(pdf_path, max_chars, extracted_text)
     return extracted_text
 
@@ -8349,7 +8479,10 @@ def find_topic_start(compact_text, topic):
 
 
 def extract_chapter_context(pdf_path, topic, max_chars=LEARN_MAX_TEXTBOOK_CONTEXT_CHARS):
-    raw_text = extract_pdf_text(str(pdf_path), max(LEARN_MAX_PDF_TEXT_CHARS, max_chars + 2000))
+    extraction_max_chars = max(LEARN_MAX_PDF_TEXT_CHARS, max_chars + 2000)
+    raw_text = extract_pdf_text(str(pdf_path), extraction_max_chars)
+    if not raw_text and pdf_extraction_failed(str(pdf_path), extraction_max_chars):
+        raise RuntimeError(f"PDF text extraction failed for {pdf_path}")
     compact_text = re.sub(r"\s+", " ", raw_text).strip()
     if not compact_text:
         return ""
@@ -8491,13 +8624,32 @@ Local Textbook PDF Context:
 - Do not guess chapter content.
 """
 
-    chapter_pdf_path, chapter_context = find_chapter_context(
-        textbook_path,
-        topic,
-        max_chars=max_chars,
-        chapter_number=chapter_number,
-        chapter_count=chapter_count,
-    )
+    try:
+        chapter_pdf_path, chapter_context = find_chapter_context(
+            textbook_path,
+            topic,
+            max_chars=max_chars,
+            chapter_number=chapter_number,
+            chapter_count=chapter_count,
+        )
+    except Exception as error:
+        log_textbook_context_diagnostic(
+            "context_load_failed",
+            student_class,
+            subject,
+            book_name,
+            topic,
+            registry_key,
+            expected_path=textbook_path,
+            actual_path=textbook_path,
+            pdf_found=True,
+        )
+        app.logger.warning(
+            "local_textbook_context load_failed path=%s error=%s",
+            textbook_path,
+            error,
+        )
+        return ""
     if not chapter_context:
         log_textbook_context_diagnostic(
             "chapter_missing",
