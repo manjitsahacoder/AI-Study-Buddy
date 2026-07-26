@@ -1101,6 +1101,70 @@ Q5. What is the main theme?
             self.assertEqual(lesson.textbook_id, textbook_id)
             self.assertEqual(lesson.chapter_id, chapter_id)
 
+    @patch.object(app_module.model, "generate_content")
+    def test_learn_generates_quiz_questions_when_lesson_omits_questions_section(self, generate_content):
+        self.register_user(extra_data={"student_class": "8"})
+        self.login_user()
+        generate_content.side_effect = [
+            MockResponse(
+                """# Photosynthesis
+Plants make food using sunlight.
+
+## Quick Revision
+- Leaves use sunlight.
+
+## Visualization Decision JSON
+{"visualization_required": false, "reason": "This lesson is primarily text based."}
+
+## Diagram JSON
+{"template":"generic","title":"Photosynthesis","elements":{},"labels":[],"type":"none","nodes":[],"connections":[],"reason":"Text lesson.","confidence":0.1}
+"""
+            ),
+            MockResponse(
+                """## Questions
+Q1. What do plants use sunlight for?
+
+Q2. Which part of the plant usually makes food?
+
+Q3. Why is photosynthesis important?
+
+Q4. Name one thing plants need for photosynthesis.
+
+Q5. What gas do plants release during photosynthesis?
+"""
+            ),
+        ]
+
+        response = self.client.post(
+            "/learn",
+            data={
+                "name": "Asha",
+                "student_class": "8",
+                "subject": "Science",
+                "book_name": "NCERT",
+                "topic": "Photosynthesis",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        self.assertIn("Plants make food using sunlight.", page)
+        self.assertIn("What do plants use sunlight for?", page)
+        self.assertEqual(generate_content.call_count, 2)
+        lesson_prompt = generate_content.call_args_list[0].args[0]
+        quiz_prompt = generate_content.call_args_list[1].args[0]
+        self.assertIn("## Questions", lesson_prompt)
+        self.assertIn("Adaptive Quiz Engine", quiz_prompt)
+        self.assertIn("Lesson Notes:", quiz_prompt)
+        self.assertIn("Plants make food using sunlight.", quiz_prompt)
+
+        with app_module.app.app_context():
+            lesson = LearningHistory.query.first()
+            saved_questions = json.loads(lesson.quiz_questions)
+
+        self.assertEqual(saved_questions[0], "What do plants use sunlight for?")
+        self.assertEqual(len(saved_questions), 5)
+
     def test_legacy_lesson_prompt_context_falls_back_without_textbook_ids(self):
         legacy_lesson = {
             "subject": "Science",
@@ -1475,6 +1539,27 @@ She said, "I am tired."
             "Rearrange the words to make a meaningful sentence:\n"
             "school / goes / she / to / every day",
         )
+
+    def test_split_learning_content_allows_missing_questions_section(self):
+        notes, raw_decision, raw_diagram, questions = app_module.split_learning_content(
+            """# Photosynthesis
+Plants make food using sunlight.
+
+## Quick Revision
+- Leaves use sunlight.
+
+## Visualization Decision JSON
+{"visualization_required": true, "visualization_type": "biology_process", "confidence": 0.91}
+
+## Diagram JSON
+{"template":"photosynthesis","title":"Photosynthesis","labels":["Sunlight"],"type":"scientific_process"}
+"""
+        )
+
+        self.assertIn("Plants make food using sunlight.", notes)
+        self.assertEqual(raw_decision["visualization_type"], "biology_process")
+        self.assertEqual(raw_diagram["template"], "photosynthesis")
+        self.assertEqual(questions, [])
 
     def test_split_learning_content_keeps_existing_subject_quizzes_unchanged(self):
         cases = {
@@ -6843,10 +6928,11 @@ Grade: A
         generate_content.assert_not_called()
 
     @patch.object(app_module.model, "generate_content")
-    def test_learn_rejects_malformed_ai_quiz(self, generate_content):
-        generate_content.return_value = MockResponse(
-            "# Notes\nUseful notes without a questions section."
-        )
+    def test_learn_rejects_malformed_fallback_quiz(self, generate_content):
+        generate_content.side_effect = [
+            MockResponse("# Notes\nUseful notes without a questions section."),
+            MockResponse("Q1. Only one fallback question."),
+        ]
 
         response = self.client.post(
             "/learn",

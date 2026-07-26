@@ -6753,22 +6753,32 @@ def extract_heading_section(markdown_text, heading_pattern):
 
 def split_learning_content(response_text):
     marker = re.search(r"(?im)^\s*#{1,6}\s+Questions\s*$", response_text)
-    if not marker:
-        raise ValueError("The AI response did not include a Questions section.")
-
-    pre_questions = response_text[:marker.start()]
+    pre_questions = response_text[:marker.start()] if marker else response_text
     pre_questions, decision_text = extract_heading_section(
         pre_questions,
         r"(?im)^\s*#{1,6}\s+Visualization\s+Decision(?:\s+JSON)?\s*$",
     )
     raw_decision = extract_json_object(decision_text or "") if decision_text else {}
     notes, diagram_steps = split_notes_and_diagram(pre_questions)
+
+    if not marker:
+        return notes, raw_decision or {}, diagram_steps, []
+
     questions = parse_numbered_quiz_questions(response_text[marker.end():])
 
     if [number for number, _ in questions] != list(range(1, 6)):
         raise ValueError("The AI response did not include exactly five numbered questions.")
 
     return notes, raw_decision or {}, diagram_steps, [question for _, question in questions]
+
+
+def extract_quiz_questions(response_text):
+    marker = re.search(r"(?im)^\s*#{1,6}\s+Questions\s*$", response_text)
+    questions_text = response_text[marker.end():] if marker else response_text
+    questions = parse_numbered_quiz_questions(questions_text)
+    if [number for number, _ in questions] != list(range(1, 6)):
+        raise ValueError("The AI response did not include exactly five numbered questions.")
+    return [question for _, question in questions]
 
 
 def parse_numbered_quiz_questions(questions_text):
@@ -8080,6 +8090,63 @@ Adaptive Quiz Engine:
 - Never place multiple sub-parts on the same line.
 - Do NOT separate sub-parts using spaces. Always use newline characters between sub-parts.
 """
+
+
+def generate_quiz_questions_for_lesson(
+    student_class,
+    board,
+    subject,
+    book_name,
+    topic,
+    notes,
+    selected_textbook_context_section,
+    selected_textbook_rules_section,
+    adaptive_quiz_prompt_section,
+    textbook_context_section,
+    user_id=None,
+):
+    notes_excerpt = (notes or "").strip()
+    if len(notes_excerpt) > 12000:
+        notes_excerpt = f"{notes_excerpt[:12000]}\n\n[Notes truncated for quiz generation.]"
+
+    prompt = f"""
+You are an expert school teacher creating quiz questions for an existing lesson.
+
+Class: {student_class}
+Board: {board}
+Subject: {subject}
+Textbook: {book_name}
+Chapter: {topic}
+Topic: {topic}
+
+{selected_textbook_context_section}
+{selected_textbook_rules_section}
+{adaptive_quiz_prompt_section}
+{textbook_context_section}
+
+Lesson Notes:
+{notes_excerpt}
+
+Create exactly 5 teacher-style quiz questions from the selected chapter using the Adaptive Quiz Engine rules above.
+
+Rules:
+- Number questions as Q1, Q2, Q3, Q4 and Q5.
+- Put each question on a new line.
+- A question may span multiple lines when needed.
+- Do NOT provide answers.
+- Always include exactly 5 questions.
+- Keep the existing Q1 to Q5 plain-text format so the quiz, scoring, history, analytics, reports, and gamification continue to work.
+
+## Questions
+"""
+    prompt = trim_learn_prompt(prompt)
+    response = gemini_request(
+        "Quiz Questions",
+        prompt,
+        user_id=user_id,
+        **learn_generation_options(),
+    )
+    return extract_quiz_questions(response_text_or_busy(response))
 
 
 def normalize_lookup_value(value):
@@ -10716,6 +10783,28 @@ Rules:
         except Exception as retry_error:
             print("LEARN RETRY ERROR:", retry_error)
             return learn_busy_response(request_started_at, retry_error)
+
+    if not questions:
+        try:
+            with performance_span("Quiz question generation", detail=topic):
+                questions = generate_quiz_questions_for_lesson(
+                    student_class,
+                    board,
+                    subject,
+                    book_name,
+                    topic,
+                    notes,
+                    selected_textbook_context_section,
+                    selected_textbook_rules_section,
+                    adaptive_quiz_prompt_section,
+                    textbook_context_section,
+                    user_id=session.get("user_id"),
+                )
+        except GeminiRequestError as quiz_error:
+            return render_gemini_error(quiz_error.error_info)
+        except Exception as quiz_error:
+            print("QUIZ GENERATION ERROR:", quiz_error)
+            return learn_busy_response(request_started_at, quiz_error)
 
     with performance_span("Visualization payload", detail=topic):
         diagram_payload = build_visualization_payload(subject, topic, raw_visualization_decision, raw_diagram)
