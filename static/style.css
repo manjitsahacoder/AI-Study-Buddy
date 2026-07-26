@@ -5039,7 +5039,7 @@ button:hover,
 
 .mindmap-stage {
     overflow: hidden;
-    min-height: clamp(560px, calc(100vh - 360px), 780px);
+    min-height: 620px;
     border: 1px solid rgba(49, 87, 213, 0.16);
     border-radius: 8px;
     background:
@@ -5050,63 +5050,75 @@ button:hover,
 
 .mindmap-scroll {
     width: 100%;
-    height: clamp(560px, calc(100vh - 360px), 780px);
+    min-height: 620px;
     overflow: auto;
-    cursor: grab;
-    overscroll-behavior: contain;
-    touch-action: none;
-    scrollbar-color: rgba(49, 87, 213, 0.46) rgba(49, 87, 213, 0.08);
-}
-
-.mindmap-scroll.is-panning {
-    cursor: grabbing;
-    user-select: none;
-}
-
-.mindmap-zoom-surface {
-    position: relative;
-    min-width: 100%;
-    min-height: 100%;
+    padding: clamp(24px, 4vw, 46px);
 }
 
 .mindmap-canvas {
-    position: relative;
-    min-width: 100%;
-    min-height: 100%;
-    transform-origin: top left;
+    min-width: 860px;
+    transform-origin: top center;
     transition: transform 0.18s ease;
 }
 
-.mindmap-connections,
-.mindmap-node-layer {
+.mindmap-tree,
+.mindmap-tree ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.mindmap-root-item {
+    display: grid;
+    justify-items: center;
+    gap: 28px;
+}
+
+.mindmap-branches {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    gap: clamp(18px, 2.6vw, 34px);
+    width: 100%;
+}
+
+.mindmap-branches::before {
+    content: "";
     position: absolute;
-    inset: 0;
+    top: -18px;
+    left: 50%;
+    width: 2px;
+    height: 18px;
+    background: rgba(49, 87, 213, 0.28);
 }
 
-.mindmap-connections {
-    overflow: visible;
-    pointer-events: none;
+.mindmap-branch-item {
+    position: relative;
+    display: grid;
+    justify-items: center;
+    gap: 24px;
+    min-width: 150px;
+    max-width: 230px;
 }
 
-.mindmap-connection {
-    fill: none;
-    stroke: rgba(49, 87, 213, 0.38);
-    stroke-width: 2.5;
-    stroke-linecap: round;
-}
-
-.mindmap-node-layer {
-    pointer-events: none;
+.mindmap-branch-item::before {
+    content: "";
+    position: absolute;
+    top: -18px;
+    left: 50%;
+    width: 2px;
+    height: 18px;
+    background: rgba(49, 87, 213, 0.28);
 }
 
 .mindmap-node {
-    position: absolute;
+    position: relative;
     z-index: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 168px;
-    max-width: 286px;
+    display: inline-grid;
+    place-items: center;
+    width: 100%;
+    min-height: 58px;
     padding: 12px 16px;
     border: 1px solid rgba(49, 87, 213, 0.2);
     border-radius: 8px;
@@ -5117,15 +5129,9 @@ button:hover,
     box-shadow: 0 12px 24px rgba(30, 40, 58, 0.1);
     font: inherit;
     font-weight: 800;
-    line-height: 1.28;
     text-align: center;
-    white-space: normal;
     overflow-wrap: anywhere;
-    word-break: break-word;
-    hyphens: auto;
-    overflow: hidden;
     cursor: pointer;
-    pointer-events: auto;
     transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
 }
 
@@ -5137,7 +5143,8 @@ button:hover,
 }
 
 .mindmap-node-root {
-    max-width: 356px;
+    width: min(320px, 86vw);
+    min-height: 92px;
     padding: 18px 24px;
     border-color: rgba(4, 125, 135, 0.34);
     color: #ffffff;
@@ -5148,15 +5155,7 @@ button:hover,
     font-size: clamp(1.1rem, 2vw, 1.45rem);
 }
 
-.mindmap-node-has-children {
-    padding-right: 38px;
-}
-
-.mindmap-node-root.mindmap-node-has-children {
-    padding-right: 46px;
-}
-
-.mindmap-node-has-children::after {
+.mindmap-node[aria-expanded]::after {
     content: "-";
     position: absolute;
     top: 8px;
@@ -5172,21 +5171,19 @@ button:hover,
     line-height: 1;
 }
 
-.mindmap-node-root.mindmap-node-has-children::after {
+.mindmap-node-root[aria-expanded]::after {
     color: #ffffff;
     background: rgba(255, 255, 255, 0.2);
 }
 
-.mindmap-node-has-children[aria-expanded="false"]::after {
+.mindmap-branch-item.is-collapsed > .mindmap-node[aria-expanded]::after,
+.mindmap-root-item.is-collapsed > .mindmap-node[aria-expanded]::after {
     content: "+";
 }
 
-.mindmap-canvas.is-empty {
-    display: grid;
-    place-items: center;
-    min-height: 420px;
-    color: var(--muted);
-    font-weight: 800;
+.mindmap-branch-item.is-collapsed > .mindmap-branches,
+.mindmap-root-item.is-collapsed > .mindmap-branches {
+    display: none;
 }
 
 .learning-card-copy {
@@ -9564,13 +9561,14 @@ html.dark-mode body::before {
         #496ff0;
 }
 
-.dark-mode .mindmap-node-has-children::after {
+.dark-mode .mindmap-node[aria-expanded]::after {
     color: #ffffff;
     background: rgba(134, 161, 255, 0.22);
 }
 
-.dark-mode .mindmap-connection {
-    stroke: rgba(134, 161, 255, 0.42);
+.dark-mode .mindmap-branches::before,
+.dark-mode .mindmap-branch-item::before {
+    background: rgba(134, 161, 255, 0.34);
 }
 
 .dark-mode .coming-soon-pill {
@@ -10469,10 +10467,12 @@ textarea[aria-invalid="true"] {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
-    .mindmap-stage,
-    .mindmap-scroll {
-        min-height: 540px;
-        height: 540px;
+    .mindmap-canvas {
+        min-width: 720px;
+    }
+
+    .mindmap-branches {
+        gap: 18px;
     }
 
     .tutor-header-actions {
@@ -10939,7 +10939,14 @@ textarea[aria-invalid="true"] {
     .mindmap-stage,
     .mindmap-scroll {
         min-height: 520px;
-        height: 520px;
+    }
+
+    .mindmap-scroll {
+        padding: 22px 16px;
+    }
+
+    .mindmap-canvas {
+        min-width: 620px;
     }
 
     .mindmap-toolbar,
@@ -10947,6 +10954,11 @@ textarea[aria-invalid="true"] {
     .mindmap-toolbar button,
     .mindmap-toolbar form {
         width: 100%;
+    }
+
+    .mindmap-branch-item {
+        min-width: 132px;
+        max-width: 180px;
     }
 
     .dashboard-stat-card {
@@ -11449,20 +11461,18 @@ textarea[aria-invalid="true"] {
     }
 
     body.mindmap-page .mindmap-scroll {
-        height: auto;
         min-height: auto;
         overflow: visible;
         padding: 16px 0;
     }
 
-    body.mindmap-page .mindmap-zoom-surface {
-        width: auto !important;
-        height: auto !important;
-    }
-
     body.mindmap-page .mindmap-canvas {
         min-width: 0;
         transform: none !important;
+    }
+
+    body.mindmap-page .is-collapsed > .mindmap-branches {
+        display: flex;
     }
 }
 
