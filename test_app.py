@@ -1193,6 +1193,214 @@ Plants make food using sunlight.
 
     @patch.object(app_module, "local_textbook_context_section", return_value="")
     @patch.object(app_module.model, "generate_content")
+    def test_learn_first_request_calls_gemini_once_and_saves_lesson(
+        self,
+        generate_content,
+        local_textbook_context_section,
+    ):
+        self.register_user(extra_data={"student_class": "8"})
+        self.login_user()
+        generate_content.return_value = MockResponse(
+            """# Photosynthesis
+Plants make food using sunlight.
+
+## Quick Revision
+- Plants use sunlight.
+
+## Visualization Decision JSON
+{"visualization_required": false, "reason": "This lesson is primarily text based."}
+
+## Diagram JSON
+{"template":"generic","title":"Photosynthesis","elements":{},"labels":[],"type":"none","nodes":[],"connections":[],"reason":"Text lesson.","confidence":0.1}
+
+## Questions
+Q1. What do plants need for photosynthesis?
+
+Q2. What do leaves make?
+
+Q3. Why is sunlight important?
+
+Q4. Name one raw material.
+
+Q5. What gas do plants release?
+"""
+        )
+
+        with self.assertLogs(app_module.app.logger.name, level="INFO") as logs:
+            response = self.client.post(
+                "/learn",
+                data={
+                    "name": "Asha",
+                    "student_class": "8",
+                    "subject": "Biology",
+                    "book_name": "Science Textbook",
+                    "topic": "Photosynthesis",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(generate_content.call_count, 1)
+        with app_module.app.app_context():
+            lesson = LearningHistory.query.one()
+            self.assertEqual(lesson.student_class, "8")
+            self.assertEqual(lesson.subject, "Biology")
+            self.assertEqual(lesson.book_name, "Science Textbook")
+            self.assertEqual(lesson.topic, "Photosynthesis")
+        log_output = "\n".join(logs.output)
+        self.assertIn("event=lesson_cache_miss", log_output)
+        self.assertIn("event=lesson_saved", log_output)
+
+    @patch.object(app_module, "local_textbook_context_section", return_value="")
+    @patch.object(app_module.model, "generate_content")
+    def test_learn_second_identical_request_uses_saved_lesson_without_gemini(
+        self,
+        generate_content,
+        local_textbook_context_section,
+    ):
+        self.register_user(extra_data={"student_class": "8"})
+        self.login_user()
+        generate_content.return_value = MockResponse(
+            """# Saved Plant Lesson
+Cached notes should come back.
+
+## Quick Revision
+- Plants need light.
+
+## Visualization Decision JSON
+{"visualization_required": false, "reason": "This lesson is primarily text based."}
+
+## Diagram JSON
+{"template":"generic","title":"Plants","elements":{},"labels":[],"type":"none","nodes":[],"connections":[],"reason":"Text lesson.","confidence":0.1}
+
+## Questions
+Q1. What do plants need?
+
+Q2. What do leaves do?
+
+Q3. Why are roots useful?
+
+Q4. Name one plant part.
+
+Q5. Write one revision point.
+"""
+        )
+        payload = {
+            "name": "Asha",
+            "student_class": "8",
+            "subject": "Biology",
+            "book_name": "Science Textbook",
+            "topic": "Plants",
+        }
+
+        first_response = self.client.post("/learn", data=payload)
+        self.assertEqual(first_response.status_code, 200)
+        self.assertEqual(generate_content.call_count, 1)
+        generate_content.side_effect = AssertionError("Gemini should not be called on cache hit")
+
+        with self.assertLogs(app_module.app.logger.name, level="INFO") as logs:
+            second_response = self.client.post("/learn", data=payload)
+
+        self.assertEqual(second_response.status_code, 200)
+        second_page = second_response.get_data(as_text=True)
+        self.assertIn("Saved Plant Lesson", second_page)
+        self.assertIn("Cached notes should come back.", second_page)
+        self.assertEqual(generate_content.call_count, 1)
+        with app_module.app.app_context():
+            self.assertEqual(LearningHistory.query.count(), 1)
+        log_output = "\n".join(logs.output)
+        self.assertIn("event=lesson_cache_hit", log_output)
+
+    @patch.object(app_module, "local_textbook_context_section", return_value="")
+    @patch.object(app_module.model, "generate_content")
+    def test_learn_different_topic_still_calls_gemini(
+        self,
+        generate_content,
+        local_textbook_context_section,
+    ):
+        self.register_user(extra_data={"student_class": "8"})
+        self.login_user()
+        generate_content.side_effect = [
+            MockResponse(
+                """# Plants
+Plants have roots.
+
+## Quick Revision
+- Roots hold plants.
+
+## Visualization Decision JSON
+{"visualization_required": false, "reason": "This lesson is primarily text based."}
+
+## Diagram JSON
+{"template":"generic","title":"Plants","elements":{},"labels":[],"type":"none","nodes":[],"connections":[],"reason":"Text lesson.","confidence":0.1}
+
+## Questions
+Q1. What holds plants?
+
+Q2. Name one plant part.
+
+Q3. Why are leaves useful?
+
+Q4. What do roots absorb?
+
+Q5. Write one key point.
+"""
+            ),
+            MockResponse(
+                """# Animals
+Animals need food.
+
+## Quick Revision
+- Animals move and grow.
+
+## Visualization Decision JSON
+{"visualization_required": false, "reason": "This lesson is primarily text based."}
+
+## Diagram JSON
+{"template":"generic","title":"Animals","elements":{},"labels":[],"type":"none","nodes":[],"connections":[],"reason":"Text lesson.","confidence":0.1}
+
+## Questions
+Q1. What do animals need?
+
+Q2. Why do animals move?
+
+Q3. Name one animal.
+
+Q4. What helps animals grow?
+
+Q5. Write one revision point.
+"""
+            ),
+        ]
+
+        first_response = self.client.post(
+            "/learn",
+            data={
+                "name": "Asha",
+                "student_class": "8",
+                "subject": "Biology",
+                "book_name": "Science Textbook",
+                "topic": "Plants",
+            },
+        )
+        second_response = self.client.post(
+            "/learn",
+            data={
+                "name": "Asha",
+                "student_class": "8",
+                "subject": "Biology",
+                "book_name": "Science Textbook",
+                "topic": "Animals",
+            },
+        )
+
+        self.assertEqual(first_response.status_code, 200)
+        self.assertEqual(second_response.status_code, 200)
+        self.assertEqual(generate_content.call_count, 2)
+        with app_module.app.app_context():
+            self.assertEqual(LearningHistory.query.count(), 2)
+
+    @patch.object(app_module, "local_textbook_context_section", return_value="")
+    @patch.object(app_module.model, "generate_content")
     def test_learn_preserves_truncated_lesson_and_logs_incomplete_content(
         self,
         generate_content,

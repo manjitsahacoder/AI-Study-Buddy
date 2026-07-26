@@ -203,11 +203,13 @@ class LearningHistory(ModelMappingMixin, db.Model):
     __table_args__ = (
         db.Index("ix_learning_history_user_created_id", "user_id", "created_at", "id"),
         db.Index("ix_learning_history_user_subject_topic", "user_id", "subject", "topic"),
+        db.Index("ix_learning_history_user_class_subject_topic", "user_id", "student_class", "subject", "topic"),
     )
 
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
     board = db.Column(db.Text, nullable=False, default="CBSE")
+    student_class = db.Column(db.Text)
     subject = db.Column(db.Text, nullable=False)
     textbook_id = db.Column(db.Integer, db.ForeignKey("textbooks.id"), nullable=True, index=True)
     chapter_id = db.Column(db.Integer, db.ForeignKey("chapters.id"), nullable=True, index=True)
