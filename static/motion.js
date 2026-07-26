@@ -393,6 +393,12 @@
             { pattern: /logout/i, message: "Signing Out..." },
         ];
 
+        function ensurePageTransitionOverlayViewport() {
+            if (overlay.parentElement !== document.body) {
+                document.body.appendChild(overlay);
+            }
+        }
+
         function linkLabel(link) {
             return (link.dataset.pageLoadingLabel || link.textContent || "").replace(/\s+/g, " ").trim();
         }
@@ -628,6 +634,7 @@
 
         function showOverlay(message, label) {
             window.clearTimeout(pendingHideTimer);
+            ensurePageTransitionOverlayViewport();
             startMessageRotation(message, progressMessagesFor(label));
             overlay.hidden = false;
             lockNavigation();

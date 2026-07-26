@@ -7270,7 +7270,13 @@ footer p {
 
 .page-transition-overlay {
     position: fixed;
-    inset: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: 100vw;
+    min-height: 100vh;
+    min-height: 100dvh;
     z-index: 10000;
     display: grid;
     place-items: center;
@@ -7391,8 +7397,14 @@ footer p {
 #loader {
     display: none;
     position: fixed;
-    inset: 0;
-    z-index: 100;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: 100vw;
+    min-height: 100vh;
+    min-height: 100dvh;
+    z-index: 10000;
     align-items: center;
     justify-content: center;
     flex-direction: column;
