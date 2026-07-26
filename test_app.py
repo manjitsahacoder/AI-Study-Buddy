@@ -2,6 +2,7 @@ import os
 import json
 import base64
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -1168,6 +1169,8 @@ Plants make food using sunlight.
         lesson_prompt = generate_content.call_args.args[0]
         self.assertIn("## Questions", lesson_prompt)
         log_output = "\n".join(logs.output)
+        self.assertIn("gemini_request_start feature=Notes", log_output)
+        self.assertIn("gemini_request_complete feature=Notes", log_output)
         self.assertIn("event=textbook_lookup_complete", log_output)
         self.assertIn("event=lesson_generation_complete", log_output)
         self.assertIn("event=gemini_response", log_output)
@@ -2878,6 +2881,52 @@ Q5. What is question five?
             response.get_data(as_text=True),
         )
 
+    @patch.object(app_module.model, "generate_content")
+    def test_learn_times_out_slow_gemini_without_retry(self, generate_content):
+        def slow_generate(*args, **kwargs):
+            time.sleep(0.2)
+            return MockResponse(
+                """# Plants
+Plants need sunlight.
+
+## Questions
+Q1. What do plants need?
+
+Q2. Why do plants need sunlight?
+
+Q3. Name one part of a plant.
+
+Q4. What is one use of plants?
+
+Q5. Write one point about plants.
+"""
+            )
+
+        generate_content.side_effect = slow_generate
+
+        with patch.object(app_module, "LEARN_GEMINI_TIMEOUT_SECONDS", 0.05):
+            with self.assertLogs(app_module.app.logger.name, level="INFO") as logs:
+                response = self.client.post(
+                    "/learn",
+                    data={
+                        "name": "Asha",
+                        "student_class": "8",
+                        "subject": "Biology",
+                        "topic": "Plants",
+                    },
+                )
+
+        self.assertEqual(response.status_code, 503)
+        self.assertIn(
+            "The AI is taking longer than expected.",
+            response.get_data(as_text=True),
+        )
+        self.assertEqual(generate_content.call_count, 1)
+        log_output = "\n".join(logs.output)
+        self.assertIn("gemini_request_start feature=Notes", log_output)
+        self.assertIn("gemini_request_timeout feature=Notes", log_output)
+        self.assertNotIn("gemini_request_complete feature=Notes", log_output)
+
     def test_gemini_exception_classifier_covers_common_failures(self):
         rate_limit = classify_gemini_exception(Exception("HTTP 429 rate limit exceeded"))
         timeout = classify_gemini_exception(TimeoutError("deadline timed out"))
@@ -3057,31 +3106,13 @@ Q5. What is question five?
     @patch.object(app_module.genai, "configure")
     @patch.object(app_module.genai, "GenerativeModel")
     @patch.object(app_module.model, "generate_content")
-    def test_learn_retries_with_backup_key_on_quota_error(
+    def test_learn_does_not_retry_with_backup_key_on_quota_error(
         self,
         generate_content,
         generative_model,
         configure,
     ):
         generate_content.side_effect = Exception("429 quota reached")
-        generative_model.return_value = MockModel(
-            MockResponse(
-                """# Backup Notes
-Backup key worked.
-
-## Questions
-Q1. What is question one?
-
-Q2. What is question two?
-
-Q3. What is question three?
-
-Q4. What is question four?
-
-Q5. What is question five?
-"""
-            )
-        )
 
         response = self.client.post(
             "/learn",
@@ -3093,9 +3124,11 @@ Q5. What is question five?
             },
         )
 
-        self.assertEqual(response.status_code, 200)
-        configure.assert_called_with(api_key="backup-key")
-        self.assertIn("Backup Notes", response.get_data(as_text=True))
+        self.assertEqual(response.status_code, 503)
+        self.assertIn("AI Quota Reached", response.get_data(as_text=True))
+        self.assertEqual(generate_content.call_count, 1)
+        configure.assert_not_called()
+        generative_model.assert_not_called()
 
     @patch.object(app_module.model, "generate_content")
     def test_submit_includes_questions_and_answers_in_evaluation(self, generate_content):

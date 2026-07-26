@@ -421,6 +421,7 @@ LEARN_MAX_PROMPT_CHARS = int(os.environ.get("LEARN_MAX_PROMPT_CHARS", "12000"))
 LEARN_MAX_RESPONSE_CHARS = int(os.environ.get("LEARN_MAX_RESPONSE_CHARS", "55000"))
 LEARN_MAX_OUTPUT_TOKENS = int(os.environ.get("LEARN_MAX_OUTPUT_TOKENS", "4500"))
 LEARN_GEMINI_TIMEOUT_SECONDS = int(os.environ.get("LEARN_GEMINI_TIMEOUT_SECONDS", "45"))
+GEMINI_REQUEST_TIMEOUT_SECONDS = float(os.environ.get("GEMINI_REQUEST_TIMEOUT_SECONDS", "55"))
 LEARN_PDF_EXTRACTION_TIMEOUT_SECONDS = float(os.environ.get("LEARN_PDF_EXTRACTION_TIMEOUT_SECONDS", "10"))
 LEARN_PDF_EXTRACTION_MAX_PAGES = int(os.environ.get("LEARN_PDF_EXTRACTION_MAX_PAGES", "50"))
 LEARN_TEXTBOOK_TEXT_CACHE_DIR = Path(
@@ -679,11 +680,61 @@ def generate_model_content(model_instance, prompt, generation_config=None, reque
         return model_instance.generate_content(prompt)
 
 
-def generate_content_with_fallback(prompt, generation_config=None, request_options=None):
+def gemini_timeout_from_options(request_options):
+    if isinstance(request_options, dict):
+        try:
+            timeout = float(request_options.get("timeout") or 0)
+        except (TypeError, ValueError):
+            timeout = 0
+        if timeout > 0:
+            return timeout
+    return GEMINI_REQUEST_TIMEOUT_SECONDS
+
+
+def run_gemini_call_with_timeout(factory, timeout_seconds):
+    if not timeout_seconds or timeout_seconds <= 0:
+        return factory()
+
+    result_queue = queue_module.Queue(maxsize=1)
+
+    def run_call():
+        try:
+            result_queue.put(("ok", factory()))
+        except Exception as error:
+            result_queue.put(("error", error))
+
+    worker = threading.Thread(target=run_call, daemon=True)
+    worker.start()
+    worker.join(timeout_seconds)
+
+    if worker.is_alive():
+        raise TimeoutError(f"Gemini request exceeded {timeout_seconds} seconds")
+
+    try:
+        status, payload = result_queue.get_nowait()
+    except queue_module.Empty:
+        raise RuntimeError("Gemini request finished without returning a response")
+
+    if status == "error":
+        raise payload
+    return payload
+
+
+def is_timeout_error(error):
+    combined = f"{type(error).__name__} {error}".lower()
+    return "timeout" in combined or "timed out" in combined or "deadline" in combined
+
+
+def generate_content_with_fallback(
+    prompt,
+    generation_config=None,
+    request_options=None,
+    allow_backup=True,
+):
     try:
         return generate_model_content(model, prompt, generation_config, request_options)
     except Exception as primary_error:
-        if not is_quota_error(primary_error):
+        if not allow_backup or not is_quota_error(primary_error):
             raise
 
         last_error = primary_error
@@ -707,20 +758,42 @@ def gemini_request(
     lesson_id=None,
     generation_config=None,
     request_options=None,
+    allow_backup=True,
 ):
     started_at = time.perf_counter()
     span_started_at = auth_timing_start("Gemini API calls", detail=feature_name)
+    timeout_seconds = gemini_timeout_from_options(request_options)
+    app.logger.info(
+        "gemini_request_start feature=%s timeout_seconds=%s user_id=%s lesson_id=%s",
+        feature_name,
+        timeout_seconds,
+        user_id if user_id is not None else "anonymous",
+        lesson_id if lesson_id is not None else "none",
+    )
     try:
-        response = generate_content_with_fallback(
-            prompt,
-            generation_config=generation_config,
-            request_options=request_options,
+        response = run_gemini_call_with_timeout(
+            lambda: generate_content_with_fallback(
+                prompt,
+                generation_config=generation_config,
+                request_options=request_options,
+                allow_backup=allow_backup,
+            ),
+            timeout_seconds,
+        )
+        response_text = getattr(response, "text", "") or ""
+        app.logger.info(
+            "gemini_request_complete feature=%s duration_ms=%s response_chars=%s user_id=%s lesson_id=%s",
+            feature_name,
+            round((time.perf_counter() - started_at) * 1000, 2),
+            len(response_text),
+            user_id if user_id is not None else "anonymous",
+            lesson_id if lesson_id is not None else "none",
         )
         log_gemini_request(
             app.logger,
             feature_name,
             prompt,
-            response_text=(getattr(response, "text", "") or ""),
+            response_text=response_text,
             started_at=started_at,
             user_id=user_id,
             lesson_id=lesson_id,
@@ -732,6 +805,16 @@ def gemini_request(
         )
         return response
     except Exception as error:
+        if is_timeout_error(error):
+            app.logger.warning(
+                "gemini_request_timeout feature=%s duration_ms=%s timeout_seconds=%s user_id=%s lesson_id=%s error=%s",
+                feature_name,
+                round((time.perf_counter() - started_at) * 1000, 2),
+                timeout_seconds,
+                user_id if user_id is not None else "anonymous",
+                lesson_id if lesson_id is not None else "none",
+                error,
+            )
         auth_timing_error("Gemini API calls", span_started_at, error)
         error_info = handle_gemini_exception(
             error,
@@ -10915,6 +10998,7 @@ Rules:
             "Notes",
             prompt,
             user_id=session.get("user_id"),
+            allow_backup=False,
             **learn_generation_options(),
         )
         response_text = response_text_or_busy(response)
