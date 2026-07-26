@@ -5154,7 +5154,12 @@ Photosynthesis helps plants prepare food and release oxygen.
         self.assertIn("data-zoom-reset", page)
         self.assertIn("window.print()", page)
         self.assertIn("mindmap-stage", page)
-        self.assertIn("mindmap-branches", page)
+        self.assertIn("data-mindmap-viewport", page)
+        self.assertIn("mindmap-zoom-surface", page)
+        self.assertIn("mindmap-connections", page)
+        self.assertIn("mindmap-node-layer", page)
+        self.assertIn("renderMindMap()", page)
+        self.assertIn("siblingGap", page)
         with app_module.app.app_context():
             self.assertEqual(MindMap.query.count(), 1)
             mind_map = MindMap.query.first()
@@ -5223,6 +5228,47 @@ Photosynthesis helps plants prepare food and release oxygen.
         self.assertIn("Mind Maps Generated", dashboard_page)
         self.assertIn("<strong>1</strong>", dashboard_page)
 
+    @patch.object(app_module, "generate_content_with_fallback")
+    def test_existing_mind_map_renders_with_new_layout_without_gemini(self, generate_content):
+        self.register_user()
+        self.login_user()
+        with app_module.app.app_context():
+            lesson_id = self.create_saved_lesson(notes="Stored notes should not be sent again.")
+            db.session.add(
+                MindMap(
+                    user_id=1,
+                    learning_history_id=lesson_id,
+                    map_json=json.dumps(
+                        {
+                            "nodes": [
+                                {"id": "root", "title": "Photosynthesis", "parent": ""},
+                                {
+                                    "id": "long-child",
+                                    "title": "Raw materials from roots and air used during food making",
+                                    "parent": "root",
+                                },
+                                {"id": "water", "title": "Water carried through stem", "parent": "long-child"},
+                            ]
+                        }
+                    ),
+                )
+            )
+            db.session.commit()
+
+        mind_map_response = self.client.get(f"/mindmap/{lesson_id}")
+        history_response = self.client.get("/learning-history")
+        detail_response = self.client.get(f"/learning-history/{lesson_id}")
+
+        self.assertEqual(mind_map_response.status_code, 200)
+        self.assertEqual(history_response.status_code, 200)
+        self.assertEqual(detail_response.status_code, 200)
+        page = mind_map_response.get_data(as_text=True)
+        self.assertIn("Raw materials from roots and air used during food making", page)
+        self.assertIn("data-mindmap-connections", page)
+        self.assertIn("nodeMetrics", page)
+        self.assertIn("applyZoom", page)
+        self.assertIn("pointermove", page)
+        generate_content.assert_not_called()
     def test_mind_map_json_parsing_limits_and_repairs_tree(self):
         payload = {
             "nodes": [
