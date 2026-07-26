@@ -40,6 +40,7 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import load_only
 import json
+import hashlib
 import markdown
 import os
 import platform
@@ -416,6 +417,13 @@ LEARN_MAX_PROMPT_CHARS = int(os.environ.get("LEARN_MAX_PROMPT_CHARS", "12000"))
 LEARN_MAX_RESPONSE_CHARS = int(os.environ.get("LEARN_MAX_RESPONSE_CHARS", "55000"))
 LEARN_MAX_OUTPUT_TOKENS = int(os.environ.get("LEARN_MAX_OUTPUT_TOKENS", "4500"))
 LEARN_GEMINI_TIMEOUT_SECONDS = int(os.environ.get("LEARN_GEMINI_TIMEOUT_SECONDS", "45"))
+LEARN_TEXTBOOK_TEXT_CACHE_DIR = Path(
+    os.environ.get(
+        "LEARN_TEXTBOOK_TEXT_CACHE_DIR",
+        Path(app.instance_path) / "textbook_text_cache",
+    )
+)
+LEARN_TEXTBOOK_TEXT_CACHE_VERSION = "pypdf-text-v1"
 EDUCATIONAL_CATEGORIES = (
     "English Grammar",
     "English Literature",
@@ -8141,8 +8149,59 @@ def log_textbook_context_diagnostic(
     )
 
 
+def pdf_text_cache_path(pdf_path, max_chars):
+    try:
+        path = Path(pdf_path)
+        stat_result = path.stat()
+    except OSError:
+        return None
+
+    cache_payload = "|".join(
+        [
+            LEARN_TEXTBOOK_TEXT_CACHE_VERSION,
+            str(path.resolve()),
+            str(stat_result.st_size),
+            str(stat_result.st_mtime_ns),
+            str(max_chars),
+        ]
+    )
+    cache_key = hashlib.sha256(cache_payload.encode("utf-8")).hexdigest()
+    return LEARN_TEXTBOOK_TEXT_CACHE_DIR / f"{cache_key}.txt"
+
+
+def read_pdf_text_cache(pdf_path, max_chars):
+    cache_path = pdf_text_cache_path(pdf_path, max_chars)
+    if not cache_path or not cache_path.exists():
+        return None
+
+    try:
+        return cache_path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+
+def write_pdf_text_cache(pdf_path, max_chars, text):
+    cache_path = pdf_text_cache_path(pdf_path, max_chars)
+    if not cache_path:
+        return
+
+    try:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        temporary_path = cache_path.with_name(
+            f".{cache_path.name}.{os.getpid()}.{threading.get_ident()}.tmp"
+        )
+        temporary_path.write_text(text, encoding="utf-8")
+        os.replace(temporary_path, cache_path)
+    except OSError:
+        return
+
+
 @lru_cache(maxsize=16)
 def extract_pdf_text(pdf_path, max_chars=LEARN_MAX_PDF_TEXT_CHARS):
+    cached_text = read_pdf_text_cache(pdf_path, max_chars)
+    if cached_text is not None:
+        return cached_text
+
     try:
         from pypdf import PdfReader
     except ImportError:
@@ -8166,7 +8225,9 @@ def extract_pdf_text(pdf_path, max_chars=LEARN_MAX_PDF_TEXT_CHARS):
         print("PDF EXTRACTION ERROR:", error)
         return ""
 
-    return "\n".join(chunks)
+    extracted_text = "\n".join(chunks)
+    write_pdf_text_cache(pdf_path, max_chars, extracted_text)
+    return extracted_text
 
 
 def find_topic_start(compact_text, topic):

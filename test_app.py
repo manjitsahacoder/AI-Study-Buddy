@@ -897,6 +897,36 @@ Q5. When are roots equal?
         self.assertIn("Atmosphere and Climate", context)
         self.assertGreater(len(context), 500)
 
+    def test_extract_pdf_text_uses_persistent_cache_between_lru_misses(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            pdf_path = Path(temporary_directory) / "chapter.pdf"
+            pdf_path.write_bytes(b"%PDF-1.4 test")
+            cache_dir = Path(temporary_directory) / "text-cache"
+            reader_calls = []
+
+            class FakePage:
+                def extract_text(self):
+                    return "Cached chapter text"
+
+            class FakePdfReader:
+                def __init__(self, path):
+                    reader_calls.append(path)
+                    self.pages = [FakePage()]
+
+            fake_pypdf = type("FakePypdf", (), {"PdfReader": FakePdfReader})
+
+            with patch.object(app_module, "LEARN_TEXTBOOK_TEXT_CACHE_DIR", cache_dir):
+                with patch.dict("sys.modules", {"pypdf": fake_pypdf}):
+                    app_module.extract_pdf_text.cache_clear()
+                    first_text = app_module.extract_pdf_text(str(pdf_path), 100)
+                    app_module.extract_pdf_text.cache_clear()
+                    second_text = app_module.extract_pdf_text(str(pdf_path), 100)
+                    app_module.extract_pdf_text.cache_clear()
+
+        self.assertEqual(first_text, "Cached chapter text")
+        self.assertEqual(second_text, "Cached chapter text")
+        self.assertEqual(len(reader_calls), 1)
+
     def test_local_textbook_context_logs_missing_registry_diagnostic(self):
         with self.assertLogs(app_module.app.logger.name, level="WARNING") as logs:
             context = app_module.local_textbook_context_section(
