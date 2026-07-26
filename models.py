@@ -298,6 +298,39 @@ class DiagramLibrary(ModelMappingMixin, db.Model):
     last_used = db.Column(db.DateTime, nullable=False, default=utc_now, index=True)
 
 
+class DiagramCache(ModelMappingMixin, db.Model):
+    __tablename__ = "diagram_cache"
+    __table_args__ = (
+        db.Index("ux_diagram_cache_cache_key", "cache_key", unique=True),
+        db.Index(
+            "ix_diagram_cache_lookup",
+            "board",
+            "student_class",
+            "subject",
+            "textbook",
+            "chapter",
+            "topic",
+        ),
+        db.Index("ix_diagram_cache_last_accessed", "last_accessed"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    cache_key = db.Column(db.Text, nullable=True)
+    board = db.Column(db.Text, nullable=False, default="CBSE")
+    student_class = db.Column(db.Text, nullable=False, index=True)
+    subject = db.Column(db.Text, nullable=False, index=True)
+    textbook = db.Column(db.Text)
+    chapter = db.Column(db.Text)
+    topic = db.Column(db.Text, nullable=False, index=True)
+    prompt = db.Column(db.Text, nullable=False)
+    image_url = db.Column(db.Text, nullable=False)
+    storage_path = db.Column(db.Text, nullable=False)
+    model = db.Column(db.Text, nullable=False)
+    access_count = db.Column(db.Integer, nullable=False, default=0)
+    created_at = db.Column(db.DateTime, nullable=False, default=utc_now, index=True)
+    last_accessed = db.Column(db.DateTime, nullable=False, default=utc_now)
+
+
 class StudyPlanProgress(ModelMappingMixin, db.Model):
     __tablename__ = "study_plan_progress"
     __table_args__ = (

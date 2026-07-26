@@ -55,6 +55,43 @@
         card.appendChild(info);
     }
 
+    function retryEndpoint(endpoint, body) {
+        if (body && body.retry_url) {
+            return body.retry_url;
+        }
+        return endpoint + (endpoint.indexOf("?") === -1 ? "?retry=1" : "&retry=1");
+    }
+
+    function renderDiagramFailure(card, endpoint, body) {
+        removeHydratedContent(card);
+        const info = element("div", "visualization-info-card diagram-unavailable-card");
+        info.setAttribute("role", "note");
+        info.setAttribute("aria-label", "Educational diagram unavailable");
+        const icon = element("span", "visualization-info-icon");
+        icon.setAttribute("aria-hidden", "true");
+        icon.innerHTML = "&#9432;";
+        const copy = element("div");
+        copy.appendChild(element("h3", "", "Educational Diagram"));
+        copy.appendChild(element("p", "", (body && body.message) || "We could not create the diagram right now."));
+        const retry = element("button", "button-link secondary-link", "Retry diagram");
+        retry.type = "button";
+        retry.addEventListener("click", function () {
+            const nextEndpoint = retryEndpoint(endpoint, body || {});
+            retry.disabled = true;
+            retry.textContent = "Retrying...";
+            hydratePendingDiagram(card, nextEndpoint);
+        });
+        copy.appendChild(retry);
+        info.append(icon, copy);
+        card.appendChild(info);
+    }
+
+    function scheduleDiagramPoll(card, endpoint) {
+        window.setTimeout(function () {
+            hydratePendingDiagram(card, endpoint);
+        }, 1800);
+    }
+
     function renderDiagramReady(card, body) {
         const payload = body.diagram_payload || {};
         const view = body.diagram_view || {};
@@ -66,7 +103,7 @@
         [
             ["Selected Type", payloadTypeLabel(payload)],
             ["Confidence", `${payload.confidence_percent || 0}%`],
-            ["Source", view.provider || "Wikimedia Commons", "visualization-reason"]
+            ["Source", view.provider || "AI Study Buddy", "visualization-reason"]
         ].forEach(function (entry) {
             const block = element("div", entry[2] || "");
             block.append(element("span", "", entry[0]), element("strong", "", entry[1]));
@@ -101,9 +138,9 @@
         shell.appendChild(image);
         const attribution = element("figcaption", "diagram-library-attribution");
         [
-            ["Diagram Source", view.provider || "Wikimedia Commons", view.source_url],
-            ["Author", view.author || "Unknown"],
-            ["License", view.license || "Reusable license"]
+            ["Diagram Source", view.provider || "AI Study Buddy", view.source_url],
+            ["Author", view.author || "AI Study Buddy"],
+            ["License", view.license || "Generated educational diagram"]
         ].forEach(function (entry) {
             const span = element("span");
             span.appendChild(element("strong", "", entry[0]));
@@ -189,6 +226,14 @@
                         "This lesson is primarily text-based and does not require a visual diagram.",
                         "AI Study Buddy has automatically focused on notes, revision, flashcards, quizzes, memory challenge, and AI Tutor instead."
                     ]);
+                } else if (body.status === "failed") {
+                    renderDiagramFailure(card, endpoint, body);
+                } else if (body.status === "pending" || body.status === "generating") {
+                    const message = card.querySelector("[data-diagram-progress-message]");
+                    if (message) {
+                        message.textContent = body.message || "Creating your educational diagram...";
+                    }
+                    scheduleDiagramPoll(card, endpoint);
                 } else {
                     renderInfoCard(card, "Educational Diagram", [
                         "No suitable educational diagram found.",

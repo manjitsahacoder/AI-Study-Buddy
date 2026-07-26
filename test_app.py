@@ -3,9 +3,12 @@ import json
 import base64
 import tempfile
 import time
+import threading
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
+from sqlalchemy import inspect
 
 TEST_DB_FD, TEST_DB_PATH = tempfile.mkstemp(suffix=".db")
 os.close(TEST_DB_FD)
@@ -17,6 +20,7 @@ from database import db
 from gemini_service import classify_gemini_exception
 from models import (
     Chapter,
+    DiagramCache,
     DownloadedFile,
     DiagramLibrary,
     FavouriteNote,
@@ -82,6 +86,8 @@ class RouteTests(unittest.TestCase):
             db.drop_all()
             db.create_all()
             app_module.clear_smart_search_cache()
+            with app_module._generated_diagram_jobs_lock:
+                app_module._generated_diagram_jobs.clear()
         app_module.latest_report = {}
         self.client = app_module.app.test_client()
         self.questions = [
@@ -137,6 +143,91 @@ class RouteTests(unittest.TestCase):
         image = Image.new("RGB", (2, 2), color=(80, 120, 200))
         image.save(buffer, format=image_format)
         return buffer.getvalue()
+
+    def diagram_learning_response(self, topic="Photosynthesis"):
+        return f"""# {topic}
+Plants make food using sunlight.
+
+## Quick Revision
+- Leaves use sunlight.
+
+## Visualization Decision JSON
+{{"visualization_required": true, "visualization_type": "process", "reason": "A diagram helps students understand the topic.", "confidence": 0.9}}
+
+## Diagram JSON
+{{"template":"process","title":"{topic}","type":"process","labels":["Sunlight","Leaves"],"nodes":[],"connections":[],"confidence":0.9}}
+
+## Questions
+Q1. What do plants need for photosynthesis?
+
+Q2. What do leaves make?
+
+Q3. Why is sunlight important?
+
+Q4. Name one raw material.
+
+Q5. What gas do plants release?
+"""
+
+    def set_async_diagrams_for_test(self, enabled=True, run_inline=False):
+        previous_enabled = app_module.app.config.get("DIAGRAM_GENERATION_ASYNC_ENABLED")
+        previous_inline = app_module.app.config.get("DIAGRAM_GENERATION_RUN_INLINE")
+        app_module.app.config["DIAGRAM_GENERATION_ASYNC_ENABLED"] = enabled
+        app_module.app.config["DIAGRAM_GENERATION_RUN_INLINE"] = run_inline
+
+        def restore():
+            if previous_enabled is None:
+                app_module.app.config.pop("DIAGRAM_GENERATION_ASYNC_ENABLED", None)
+            else:
+                app_module.app.config["DIAGRAM_GENERATION_ASYNC_ENABLED"] = previous_enabled
+            if previous_inline is None:
+                app_module.app.config.pop("DIAGRAM_GENERATION_RUN_INLINE", None)
+            else:
+                app_module.app.config["DIAGRAM_GENERATION_RUN_INLINE"] = previous_inline
+
+        self.addCleanup(restore)
+
+    def generated_diagram_cache_key_for_test(
+        self,
+        *,
+        student_class="8",
+        subject="Science",
+        book_name="NCERT",
+        topic="Photosynthesis",
+    ):
+        raw_visualization_decision = {
+            "visualization_required": True,
+            "visualization_type": "process",
+            "reason": "A diagram helps students understand the topic.",
+            "confidence": 0.9,
+        }
+        raw_diagram = {
+            "template": "process",
+            "title": topic,
+            "type": "process",
+            "labels": ["Sunlight", "Leaves"],
+            "nodes": [],
+            "connections": [],
+            "confidence": 0.9,
+        }
+        diagram_payload = app_module.build_visualization_payload(
+            subject,
+            topic,
+            raw_visualization_decision,
+            raw_diagram,
+        )
+        lesson = SimpleNamespace(
+            board="CBSE",
+            student_class=student_class,
+            subject=subject,
+            book_name=book_name,
+            topic=topic,
+        )
+        return app_module.generated_diagram_cache_key_for_lesson(
+            lesson,
+            diagram_payload,
+            student_class,
+        )
 
     def seed_cached_diagram(
         self,
@@ -5186,7 +5277,12 @@ Photosynthesis helps plants prepare food and release oxygen.
         self.assertIn("data-zoom-reset", page)
         self.assertIn("window.print()", page)
         self.assertIn("mindmap-stage", page)
-        self.assertIn("mindmap-branches", page)
+        self.assertIn("data-mindmap-viewport", page)
+        self.assertIn("mindmap-zoom-surface", page)
+        self.assertIn("mindmap-connections", page)
+        self.assertIn("mindmap-node-layer", page)
+        self.assertIn("renderMindMap()", page)
+        self.assertIn("siblingGap", page)
         with app_module.app.app_context():
             self.assertEqual(MindMap.query.count(), 1)
             mind_map = MindMap.query.first()
@@ -5254,6 +5350,48 @@ Photosynthesis helps plants prepare food and release oxygen.
         dashboard_page = dashboard_response.get_data(as_text=True)
         self.assertIn("Mind Maps Generated", dashboard_page)
         self.assertIn("<strong>1</strong>", dashboard_page)
+
+    @patch.object(app_module, "generate_content_with_fallback")
+    def test_existing_mind_map_renders_with_new_layout_without_gemini(self, generate_content):
+        self.register_user()
+        self.login_user()
+        with app_module.app.app_context():
+            lesson_id = self.create_saved_lesson(notes="Stored notes should not be sent again.")
+            db.session.add(
+                MindMap(
+                    user_id=1,
+                    learning_history_id=lesson_id,
+                    map_json=json.dumps(
+                        {
+                            "nodes": [
+                                {"id": "root", "title": "Photosynthesis", "parent": ""},
+                                {
+                                    "id": "long-child",
+                                    "title": "Raw materials from roots and air used during food making",
+                                    "parent": "root",
+                                },
+                                {"id": "water", "title": "Water carried through stem", "parent": "long-child"},
+                            ]
+                        }
+                    ),
+                )
+            )
+            db.session.commit()
+
+        mind_map_response = self.client.get(f"/mindmap/{lesson_id}")
+        history_response = self.client.get("/learning-history")
+        detail_response = self.client.get(f"/learning-history/{lesson_id}")
+
+        self.assertEqual(mind_map_response.status_code, 200)
+        self.assertEqual(history_response.status_code, 200)
+        self.assertEqual(detail_response.status_code, 200)
+        page = mind_map_response.get_data(as_text=True)
+        self.assertIn("Raw materials from roots and air used during food making", page)
+        self.assertIn("data-mindmap-connections", page)
+        self.assertIn("nodeMetrics", page)
+        self.assertIn("applyZoom", page)
+        self.assertIn("pointermove", page)
+        generate_content.assert_not_called()
 
     def test_mind_map_json_parsing_limits_and_repairs_tree(self):
         payload = {
@@ -7405,6 +7543,521 @@ Grade: A
             response.get_data(as_text=True),
         )
         self.assertEqual(generate_content.call_count, 1)
+
+    def test_diagram_cache_model_is_registered(self):
+        with app_module.app.app_context():
+            inspector = inspect(db.engine)
+            self.assertIn(DiagramCache.__tablename__, inspector.get_table_names())
+            columns = {
+                column["name"]
+                for column in inspector.get_columns(DiagramCache.__tablename__)
+            }
+
+        self.assertEqual(DiagramCache.__tablename__, "diagram_cache")
+        self.assertTrue(
+            {
+                "id",
+                "cache_key",
+                "board",
+                "student_class",
+                "subject",
+                "textbook",
+                "chapter",
+                "topic",
+                "prompt",
+                "image_url",
+                "storage_path",
+                "model",
+                "access_count",
+                "created_at",
+                "last_accessed",
+            }.issubset(columns)
+        )
+
+    def test_diagram_service_module_imports_with_placeholders(self):
+        from services import diagram_service
+
+        with app_module.app.app_context():
+            self.assertIsNone(diagram_service.find_cached_diagram(topic="Photosynthesis"))
+
+    def test_diagram_service_returns_cached_url_and_updates_access_metadata(self):
+        from services import diagram_service
+
+        with app_module.app.app_context():
+            cache_key = diagram_service.build_diagram_cache_key(
+                board="CBSE",
+                student_class="8",
+                subject="Science",
+                textbook="NCERT",
+                chapter="Crop Production",
+                topic="Irrigation",
+            )
+            cached = DiagramCache(
+                cache_key=cache_key,
+                board="CBSE",
+                student_class="8",
+                subject="Science",
+                textbook="NCERT",
+                chapter="Crop Production",
+                topic="Irrigation",
+                prompt="cached prompt",
+                image_url="https://example.test/cached.webp",
+                storage_path="class_8/science/ncert/crop-production/irrigation.webp",
+                model="gemini-3.1-flash-image",
+                access_count=2,
+            )
+            db.session.add(cached)
+            db.session.commit()
+            original_last_accessed = cached.last_accessed
+
+            with patch("services.diagram_service.gemini_image_service.generate_diagram_image") as generate_image:
+                result = diagram_service.get_or_generate_diagram(
+                    board="CBSE",
+                    student_class="8",
+                    subject="Science",
+                    textbook="NCERT",
+                    chapter="Crop Production",
+                    topic="Irrigation",
+                )
+
+            db.session.refresh(cached)
+            self.assertEqual(result, "https://example.test/cached.webp")
+            self.assertEqual(cached.access_count, 3)
+            self.assertNotEqual(cached.last_accessed, original_last_accessed)
+            generate_image.assert_not_called()
+
+    def test_diagram_service_cache_miss_generates_uploads_and_persists_metadata(self):
+        from services import diagram_service
+
+        with app_module.app.app_context():
+            with patch(
+                "services.diagram_service.gemini_image_service.generate_diagram_image",
+                return_value=b"image-bytes",
+            ) as generate_image, patch(
+                "services.diagram_service.storage_service.upload_diagram_image",
+                return_value={
+                    "storage_path": "class_8/science/ncert/crop-production/irrigation.webp",
+                    "public_url": "https://example.test/generated.webp",
+                },
+            ) as upload_image:
+                result = diagram_service.get_or_generate_diagram(
+                    board="CBSE",
+                    student_class="8",
+                    subject="Science",
+                    textbook="NCERT",
+                    chapter="Crop Production",
+                    topic="Irrigation",
+                )
+
+            self.assertEqual(result, "https://example.test/generated.webp")
+            generate_image.assert_called_once()
+            self.assertIn("Topic: Irrigation", generate_image.call_args.args[0])
+            upload_image.assert_called_once_with(
+                b"image-bytes",
+                "8/Science/NCERT/Crop Production/Irrigation.webp",
+            )
+            cached = DiagramCache.query.one()
+            self.assertEqual(cached.image_url, "https://example.test/generated.webp")
+            self.assertEqual(cached.storage_path, "class_8/science/ncert/crop-production/irrigation.webp")
+            self.assertEqual(cached.access_count, 0)
+
+    def test_diagram_service_returns_none_when_gemini_generation_fails(self):
+        from services import diagram_service
+
+        with app_module.app.app_context():
+            with patch(
+                "services.diagram_service.gemini_image_service.generate_diagram_image",
+                side_effect=RuntimeError("generation failed"),
+            ), patch("services.diagram_service.logger") as logger:
+                result = diagram_service.get_or_generate_diagram(
+                    student_class="8",
+                    subject="Science",
+                    topic="Irrigation",
+                )
+
+            self.assertIsNone(result)
+            self.assertEqual(DiagramCache.query.count(), 0)
+            logger.exception.assert_called()
+
+    def test_diagram_service_returns_none_when_upload_fails(self):
+        from services import diagram_service
+
+        with app_module.app.app_context():
+            with patch(
+                "services.diagram_service.gemini_image_service.generate_diagram_image",
+                return_value=b"image-bytes",
+            ), patch(
+                "services.diagram_service.storage_service.upload_diagram_image",
+                side_effect=RuntimeError("upload failed"),
+            ), patch("services.diagram_service.logger") as logger:
+                result = diagram_service.get_or_generate_diagram(
+                    student_class="8",
+                    subject="Science",
+                    topic="Irrigation",
+                )
+
+            self.assertIsNone(result)
+            self.assertEqual(DiagramCache.query.count(), 0)
+            logger.exception.assert_called()
+
+    def test_diagram_service_duplicate_request_reuses_cache(self):
+        from services import diagram_service
+
+        with app_module.app.app_context():
+            with patch(
+                "services.diagram_service.gemini_image_service.generate_diagram_image",
+                return_value=b"image-bytes",
+            ) as generate_image, patch(
+                "services.diagram_service.storage_service.upload_diagram_image",
+                return_value={
+                    "storage_path": "class_8/science/ncert/chapter/topic.webp",
+                    "public_url": "https://example.test/diagram.webp",
+                },
+            ) as upload_image:
+                first = diagram_service.get_or_generate_diagram(
+                    board="CBSE",
+                    student_class="8",
+                    subject="Science",
+                    textbook="NCERT",
+                    chapter="Chapter",
+                    topic="Topic",
+                )
+                second = diagram_service.get_or_generate_diagram(
+                    board="cbse",
+                    student_class=" 8 ",
+                    subject="science",
+                    textbook="ncert",
+                    chapter="chapter",
+                    topic="topic",
+                )
+
+            self.assertEqual(first, "https://example.test/diagram.webp")
+            self.assertEqual(second, "https://example.test/diagram.webp")
+            generate_image.assert_called_once()
+            upload_image.assert_called_once()
+            cached = DiagramCache.query.one()
+            self.assertEqual(cached.access_count, 1)
+
+    def test_diagram_service_simultaneous_duplicate_request_generates_once(self):
+        from services import diagram_service
+
+        self.set_async_diagrams_for_test(enabled=True)
+        results = []
+        errors = []
+
+        def call_service():
+            try:
+                with app_module.app.app_context():
+                    results.append(
+                        diagram_service.get_or_generate_diagram(
+                            board="CBSE",
+                            student_class="8",
+                            subject="Science",
+                            textbook="NCERT",
+                            chapter="Chapter",
+                            topic="Topic",
+                        )
+                    )
+                    db.session.remove()
+            except Exception as error:
+                errors.append(error)
+
+        with patch(
+            "services.diagram_service.gemini_image_service.generate_diagram_image",
+            side_effect=lambda prompt: (time.sleep(0.05), b"image-bytes")[1],
+        ) as generate_image, patch(
+            "services.diagram_service.storage_service.upload_diagram_image",
+            return_value={
+                "storage_path": "class_8/science/ncert/chapter/topic.webp",
+                "public_url": "https://example.test/diagram.webp",
+            },
+        ) as upload_image:
+            workers = [threading.Thread(target=call_service) for _ in range(2)]
+            for worker in workers:
+                worker.start()
+            for worker in workers:
+                worker.join()
+
+        self.assertEqual(errors, [])
+        self.assertEqual(results, ["https://example.test/diagram.webp", "https://example.test/diagram.webp"])
+        generate_image.assert_called_once()
+        upload_image.assert_called_once()
+        with app_module.app.app_context():
+            cached = DiagramCache.query.one()
+            self.assertEqual(cached.access_count, 1)
+
+    def test_diagram_service_retries_upload_without_retrying_gemini(self):
+        from services import diagram_service
+
+        upload_error = RuntimeError("temporary upload outage")
+        with app_module.app.app_context(), patch.dict(
+            os.environ,
+            {"DIAGRAM_UPLOAD_RETRY_ATTEMPTS": "2"},
+        ), self.assertLogs("services.diagram_service", level="INFO") as logs, patch(
+            "services.diagram_service.gemini_image_service.generate_diagram_image",
+            return_value=b"image-bytes",
+        ) as generate_image, patch(
+            "services.diagram_service.storage_service.upload_diagram_image",
+            side_effect=[
+                upload_error,
+                {
+                    "storage_path": "class_8/science/ncert/chapter/topic.webp",
+                    "public_url": "https://example.test/retried.webp",
+                },
+            ],
+        ) as upload_image:
+            result = diagram_service.get_or_generate_diagram(
+                board="CBSE",
+                student_class="8",
+                subject="Science",
+                textbook="NCERT",
+                chapter="Chapter",
+                topic="Topic",
+            )
+
+        self.assertEqual(result, "https://example.test/retried.webp")
+        generate_image.assert_called_once()
+        self.assertEqual(upload_image.call_count, 2)
+        log_output = "\n".join(logs.output)
+        self.assertIn("event=cache_miss", log_output)
+        self.assertIn("event=image_generated", log_output)
+        self.assertIn("event=upload_failed", log_output)
+        self.assertIn("event=upload_complete", log_output)
+        self.assertIn("event=diagram_returned", log_output)
+
+    def test_diagram_service_never_retries_gemini_generation_failure(self):
+        from services import diagram_service
+
+        with app_module.app.app_context(), patch(
+            "services.diagram_service.gemini_image_service.generate_diagram_image",
+            side_effect=RuntimeError("gemini unavailable"),
+        ) as generate_image, patch(
+            "services.diagram_service.storage_service.upload_diagram_image",
+        ) as upload_image:
+            result = diagram_service.get_or_generate_diagram(
+                board="CBSE",
+                student_class="8",
+                subject="Science",
+                textbook="NCERT",
+                chapter="Chapter",
+                topic="Topic",
+            )
+
+        self.assertIsNone(result)
+        generate_image.assert_called_once()
+        upload_image.assert_not_called()
+
+    @patch.object(app_module.model, "generate_content")
+    def test_async_diagram_cache_hit_renders_generated_image_immediately(self, generate_content):
+        from services import diagram_service
+
+        self.set_async_diagrams_for_test(enabled=True)
+        self.register_user(extra_data={"student_class": "8"})
+        self.login_user()
+        generate_content.return_value = MockResponse(self.diagram_learning_response())
+        with app_module.app.app_context():
+            cache_key = self.generated_diagram_cache_key_for_test()
+            db.session.add(
+                DiagramCache(
+                    cache_key=cache_key,
+                    board="CBSE",
+                    student_class="8",
+                    subject="Science",
+                    textbook="NCERT",
+                    chapter="Photosynthesis",
+                    topic="Photosynthesis",
+                    prompt="cached prompt",
+                    image_url="https://cdn.example.test/photosynthesis.webp",
+                    storage_path="class_8/science/ncert/photosynthesis/photosynthesis.webp",
+                    model="gemini-3.1-flash-image",
+                    access_count=0,
+                )
+            )
+            db.session.commit()
+
+        with patch.object(app_module, "start_generated_diagram_background") as start_background:
+            response = self.client.post(
+                "/learn",
+                data={
+                    "name": "Asha",
+                    "student_class": "8",
+                    "subject": "Science",
+                    "book_name": "NCERT",
+                    "topic": "Photosynthesis",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(generate_content.call_count, 1)
+        page = response.get_data(as_text=True)
+        self.assertIn("https://cdn.example.test/photosynthesis.webp", page)
+        self.assertNotIn("data-diagram-pending-url", page)
+        start_background.assert_not_called()
+        with app_module.app.app_context():
+            self.assertEqual(DiagramCache.query.one().access_count, 1)
+
+    @patch.object(app_module.model, "generate_content")
+    def test_async_diagram_cache_miss_starts_background_without_blocking_learn(self, generate_content):
+        self.set_async_diagrams_for_test(enabled=True)
+        self.register_user(extra_data={"student_class": "8"})
+        self.login_user()
+        generate_content.return_value = MockResponse(self.diagram_learning_response())
+
+        with patch.object(app_module, "start_generated_diagram_background", return_value=True) as start_background:
+            response = self.client.post(
+                "/learn",
+                data={
+                    "name": "Asha",
+                    "student_class": "8",
+                    "subject": "Science",
+                    "book_name": "NCERT",
+                    "topic": "Photosynthesis",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(generate_content.call_count, 1)
+        start_background.assert_called_once()
+        page = response.get_data(as_text=True)
+        self.assertIn("data-diagram-pending-url", page)
+        self.assertIn("Loading educational diagram", page)
+
+    def test_async_diagram_background_completion_records_ready_state(self):
+        self.set_async_diagrams_for_test(enabled=True)
+        with app_module.app.app_context():
+            user = app_module.create_user(
+                "Asha Student",
+                "asha_async",
+                "asha_async@example.com",
+                "8",
+                "password123",
+            )
+            user_id = user.id
+            lesson_id = app_module.save_learning_history(
+                user_id,
+                "Science",
+                "NCERT",
+                "Photosynthesis",
+                "Plants make food.",
+                {
+                    "available": True,
+                    "title": "Photosynthesis",
+                    "visualization_type": "process",
+                    "type": "process",
+                },
+                self.questions,
+                student_class="8",
+            )
+            lesson = db.session.get(LearningHistory, lesson_id)
+            payload = app_module.decode_diagram_payload(lesson.diagram_data, lesson.subject, lesson.topic)
+            cache_key = app_module.generated_diagram_cache_key_for_lesson(lesson, payload, "8")
+
+        with patch(
+            "app.generated_diagram_service.get_or_generate_diagram",
+            return_value="https://cdn.example.test/generated.webp",
+        ):
+            app_module.run_generated_diagram_job(lesson_id, user_id, "8")
+
+        state = app_module.generated_diagram_job_state(cache_key)
+        self.assertEqual(state["status"], "ready")
+        self.assertEqual(state["public_url"], "https://cdn.example.test/generated.webp")
+
+    def test_diagram_polling_endpoint_returns_cached_generated_diagram(self):
+        from services import diagram_service
+
+        self.set_async_diagrams_for_test(enabled=True)
+        self.register_user(extra_data={"student_class": "8"})
+        self.login_user()
+        with app_module.app.app_context():
+            user = User.query.filter_by(username="asha").first()
+            lesson_id = app_module.save_learning_history(
+                user.id,
+                "Science",
+                "NCERT",
+                "Photosynthesis",
+                "Plants make food.",
+                {
+                    "available": True,
+                    "title": "Photosynthesis",
+                    "visualization_type": "process",
+                    "type": "process",
+                },
+                self.questions,
+                student_class="8",
+            )
+            lesson = db.session.get(LearningHistory, lesson_id)
+            diagram_payload = app_module.decode_diagram_payload(
+                lesson.diagram_data,
+                lesson.subject,
+                lesson.topic,
+            )
+            cache_key = app_module.generated_diagram_cache_key_for_lesson(
+                lesson,
+                diagram_payload,
+                "8",
+            )
+            db.session.add(
+                DiagramCache(
+                    cache_key=cache_key,
+                    board="CBSE",
+                    student_class="8",
+                    subject="Science",
+                    textbook="NCERT",
+                    chapter="Photosynthesis",
+                    topic="Photosynthesis",
+                    prompt="cached prompt",
+                    image_url="https://cdn.example.test/poll.webp",
+                    storage_path="class_8/science/ncert/photosynthesis/photosynthesis.webp",
+                    model="gemini-3.1-flash-image",
+                    access_count=0,
+                )
+            )
+            db.session.commit()
+
+        response = self.client.get(f"/api/learning-history/{lesson_id}/diagram")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["status"], "ready")
+        self.assertEqual(payload["diagram_view"]["image_url"], "https://cdn.example.test/poll.webp")
+        self.assertEqual(payload["diagram_view"]["provider"], "AI Study Buddy")
+        self.assertFalse(payload["download_url"])
+        with app_module.app.app_context():
+            self.assertEqual(DiagramCache.query.one().access_count, 1)
+
+    def test_diagram_polling_endpoint_reports_failure_with_retry(self):
+        self.set_async_diagrams_for_test(enabled=True, run_inline=True)
+        self.register_user(extra_data={"student_class": "8"})
+        self.login_user()
+        with app_module.app.app_context():
+            user = User.query.filter_by(username="asha").first()
+            lesson_id = app_module.save_learning_history(
+                user.id,
+                "Science",
+                "NCERT",
+                "Photosynthesis",
+                "Plants make food.",
+                {
+                    "available": True,
+                    "title": "Photosynthesis",
+                    "visualization_type": "process",
+                    "type": "process",
+                },
+                self.questions,
+                student_class="8",
+            )
+
+        with patch(
+            "app.generated_diagram_service.get_or_generate_diagram",
+            return_value=None,
+        ):
+            response = self.client.get(f"/api/learning-history/{lesson_id}/diagram")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertEqual(payload["status"], "failed")
+        self.assertIn("could not create the diagram", payload["message"])
+        self.assertIn("retry=1", payload["retry_url"])
 
 
 if __name__ == "__main__":

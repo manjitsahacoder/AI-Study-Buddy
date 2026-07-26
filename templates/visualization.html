@@ -46,9 +46,9 @@
     <div class="diagram-library-toolbar" aria-label="Educational diagram controls">
         <button type="button" class="button-link secondary-link" data-diagram-zoom>Zoom</button>
         <button type="button" class="button-link secondary-link" data-diagram-fullscreen>Fullscreen</button>
-        {% if lesson_id %}
+        {% if lesson_id and not diagram_view.generated %}
         <a class="button-link secondary-link" href="{{ url_for('download_learning_history_diagram', lesson_id=lesson_id) }}">Download PNG</a>
-        {% elif lesson and lesson.id %}
+        {% elif lesson and lesson.id and not diagram_view.generated %}
         <a class="button-link secondary-link" href="{{ url_for('download_learning_history_diagram', lesson_id=lesson.id) }}">Download PNG</a>
         {% endif %}
     </div>
@@ -63,7 +63,7 @@
             <span><strong>License</strong> {{ diagram_view.license or 'Reusable license' }}</span>
         </figcaption>
     </figure>
-    {% set explanation_endpoint = diagram_explanation_url|default('', true) %}
+    {% set explanation_endpoint = '' if diagram_view.generated else diagram_explanation_url|default('', true) %}
     {% set cached_explanation = diagram_explanation|default(none, true) %}
     {% if explanation_endpoint or cached_explanation %}
     <section class="diagram-explanation-panel"

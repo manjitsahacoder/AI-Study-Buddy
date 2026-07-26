@@ -1,6 +1,7 @@
 Flask
 Flask-SQLAlchemy
 google-generativeai
+google-genai
 gunicorn
 Markdown
 Pillow

@@ -72,6 +72,7 @@ from performance_monitor import (
 )
 from models import (
     Chapter,
+    DiagramCache,
     DiagramLibrary,
     DownloadedFile,
     FavouriteNote,
@@ -98,6 +99,7 @@ from textbook_catalog import (
     subject_matches_catalog_subject,
 )
 from diagram_library import diagram_record_to_view, get_or_create_diagram
+from services import diagram_service as generated_diagram_service
 from tutor_repository import (
     get_or_create_tutor_lesson,
     get_recent_tutor_messages,
@@ -133,6 +135,8 @@ genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel("gemini-2.5-flash")
 
 _diagram_hydration_locks = defaultdict(threading.Lock)
+_generated_diagram_jobs = {}
+_generated_diagram_jobs_lock = threading.Lock()
 SMART_SEARCH_CACHE_TTL_SECONDS = 30 * 60
 SMART_SEARCH_GEMINI_TIMEOUT_SECONDS = 8
 SMART_SEARCH_MIN_CONFIDENCE = 0.78
@@ -337,6 +341,7 @@ def initialize_database():
         ensure_learning_history_schema_compatibility()
         ensure_favourite_notes_schema_compatibility()
         ensure_chapter_search_schema_compatibility()
+        ensure_diagram_cache_schema_compatibility()
         ensure_performance_indexes()
         seed_cbse_textbook_catalog(db.session)
         ensure_user_roles()
@@ -1087,6 +1092,23 @@ def ensure_chapter_search_schema_compatibility():
     db.session.commit()
 
 
+def ensure_diagram_cache_schema_compatibility():
+    inspector = inspect(db.engine)
+    if "diagram_cache" not in inspector.get_table_names():
+        DiagramCache.__table__.create(db.engine, checkfirst=True)
+        return
+
+    inspected_columns = {column["name"] for column in inspector.get_columns("diagram_cache")}
+    if "cache_key" in inspected_columns:
+        return
+
+    if db.engine.dialect.name == "sqlite":
+        db.session.execute(text("ALTER TABLE diagram_cache ADD COLUMN cache_key TEXT"))
+    elif db.engine.dialect.name == "postgresql":
+        db.session.execute(text("ALTER TABLE diagram_cache ADD COLUMN IF NOT EXISTS cache_key TEXT"))
+    db.session.commit()
+
+
 def ensure_performance_indexes():
     index_statements = (
         "CREATE INDEX IF NOT EXISTS ix_textbooks_board_subject_class ON textbooks (board, subject, class_level)",
@@ -1102,6 +1124,9 @@ def ensure_performance_indexes():
         "CREATE INDEX IF NOT EXISTS ix_learning_history_user_created_id ON learning_history (user_id, created_at, id)",
         "CREATE INDEX IF NOT EXISTS ix_learning_history_user_subject_topic ON learning_history (user_id, subject, topic)",
         "CREATE INDEX IF NOT EXISTS ix_learning_history_user_class_subject_topic ON learning_history (user_id, student_class, subject, topic)",
+        "CREATE UNIQUE INDEX IF NOT EXISTS ux_diagram_cache_cache_key ON diagram_cache (cache_key)",
+        "CREATE INDEX IF NOT EXISTS ix_diagram_cache_lookup ON diagram_cache (board, student_class, subject, textbook, chapter, topic)",
+        "CREATE INDEX IF NOT EXISTS ix_diagram_cache_last_accessed ON diagram_cache (last_accessed)",
         "CREATE INDEX IF NOT EXISTS ix_diagram_library_verified_subject_topic_used ON diagram_library (verified, subject, topic, last_used, cached_at)",
         "CREATE INDEX IF NOT EXISTS ix_memory_challenges_user_completed_id ON memory_challenges (user_id, completed_at, id)",
         "CREATE INDEX IF NOT EXISTS ix_memory_challenges_user_lesson_difficulty ON memory_challenges (user_id, lesson_id, difficulty)",
@@ -1895,8 +1920,13 @@ def render_cached_lesson_response(lesson, name, student_class):
     diagram_available = diagram_payload.get("available", False)
     diagram_view = None
     diagram_pending_url = ""
-    if diagram_available and not app.config.get("TESTING"):
-        diagram_pending_url = url_for("learning_history_diagram_status", lesson_id=lesson.id)
+    if diagram_available and diagram_async_enabled():
+        diagram_view, diagram_pending_url = prepare_generated_or_pending_diagram(
+            lesson,
+            diagram_payload,
+            student_class,
+            session["user_id"],
+        )
     elif diagram_available:
         diagram_view = lesson_diagram_view(lesson, diagram_payload, student_class)
     questions = decode_json_list(lesson.quiz_questions)
@@ -1917,7 +1947,7 @@ def render_cached_lesson_response(lesson, name, student_class):
         diagram_view=diagram_view,
         diagram_pending_url=diagram_pending_url,
         diagram_explanation=decode_diagram_explanation(lesson.diagram_explanation),
-        diagram_explanation_url=url_for("diagram_explanation", lesson_id=lesson.id),
+        diagram_explanation_url="" if (diagram_view or {}).get("generated") else url_for("diagram_explanation", lesson_id=lesson.id),
         diagram_json=json.dumps(diagram_payload),
         questions=questions,
         lesson_id=lesson.id,
@@ -2384,6 +2414,162 @@ def lesson_diagram_view(lesson, diagram_payload, student_class=""):
         app.logger.warning("diagram_library_lookup_failed topic=%s error=%s", getattr(lesson, "topic", ""), error)
         return None
     return diagram_record_to_view(diagram, diagram_static_url)
+
+
+def generated_diagram_context(lesson, diagram_payload, student_class=""):
+    return {
+        "board": lesson_board_value(lesson),
+        "student_class": student_class or lesson_value(lesson, "student_class"),
+        "subject": lesson_value(lesson, "subject"),
+        "textbook": lesson_value(lesson, "book_name"),
+        "chapter": lesson_value(lesson, "topic"),
+        "topic": diagram_payload.get("title") or lesson_value(lesson, "topic"),
+        "language": diagram_payload.get("language") or diagram_payload.get("label_language") or "English",
+        "diagram_type": (
+            diagram_payload.get("visualization_type")
+            or diagram_payload.get("type")
+            or diagram_payload.get("diagram_type")
+            or ""
+        ),
+    }
+
+
+def generated_diagram_cache_key_for_lesson(lesson, diagram_payload, student_class=""):
+    return generated_diagram_service.build_diagram_cache_key(
+        **generated_diagram_context(lesson, diagram_payload, student_class)
+    )
+
+
+def generated_diagram_view_from_record(diagram):
+    if not diagram:
+        return None
+    return {
+        "image_url": diagram.image_url,
+        "image_path": "",
+        "provider": "AI Study Buddy",
+        "source_url": diagram.image_url,
+        "author": "AI Study Buddy",
+        "license": "Generated educational diagram",
+        "attribution": "AI-generated educational diagram for this lesson.",
+        "storage_path": diagram.storage_path,
+        "generated": True,
+    }
+
+
+def find_generated_diagram_for_lesson(lesson, diagram_payload, student_class="", *, record_access=False):
+    if not diagram_payload.get("available"):
+        return None
+    diagram = generated_diagram_service.find_cached_diagram(
+        **generated_diagram_context(lesson, diagram_payload, student_class)
+    )
+    if diagram and record_access:
+        diagram = generated_diagram_service.record_cached_diagram_access(diagram)
+    return generated_diagram_view_from_record(diagram)
+
+
+def diagram_async_enabled():
+    return app.config.get(
+        "DIAGRAM_GENERATION_ASYNC_ENABLED",
+        not app.config.get("TESTING"),
+    )
+
+
+def generated_diagram_job_state(cache_key):
+    with _generated_diagram_jobs_lock:
+        return dict(_generated_diagram_jobs.get(cache_key) or {})
+
+
+def set_generated_diagram_job_state(cache_key, **state):
+    with _generated_diagram_jobs_lock:
+        current = dict(_generated_diagram_jobs.get(cache_key) or {})
+        current.update(state)
+        current["updated_at"] = datetime.now(timezone.utc).isoformat()
+        _generated_diagram_jobs[cache_key] = current
+        return dict(current)
+
+
+def generated_diagram_status_payload(status, *, message="", public_url="", retry_url=""):
+    payload = {"status": status}
+    if message:
+        payload["message"] = message
+    if public_url:
+        payload["public_url"] = public_url
+    if retry_url:
+        payload["retry_url"] = retry_url
+    return payload
+
+
+def run_generated_diagram_job(lesson_id, user_id, student_class):
+    with app.app_context():
+        lesson = get_learning_history_entry(lesson_id, user_id)
+        if not lesson:
+            return
+        diagram_payload = decode_diagram_payload(lesson.diagram_data, lesson.subject, lesson.topic)
+        cache_key = generated_diagram_cache_key_for_lesson(lesson, diagram_payload, student_class)
+        set_generated_diagram_job_state(cache_key, status="generating", lesson_id=lesson_id)
+        public_url = generated_diagram_service.get_or_generate_diagram(
+            **generated_diagram_context(lesson, diagram_payload, student_class)
+        )
+        if public_url:
+            set_generated_diagram_job_state(
+                cache_key,
+                status="ready",
+                lesson_id=lesson_id,
+                public_url=public_url,
+            )
+        else:
+            set_generated_diagram_job_state(
+                cache_key,
+                status="failed",
+                lesson_id=lesson_id,
+                message="We could not create the diagram right now. You can retry in a moment.",
+            )
+        db.session.remove()
+
+
+def start_generated_diagram_background(lesson, diagram_payload, student_class, user_id, *, force=False):
+    if not diagram_async_enabled() or not diagram_payload.get("available"):
+        return False
+    cached_view = find_generated_diagram_for_lesson(lesson, diagram_payload, student_class)
+    if cached_view and not force:
+        return False
+
+    cache_key = generated_diagram_cache_key_for_lesson(lesson, diagram_payload, student_class)
+    with _generated_diagram_jobs_lock:
+        current = _generated_diagram_jobs.get(cache_key) or {}
+        if not force and current.get("status") in {"queued", "generating"}:
+            return False
+        _generated_diagram_jobs[cache_key] = {
+            "status": "queued",
+            "lesson_id": lesson.id,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    if app.config.get("DIAGRAM_GENERATION_RUN_INLINE"):
+        run_generated_diagram_job(lesson.id, user_id, student_class)
+        return True
+
+    worker = threading.Thread(
+        target=run_generated_diagram_job,
+        args=(lesson.id, user_id, student_class),
+        daemon=True,
+    )
+    worker.start()
+    return True
+
+
+def prepare_generated_or_pending_diagram(lesson, diagram_payload, student_class, user_id):
+    diagram_view = find_generated_diagram_for_lesson(
+        lesson,
+        diagram_payload,
+        student_class,
+        record_access=True,
+    )
+    if diagram_view:
+        return diagram_view, ""
+    if start_generated_diagram_background(lesson, diagram_payload, student_class, user_id):
+        return None, url_for("learning_history_diagram_status", lesson_id=lesson.id)
+    return None, url_for("learning_history_diagram_status", lesson_id=lesson.id)
 
 
 DIAGRAM_EXPLANATION_DEFAULTS = {
@@ -10160,7 +10346,7 @@ def revision(lesson_id):
     if not lesson:
         abort(404)
 
-    student_class = preferred_class_for_user(current_user())
+    student_class = lesson.student_class or preferred_class_for_user(current_user())
     class_error = validate_supported_class(student_class)
     if class_error:
         abort(400, description=class_error)
@@ -10554,6 +10740,96 @@ def learning_history_diagram_status(lesson_id):
                 "status": "not_required",
                 "diagram_available": False,
                 "diagram_payload": diagram_payload,
+            }
+        )
+
+    generated_view = find_generated_diagram_for_lesson(
+        lesson,
+        diagram_payload,
+        student_class,
+        record_access=True,
+    )
+    if generated_view:
+        account = current_user()
+        return jsonify(
+            {
+                "status": "ready",
+                "diagram_available": True,
+                "diagram_payload": diagram_payload,
+                "diagram_view": generated_view,
+                "download_url": "",
+                "explanation_url": "",
+                "lesson": {
+                    "name": account["full_name"] if account else "Student",
+                    "student_class": preferred_class_for_user(account),
+                    "subject": lesson.subject,
+                    "book_name": lesson.book_name or "",
+                },
+            }
+        )
+
+    if diagram_async_enabled():
+        cache_key = generated_diagram_cache_key_for_lesson(lesson, diagram_payload, student_class)
+        state = generated_diagram_job_state(cache_key)
+        retry_requested = request.args.get("retry") in {"1", "true", "yes"}
+        if retry_requested or not state:
+            start_generated_diagram_background(
+                lesson,
+                diagram_payload,
+                student_class,
+                session["user_id"],
+                force=retry_requested,
+            )
+            state = generated_diagram_job_state(cache_key)
+
+        if state.get("status") in {"queued", "generating"}:
+            return jsonify(
+                {
+                    "status": "pending",
+                    "diagram_available": True,
+                    "diagram_payload": diagram_payload,
+                    "message": "Creating your educational diagram...",
+                }
+            )
+
+        if state.get("status") == "failed":
+            return jsonify(
+                {
+                    "status": "failed",
+                    "diagram_available": True,
+                    "diagram_payload": diagram_payload,
+                    "message": state.get("message")
+                    or "We could not create the diagram right now. You can retry in a moment.",
+                    "retry_url": url_for("learning_history_diagram_status", lesson_id=lesson.id, retry=1),
+                }
+            )
+
+        if state.get("status") == "ready" and state.get("public_url"):
+            return jsonify(
+                {
+                    "status": "ready",
+                    "diagram_available": True,
+                    "diagram_payload": diagram_payload,
+                    "diagram_view": {
+                        "image_url": state["public_url"],
+                        "provider": "AI Study Buddy",
+                        "source_url": state["public_url"],
+                        "author": "AI Study Buddy",
+                        "license": "Generated educational diagram",
+                        "attribution": "AI-generated educational diagram for this lesson.",
+                        "generated": True,
+                    },
+                    "download_url": "",
+                    "explanation_url": "",
+                }
+            )
+
+        return jsonify(
+            {
+                "status": "pending",
+                "diagram_available": True,
+                "diagram_payload": diagram_payload,
+                "message": "Creating your educational diagram...",
             }
         )
 
@@ -11418,8 +11694,13 @@ Rules:
                 notes,
             )
             saved_lesson = get_learning_history_entry(lesson_id, session["user_id"])
-        if saved_lesson and diagram_available and not app.config.get("TESTING"):
-            diagram_pending_url = url_for("learning_history_diagram_status", lesson_id=lesson_id)
+        if saved_lesson and diagram_available and diagram_async_enabled():
+            diagram_view, diagram_pending_url = prepare_generated_or_pending_diagram(
+                saved_lesson,
+                diagram_payload,
+                student_class,
+                session["user_id"],
+            )
         elif saved_lesson:
             diagram_view = lesson_diagram_view(saved_lesson, diagram_payload, student_class)
     elif diagram_available:
@@ -11453,7 +11734,11 @@ Rules:
         diagram_view=diagram_view,
         diagram_pending_url=diagram_pending_url,
         diagram_explanation=None,
-        diagram_explanation_url=url_for("diagram_explanation", lesson_id=lesson_id) if lesson_id else "",
+        diagram_explanation_url=(
+            ""
+            if (diagram_view or {}).get("generated")
+            else (url_for("diagram_explanation", lesson_id=lesson_id) if lesson_id else "")
+        ),
         diagram_json=json.dumps(diagram_payload),
         questions=questions,
         lesson_id=lesson_id,
