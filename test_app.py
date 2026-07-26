@@ -1246,6 +1246,10 @@ Q5. What gas do plants release?
             self.assertEqual(lesson.subject, "Biology")
             self.assertEqual(lesson.book_name, "Science Textbook")
             self.assertEqual(lesson.topic, "Photosynthesis")
+            lesson_id = lesson.id
+        page = response.get_data(as_text=True)
+        self.assertIn(f'href="/download_notes_pdf/{lesson_id}"', page)
+        self.assertNotIn('action="/download_notes"', page)
         log_output = "\n".join(logs.output)
         self.assertIn("event=lesson_cache_miss", log_output)
         self.assertIn("event=lesson_saved", log_output)
@@ -1708,9 +1712,10 @@ Q5. What is question five?
         self.assertNotIn('name="diagram_json"', page)
         self.assertNotIn("Download Diagram", page)
         self.assertNotIn("Full Screen", page)
-        self.assertIn('action="/download_notes"', page)
-        self.assertIn('name="notes"', page)
-        self.assertIn('name="diagram_image"', page)
+        self.assertNotIn('action="/download_notes"', page)
+        self.assertNotIn('name="notes"', page)
+        self.assertNotIn('name="diagram_image"', page)
+        self.assertIn("Sign in to save this lesson and download a clean PDF copy.", page)
         self.assertIn('action="/quiz"', page)
         self.assertNotIn('name="answer1"', page)
         for index, question in enumerate(self.questions, start=1):
@@ -2000,39 +2005,66 @@ The atmosphere is a layer of gases around Earth.
                 self.assertIn("For Class 10, include more application-based", prompt)
                 self.assertIn("Avoid repeating the same question format", prompt)
 
-    def test_download_notes_returns_all_notes_as_attachment(self):
-        response = self.client.post(
-            "/download_notes",
-            data={
-                "name": "Asha",
-                "student_class": "8",
-                "board": "CBSE",
-                "subject": "Biology",
-                "book_name": "NCERT",
-                "topic": "Plant Life",
-                "notes": "# Plant Notes\nPlants use sunlight.\n\n## Quick Revision\n- Plants need light.",
-                "diagram_image": "data:image/png;base64,abc",
-            },
-        )
+    def test_download_notes_pdf_returns_saved_lesson_pdf_without_gemini_call(self):
+        from io import BytesIO
+
+        from pypdf import PdfReader
+
+        self.register_user()
+        self.login_user()
+        with app_module.app.app_context():
+            user = User.query.filter_by(username="asha").one()
+            lesson_id = app_module.save_learning_history(
+                user.id,
+                "Biology",
+                "NCERT",
+                "Plant Life",
+                "# Plant Notes\nPlants use sunlight.\n\n## Quick Revision\n- Plants need light.",
+                {"available": False, "title": "Plant Life"},
+                ["What do plants need?"],
+                board="CBSE",
+                student_class="8",
+            )
+
+        with patch.object(
+            app_module.model,
+            "generate_content",
+            side_effect=AssertionError("Gemini should not be called for saved PDF notes."),
+        ) as generate_content:
+            response = self.client.get(f"/download_notes_pdf/{lesson_id}")
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.mimetype, "text/html")
+        self.assertEqual(response.mimetype, "application/pdf")
         self.assertIn(
-            "attachment; filename=Plant_Life_notes.html",
+            "attachment; filename=Plant_Life_notes.pdf",
             response.headers["Content-Disposition"],
         )
-        notes = response.get_data(as_text=True)
-        self.assertIn("Student: Asha", notes)
-        self.assertIn("Class: 8", notes)
-        self.assertIn("Board: CBSE", notes)
-        self.assertIn("Subject: Biology", notes)
-        self.assertIn("Textbook: NCERT", notes)
-        self.assertIn("Chapter: Plant Life", notes)
-        self.assertIn("<h1>Plant Notes</h1>", notes)
-        self.assertIn("<h2>Quick Revision</h2>", notes)
-        self.assertIn("<li>Plants need light.</li>", notes)
-        self.assertIn("<h2>Diagram</h2>", notes)
-        self.assertIn('src="data:image/png;base64,abc"', notes)
+        generate_content.assert_not_called()
+        pdf_text = "\n".join(
+            page.extract_text() or ""
+            for page in PdfReader(BytesIO(response.data)).pages
+        )
+        normalized_pdf_text = " ".join(pdf_text.split())
+        self.assertIn("AI Study Buddy Notes", normalized_pdf_text)
+        self.assertIn("Student: Asha Student", normalized_pdf_text)
+        self.assertIn("Class: 8", normalized_pdf_text)
+        self.assertIn("Subject: Biology", normalized_pdf_text)
+        self.assertIn("Topic: Plant Life", normalized_pdf_text)
+        self.assertIn("Lesson Explanation", normalized_pdf_text)
+        self.assertIn("Plant Notes", normalized_pdf_text)
+        self.assertIn("Plants use sunlight.", normalized_pdf_text)
+        self.assertIn("Quick Revision", normalized_pdf_text)
+        self.assertIn("Plants need light.", normalized_pdf_text)
+        self.assertIn("Quiz Questions", normalized_pdf_text)
+        self.assertIn("Q1. What do plants need?", normalized_pdf_text)
+
+    def test_download_notes_pdf_missing_lesson_returns_404(self):
+        self.register_user()
+        self.login_user()
+
+        response = self.client.get("/download_notes_pdf/999")
+
+        self.assertEqual(response.status_code, 404)
 
     def test_legacy_download_diagram_route_is_removed(self):
         diagram_payload = app_module.build_diagram_payload(
@@ -3333,14 +3365,14 @@ Q5. What is question five?
         recent_messages.assert_not_called()
         tutor_messages.assert_not_called()
 
-    def test_download_notes_rejects_missing_notes(self):
+    def test_legacy_download_notes_rejects_missing_saved_lesson(self):
         response = self.client.post(
             "/download_notes",
             data={"name": "Asha", "topic": "Plants"},
         )
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn("Topic and notes are required", response.get_data(as_text=True))
+        self.assertIn("Saved lesson is required for PDF notes download", response.get_data(as_text=True))
 
     def test_quiz_displays_all_questions_and_answer_fields(self):
         response = self.client.post("/quiz", data=self.quiz_payload())

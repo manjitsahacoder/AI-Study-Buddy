@@ -7576,6 +7576,159 @@ def report_text_to_flowables(report_text, styles):
     return flowables
 
 
+def split_notes_pdf_sections(notes):
+    sections = {
+        "explanation": [],
+        "quick_revision": [],
+        "questions": [],
+    }
+    current_section = "explanation"
+    ignored_section_titles = {
+        "diagram data",
+        "diagram json",
+        "visualization decision json",
+        "visualization json",
+    }
+
+    for raw_line in (notes or "").splitlines():
+        line = raw_line.strip()
+        heading_match = re.match(r"^#{1,6}\s+(.+)$", line)
+        if heading_match:
+            heading = heading_match.group(1).strip()
+            normalized_heading = re.sub(r"[^a-z0-9 ]+", "", heading.lower()).strip()
+            if normalized_heading in {"quick revision", "revision", "quick recap"}:
+                current_section = "quick_revision"
+                continue
+            if normalized_heading in {"questions", "quiz questions", "quiz"}:
+                current_section = "questions"
+                continue
+            if normalized_heading in ignored_section_titles:
+                current_section = "ignore"
+                continue
+
+        if current_section in sections:
+            sections[current_section].append(raw_line)
+
+    return {
+        key: "\n".join(value).strip()
+        for key, value in sections.items()
+    }
+
+
+def create_study_notes_pdf(lesson, questions, student_name="Student", student_class=None):
+    with performance_span("PDF generation", detail="study_notes"):
+        return _create_study_notes_pdf(lesson, questions, student_name, student_class)
+
+
+def _create_study_notes_pdf(lesson, questions, student_name="Student", student_class=None):
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=letter,
+        rightMargin=0.62 * inch,
+        leftMargin=0.62 * inch,
+        topMargin=0.66 * inch,
+        bottomMargin=0.66 * inch,
+        pageCompression=0,
+    )
+    base_styles = getSampleStyleSheet()
+    styles = {
+        "Title": ParagraphStyle(
+            "StudyNotesTitle",
+            parent=base_styles["Title"],
+            fontName="Helvetica-Bold",
+            fontSize=24,
+            leading=29,
+            textColor=colors.HexColor("#172033"),
+            alignment=TA_CENTER,
+            spaceAfter=8,
+        ),
+        "Subtitle": ParagraphStyle(
+            "StudyNotesSubtitle",
+            parent=base_styles["Normal"],
+            fontName="Helvetica",
+            fontSize=10,
+            leading=14,
+            textColor=colors.HexColor("#667085"),
+            alignment=TA_CENTER,
+            spaceAfter=18,
+        ),
+        "SectionHeading": ParagraphStyle(
+            "StudyNotesSectionHeading",
+            parent=base_styles["Heading2"],
+            fontName="Helvetica-Bold",
+            fontSize=14,
+            leading=18,
+            textColor=colors.HexColor("#3157d5"),
+            spaceBefore=10,
+            spaceAfter=6,
+        ),
+        "ReportBody": ParagraphStyle(
+            "StudyNotesBody",
+            parent=base_styles["BodyText"],
+            fontName="Helvetica",
+            fontSize=10.5,
+            leading=15.5,
+            textColor=colors.HexColor("#2d3748"),
+            spaceAfter=5,
+        ),
+        "BulletLine": ParagraphStyle(
+            "StudyNotesBullet",
+            parent=base_styles["BodyText"],
+            fontName="Helvetica",
+            fontSize=10.5,
+            leading=15.5,
+            leftIndent=14,
+            firstLineIndent=-2,
+            textColor=colors.HexColor("#2d3748"),
+            spaceAfter=5,
+        ),
+    }
+    sections = split_notes_pdf_sections(lesson.notes)
+    lesson_class = student_class or lesson.student_class or "N/A"
+    saved_questions = [str(question).strip() for question in (questions or []) if str(question).strip()]
+    embedded_questions = [
+        re.sub(r"^(?:Q\s*)?\d+[\).:-]?\s*", "", line.strip(), flags=re.IGNORECASE)
+        for line in sections["questions"].splitlines()
+        if line.strip()
+    ]
+    pdf_questions = saved_questions or embedded_questions
+
+    story = [
+        Paragraph("AI Study Buddy Notes", styles["Title"]),
+        Paragraph(
+            (
+                f"Student: {escape(student_name or 'Student')} &nbsp;&nbsp; | &nbsp;&nbsp; "
+                f"Class: {escape(lesson_class)} &nbsp;&nbsp; | &nbsp;&nbsp; "
+                f"Board: {escape(lesson_board_value(lesson))} &nbsp;&nbsp; | &nbsp;&nbsp; "
+                f"Subject: {escape(lesson.subject or 'N/A')} &nbsp;&nbsp; | &nbsp;&nbsp; "
+                f"Topic: {escape(lesson.topic or 'N/A')}"
+            ),
+            styles["Subtitle"],
+        ),
+        Paragraph("Lesson Explanation", styles["SectionHeading"]),
+    ]
+    explanation_text = sections["explanation"] or lesson.notes or "No lesson explanation was saved."
+    story.extend(report_text_to_flowables(explanation_text, styles))
+
+    story.append(Spacer(1, 10))
+    story.append(Paragraph("Quick Revision", styles["SectionHeading"]))
+    if sections["quick_revision"]:
+        story.extend(report_text_to_flowables(sections["quick_revision"], styles))
+    else:
+        story.append(Paragraph("No quick revision points were saved for this lesson.", styles["ReportBody"]))
+
+    if pdf_questions:
+        story.append(Spacer(1, 10))
+        story.append(Paragraph("Quiz Questions", styles["SectionHeading"]))
+        for index, question in enumerate(pdf_questions, start=1):
+            story.append(Paragraph(f"Q{index}. {escape(question)}", styles["ReportBody"]))
+
+    doc.build(story, onFirstPage=add_pdf_background, onLaterPages=add_pdf_background)
+    buffer.seek(0)
+    return buffer
+
+
 def evaluation_to_pdf_flowables(evaluation, styles):
     status_colors = {
         "correct": ("#e7f7ef", "#2f9f67"),
@@ -11315,109 +11468,40 @@ def download_diagram():
     abort(410, description="SVG diagram downloads have been replaced by the Diagram Library image download.")
 
 
+@app.route("/download_notes_pdf/<int:lesson_id>")
+@login_required
+def download_notes_pdf(lesson_id):
+    lesson = get_learning_history_entry(lesson_id, session["user_id"])
+    if not lesson:
+        abort(404)
+
+    account = current_user()
+    pdf_file = create_study_notes_pdf(
+        lesson,
+        decode_json_list(lesson.quiz_questions),
+        student_name=account["full_name"] if account else "Student",
+        student_class=lesson.student_class or preferred_class_for_user(account),
+    )
+    save_downloaded_file(
+        session["user_id"],
+        "notes",
+        lesson.subject,
+        lesson.topic,
+    )
+    return send_file(
+        pdf_file,
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=safe_notes_filename(lesson.topic, extension="pdf"),
+    )
+
+
 @app.route("/download_notes", methods=["POST"])
 def download_notes():
-    name = request.form.get("name", "").strip()
-    student_class = request.form.get("student_class", "").strip()
-    board = request.form.get("board", DEFAULT_BOARD).strip() or DEFAULT_BOARD
-    subject = request.form.get("subject", "").strip()
-    book_name = request.form.get("book_name", "").strip()
-    topic = request.form.get("topic", "").strip()
-    notes = request.form.get("notes", "").strip()
-    diagram_image = request.form.get("diagram_image", "").strip()
-
-    if not topic or not notes:
-        abort(400, description="Topic and notes are required.")
-    class_error = validate_supported_class(student_class, required=False)
-    if class_error:
-        abort(400, description=class_error)
-
-    notes_html = markdown.markdown(notes)
-    diagram_html = ""
-    if diagram_image.startswith(("data:image/png;base64,", "data:image/svg+xml")):
-        diagram_html = f"""
-        <section class="diagram">
-            <h2>Diagram</h2>
-            <img src="{diagram_image}" alt="{escape(topic)} diagram">
-        </section>
-"""
-    notes_document = f"""<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <title>{escape(topic)} - AI Study Buddy Notes</title>
-    <style>
-        body {{
-            margin: 0;
-            padding: 32px;
-            font-family: 'Segoe UI', Arial, sans-serif;
-            color: #333;
-            background: #f6f7fb;
-        }}
-        .notes-page {{
-            max-width: 900px;
-            margin: 0 auto;
-            background: white;
-            padding: 36px;
-            border-radius: 16px;
-            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
-        }}
-        h1, h2, h3 {{
-            color: #4f46e5;
-        }}
-        .student {{
-            color: #555;
-            font-size: 18px;
-            margin-bottom: 24px;
-        }}
-        .content {{
-            font-size: 20px;
-            line-height: 1.8;
-        }}
-        li {{
-            margin: 10px 0;
-        }}
-        .diagram {{
-            margin: 30px 0;
-        }}
-        .diagram img {{
-            display: block;
-            width: 100%;
-            max-width: 900px;
-            height: auto;
-            border-radius: 16px;
-            border: 1px solid #e5e7eb;
-        }}
-    </style>
-</head>
-<body>
-    <main class="notes-page">
-        <h1>{escape(topic)}</h1>
-        <div class="student">Student: {escape(name or 'Student')} | Class: {escape(student_class or 'N/A')} | Board: {escape(board)} | Subject: {escape(subject or 'N/A')} | Textbook: {escape(book_name or 'N/A')} | Chapter: {escape(topic)}</div>
-        <div class="content">
-            {notes_html}
-        </div>
-        {diagram_html}
-    </main>
-</body>
-</html>
-"""
-    notes_file = BytesIO(notes_document.encode("utf-8"))
-
-    if session.get("user_id"):
-        save_downloaded_file(
-            session["user_id"],
-            "notes",
-            subject,
-            topic,
-        )
-
-    return send_file(
-        notes_file,
-        mimetype="text/html",
-        as_attachment=True,
-        download_name=safe_notes_filename(topic),
-    )
+    lesson_id = request.form.get("lesson_id", "").strip()
+    if lesson_id.isdigit() and session.get("user_id"):
+        return redirect(url_for("download_notes_pdf", lesson_id=int(lesson_id)))
+    abort(400, description="Saved lesson is required for PDF notes download.")
 
 
 @app.route("/quiz", methods=["POST"])

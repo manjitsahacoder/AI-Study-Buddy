@@ -203,24 +203,26 @@
                 </button>
             </form>
 
-            <form action="{{ url_for('download_notes') }}" method="POST" class="learning-action-card learning-card-download">
-                <input type="hidden" name="name" value="{{ name }}">
-                <input type="hidden" name="student_class" value="{{ student_class }}">
-                <input type="hidden" name="board" value="{{ board|default('CBSE', true) }}">
-                <input type="hidden" name="subject" value="{{ subject }}">
-                <input type="hidden" name="book_name" value="{{ book_name }}">
-                <input type="hidden" name="topic" value="{{ topic }}">
-                <textarea name="notes" hidden>{{ notes }}</textarea>
-                <textarea name="diagram_image" hidden>{{ diagram_image }}</textarea>
-                <button type="submit" class="learning-card-plain-button">
+            {% if lesson_id %}
+            <a href="{{ url_for('download_notes_pdf', lesson_id=lesson_id) }}" class="learning-action-card learning-card-download">
+                <span class="learning-card-plain-button">
                     <span class="learning-card-icon" aria-hidden="true">&#128196;</span>
                     <span class="learning-card-copy">
                         <strong>Download Notes</strong>
-                        <span>Save a clean copy of the lesson for offline study and revision.</span>
+                        <span>Save a clean PDF copy of the lesson for offline study and revision.</span>
                     </span>
                     <span class="learning-card-arrow" aria-hidden="true">&rarr;</span>
-                </button>
-            </form>
+                </span>
+            </a>
+            {% else %}
+            <article class="learning-action-card learning-card-download">
+                <span class="learning-card-icon" aria-hidden="true">&#128196;</span>
+                <div class="learning-card-copy">
+                    <strong>Download Notes</strong>
+                    <span>Sign in to save this lesson and download a clean PDF copy.</span>
+                </div>
+            </article>
+            {% endif %}
 
             <article class="learning-action-card learning-card-memory">
                 <span class="learning-card-icon" aria-hidden="true">&#129504;</span>
