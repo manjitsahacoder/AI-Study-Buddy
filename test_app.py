@@ -1191,6 +1191,51 @@ Plants make food using sunlight.
         self.assertEqual(saved_questions[2], "What does the lesson explain about sunlight?")
         self.assertEqual(len(saved_questions), 5)
 
+    @patch.object(app_module, "local_textbook_context_section", return_value="")
+    @patch.object(app_module.model, "generate_content")
+    def test_learn_preserves_truncated_lesson_and_logs_incomplete_content(
+        self,
+        generate_content,
+        local_textbook_context_section,
+    ):
+        generate_content.return_value = MockResponse(
+            """# Atmosphere and Climate
+The atmosphere is a layer of gases around Earth.
+
+## Quick Revision
+- Weather changes often.
+
+## Weather vs Climate
+"""
+        )
+
+        with self.assertLogs(app_module.app.logger.name, level="INFO") as logs:
+            response = self.client.post(
+                "/learn",
+                data={
+                    "name": "Asha",
+                    "student_class": "9",
+                    "subject": "Social Science",
+                    "book_name": "Understanding Society: India and Beyond",
+                    "topic": "Atmosphere and Climate",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        self.assertIn("Atmosphere and Climate", page)
+        self.assertIn("Weather vs Climate", page)
+        self.assertIn(
+            "In your own words, explain the main idea of Atmosphere and Climate from the lesson.",
+            page,
+        )
+        self.assertEqual(generate_content.call_count, 1)
+        log_output = "\n".join(logs.output)
+        self.assertIn("event=lesson_content_incomplete", log_output)
+        self.assertIn("ends_with_heading:Weather vs Climate", log_output)
+        self.assertIn("missing_sections=", log_output)
+        self.assertIn("source=local_fallback", log_output)
+
     @patch.object(app_module.model, "generate_content")
     def test_learn_continues_when_textbook_pdf_extraction_fails(self, generate_content):
         generate_content.return_value = MockResponse(
@@ -1642,6 +1687,53 @@ Plants make food using sunlight.
         self.assertEqual(raw_decision["visualization_type"], "biology_process")
         self.assertEqual(raw_diagram["template"], "photosynthesis")
         self.assertEqual(questions, [])
+
+    def test_lesson_completion_issues_accepts_complete_lesson(self):
+        response_text = """# Photosynthesis
+Plants make food using sunlight.
+
+## Quick Revision
+- Leaves use sunlight.
+
+## Visualization Decision JSON
+{"visualization_required": false, "reason": "Text lesson."}
+
+## Diagram JSON
+{"template":"generic","type":"none"}
+
+## Questions
+Q1. What do plants need?
+
+Q2. Why is sunlight useful?
+
+Q3. Name one plant part.
+
+Q4. What do leaves do?
+
+Q5. Write one key point.
+"""
+        _, _, _, questions = app_module.split_learning_content(response_text)
+        issues = app_module.lesson_completion_issues(response_text, questions)
+
+        self.assertFalse(issues["incomplete"])
+        self.assertEqual(issues["missing_sections"], [])
+        self.assertEqual(issues["reasons"], [])
+
+    def test_lesson_completion_issues_detects_trailing_heading_and_missing_quiz(self):
+        response_text = """# Atmosphere and Climate
+The atmosphere is a layer of gases around Earth.
+
+## Quick Revision
+- Weather changes often.
+
+## Weather vs Climate
+"""
+        _, _, _, questions = app_module.split_learning_content(response_text)
+        issues = app_module.lesson_completion_issues(response_text, questions)
+
+        self.assertTrue(issues["incomplete"])
+        self.assertIn("questions", issues["missing_sections"])
+        self.assertIn("ends_with_heading:Weather vs Climate", issues["reasons"])
 
     def test_split_learning_content_keeps_existing_subject_quizzes_unchanged(self):
         cases = {
@@ -3347,6 +3439,12 @@ Grade: A
         self.assertIn("event.stopPropagation();", auth_nav)
 
         css = Path("static/style.css").read_text(encoding="utf-8")
+        self.assertIn("position: fixed;", css)
+        self.assertIn("top: 0;", css)
+        self.assertIn("right: 0;", css)
+        self.assertIn("bottom: 0;", css)
+        self.assertIn("left: 0;", css)
+        self.assertIn("min-height: 100dvh;", css)
         self.assertIn("z-index: 10000;", css)
         self.assertIn(".page-transition-overlay[hidden]", css)
         self.assertIn("display: none;", css)
@@ -3354,6 +3452,12 @@ Grade: A
         self.assertIn("opacity: 1;", css)
         self.assertIn("pointer-events: auto;", css)
         self.assertIn(".page-transition-active body", css)
+        self.assertIn("#loader", css)
+
+        self.assertIn("ensurePageTransitionOverlayViewport", script)
+        self.assertIn("overlay.parentElement !== document.body", script)
+        self.assertIn("document.body.appendChild(overlay)", script)
+        self.assertIn("ensurePageTransitionOverlayViewport();", script)
 
     def test_full_page_templates_include_transition_overlay_runtime(self):
         missing_overlay = []

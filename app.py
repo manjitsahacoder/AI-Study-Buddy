@@ -419,7 +419,7 @@ LEARN_MAX_TEXTBOOK_CONTEXT_CHARS = int(os.environ.get("LEARN_MAX_TEXTBOOK_CONTEX
 LEARN_MAX_PDF_TEXT_CHARS = int(os.environ.get("LEARN_MAX_PDF_TEXT_CHARS", "45000"))
 LEARN_MAX_PROMPT_CHARS = int(os.environ.get("LEARN_MAX_PROMPT_CHARS", "12000"))
 LEARN_MAX_RESPONSE_CHARS = int(os.environ.get("LEARN_MAX_RESPONSE_CHARS", "55000"))
-LEARN_MAX_OUTPUT_TOKENS = int(os.environ.get("LEARN_MAX_OUTPUT_TOKENS", "4500"))
+LEARN_MAX_OUTPUT_TOKENS = int(os.environ.get("LEARN_MAX_OUTPUT_TOKENS", "7000"))
 LEARN_GEMINI_TIMEOUT_SECONDS = int(os.environ.get("LEARN_GEMINI_TIMEOUT_SECONDS", "45"))
 GEMINI_REQUEST_TIMEOUT_SECONDS = float(os.environ.get("GEMINI_REQUEST_TIMEOUT_SECONDS", "55"))
 LEARN_PDF_EXTRACTION_TIMEOUT_SECONDS = float(os.environ.get("LEARN_PDF_EXTRACTION_TIMEOUT_SECONDS", "10"))
@@ -942,6 +942,10 @@ LEARNING_HISTORY_VISUALIZATION_COLUMNS = {
         "sqlite": "TEXT NOT NULL DEFAULT 'CBSE'",
         "postgresql": "TEXT NOT NULL DEFAULT 'CBSE'",
     },
+    "student_class": {
+        "sqlite": "TEXT",
+        "postgresql": "TEXT",
+    },
     "textbook_id": {
         "sqlite": "INTEGER",
         "postgresql": "INTEGER",
@@ -1097,6 +1101,7 @@ def ensure_performance_indexes():
         "CREATE INDEX IF NOT EXISTS ix_downloaded_files_user_topic ON downloaded_files (user_id, topic)",
         "CREATE INDEX IF NOT EXISTS ix_learning_history_user_created_id ON learning_history (user_id, created_at, id)",
         "CREATE INDEX IF NOT EXISTS ix_learning_history_user_subject_topic ON learning_history (user_id, subject, topic)",
+        "CREATE INDEX IF NOT EXISTS ix_learning_history_user_class_subject_topic ON learning_history (user_id, student_class, subject, topic)",
         "CREATE INDEX IF NOT EXISTS ix_diagram_library_verified_subject_topic_used ON diagram_library (verified, subject, topic, last_used, cached_at)",
         "CREATE INDEX IF NOT EXISTS ix_memory_challenges_user_completed_id ON memory_challenges (user_id, completed_at, id)",
         "CREATE INDEX IF NOT EXISTS ix_memory_challenges_user_lesson_difficulty ON memory_challenges (user_id, lesson_id, difficulty)",
@@ -1785,17 +1790,30 @@ def save_learning_history(
     board=DEFAULT_BOARD,
     textbook_id=None,
     chapter_id=None,
+    student_class=None,
 ):
     board = (board or DEFAULT_BOARD).strip() or DEFAULT_BOARD
+    student_class = (student_class or "").strip() or None
+    subject = (subject or "").strip()
+    book_name = (book_name or "").strip()
+    topic = (topic or "").strip()
     duplicate_cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
-    duplicate = LearningHistory.query.filter(
+    duplicate_query = LearningHistory.query.filter(
         LearningHistory.user_id == user_id,
         func.lower(func.coalesce(LearningHistory.board, DEFAULT_BOARD)) == board.lower(),
         func.lower(LearningHistory.subject) == subject.lower(),
-        func.lower(func.coalesce(LearningHistory.book_name, "")) == (book_name or "").lower(),
+        func.lower(func.coalesce(LearningHistory.book_name, "")) == book_name.lower(),
         func.lower(LearningHistory.topic) == topic.lower(),
         LearningHistory.created_at >= duplicate_cutoff,
-    ).first()
+    )
+    if student_class:
+        duplicate_query = duplicate_query.filter(LearningHistory.student_class == student_class)
+    if textbook_id is not None or chapter_id is not None:
+        duplicate_query = duplicate_query.filter(
+            LearningHistory.textbook_id == textbook_id,
+            LearningHistory.chapter_id == chapter_id,
+        )
+    duplicate = duplicate_query.first()
     if duplicate:
         return duplicate.id
 
@@ -1812,6 +1830,7 @@ def save_learning_history(
     lesson = LearningHistory(
         user_id=user_id,
         board=board,
+        student_class=student_class,
         subject=subject,
         textbook_id=textbook_id,
         chapter_id=chapter_id,
@@ -1827,6 +1846,85 @@ def save_learning_history(
     db.session.add(lesson)
     db.session.commit()
     return lesson.id
+
+
+def find_reusable_lesson(
+    user_id,
+    student_class,
+    board,
+    subject,
+    book_name,
+    topic,
+    textbook_id=None,
+    chapter_id=None,
+):
+    if not user_id:
+        return None
+
+    board = (board or DEFAULT_BOARD).strip() or DEFAULT_BOARD
+    student_class = (student_class or "").strip()
+    subject = (subject or "").strip()
+    book_name = (book_name or "").strip()
+    topic = (topic or "").strip()
+    if not student_class or not subject or not topic:
+        return None
+
+    query = LearningHistory.query.filter(
+        LearningHistory.user_id == user_id,
+        func.lower(func.coalesce(LearningHistory.board, DEFAULT_BOARD)) == board.lower(),
+        LearningHistory.student_class == student_class,
+        func.lower(LearningHistory.subject) == subject.lower(),
+        func.lower(func.coalesce(LearningHistory.book_name, "")) == book_name.lower(),
+        func.lower(LearningHistory.topic) == topic.lower(),
+    )
+    if textbook_id is not None or chapter_id is not None:
+        query = query.filter(
+            LearningHistory.textbook_id == textbook_id,
+            LearningHistory.chapter_id == chapter_id,
+        )
+    else:
+        query = query.filter(
+            LearningHistory.textbook_id.is_(None),
+            LearningHistory.chapter_id.is_(None),
+        )
+    return query.order_by(LearningHistory.created_at.desc(), LearningHistory.id.desc()).first()
+
+
+def render_cached_lesson_response(lesson, name, student_class):
+    diagram_payload = decode_diagram_payload(lesson.diagram_data, lesson.subject, lesson.topic)
+    diagram_available = diagram_payload.get("available", False)
+    diagram_view = None
+    diagram_pending_url = ""
+    if diagram_available and not app.config.get("TESTING"):
+        diagram_pending_url = url_for("learning_history_diagram_status", lesson_id=lesson.id)
+    elif diagram_available:
+        diagram_view = lesson_diagram_view(lesson, diagram_payload, student_class)
+    questions = decode_json_list(lesson.quiz_questions)
+    return render_template(
+        "learn.html",
+        name=name,
+        student_class=student_class,
+        board=lesson.board or DEFAULT_BOARD,
+        subject=lesson.subject,
+        book_name=lesson.book_name,
+        topic=lesson.topic,
+        explanation=markdown.markdown(lesson.notes),
+        notes=lesson.notes,
+        diagram_payload=diagram_payload,
+        diagram_image=diagram_view["image_url"] if diagram_view else "",
+        diagram_svg="",
+        diagram_available=diagram_available,
+        diagram_view=diagram_view,
+        diagram_pending_url=diagram_pending_url,
+        diagram_explanation=decode_diagram_explanation(lesson.diagram_explanation),
+        diagram_explanation_url=url_for("diagram_explanation", lesson_id=lesson.id),
+        diagram_json=json.dumps(diagram_payload),
+        questions=questions,
+        lesson_id=lesson.id,
+        has_flashcards=bool(existing_flashcard_set(lesson.id, session["user_id"])),
+        is_favourite=bool(existing_favourite_note(lesson.id, session["user_id"])),
+        current_page_url=url_for("lesson_notes", lesson_id=lesson.id),
+    )
 
 
 LEARNING_HISTORY_FILTERS = [
@@ -6840,6 +6938,56 @@ def extract_heading_section(markdown_text, heading_pattern):
     return remaining_text, section_text
 
 
+LESSON_COMPLETION_REQUIRED_HEADINGS = {
+    "quick_revision": r"quick\s+revision",
+    "visualization_decision": r"visualization\s+decision(?:\s+json)?",
+    "diagram": r"diagram(?:\s+(?:json|data|plan))?",
+    "questions": r"questions",
+}
+
+
+def markdown_heading_titles(markdown_text):
+    return [
+        match.group(1).strip()
+        for match in re.finditer(r"(?im)^\s*#{1,6}\s+(.+?)\s*$", markdown_text or "")
+    ]
+
+
+def response_ends_with_heading_only(response_text):
+    for line in reversed((response_text or "").splitlines()):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        match = re.match(r"^#{1,6}\s+(.+?)\s*$", stripped)
+        return match.group(1).strip() if match else ""
+    return ""
+
+
+def lesson_completion_issues(response_text, questions):
+    heading_titles = markdown_heading_titles(response_text)
+    normalized_headings = " | ".join(heading_titles).lower()
+    missing_sections = [
+        section_name
+        for section_name, section_pattern in LESSON_COMPLETION_REQUIRED_HEADINGS.items()
+        if not re.search(section_pattern, normalized_headings, re.IGNORECASE)
+    ]
+    if not questions and "questions" not in missing_sections:
+        missing_sections.append("questions")
+
+    reasons = []
+    trailing_heading = response_ends_with_heading_only(response_text)
+    if trailing_heading:
+        reasons.append(f"ends_with_heading:{trailing_heading}")
+    if missing_sections:
+        reasons.append(f"missing_sections:{','.join(missing_sections)}")
+
+    return {
+        "incomplete": bool(reasons),
+        "missing_sections": missing_sections,
+        "reasons": reasons,
+    }
+
+
 def split_learning_content(response_text):
     marker = re.search(r"(?im)^\s*#{1,6}\s+Questions\s*$", response_text)
     pre_questions = response_text[:marker.start()] if marker else response_text
@@ -10830,6 +10978,36 @@ def learn():
         chapter_count=chapter_count,
     )
 
+    reusable_lesson = find_reusable_lesson(
+        session.get("user_id"),
+        student_class,
+        board,
+        subject,
+        book_name,
+        topic,
+        textbook.id if textbook else None,
+        chapter.id if chapter else None,
+    )
+    if reusable_lesson:
+        log_learn_metric("lesson_cache_hit", lesson_id=reusable_lesson.id)
+        save_learning_session(
+            session["user_id"],
+            name,
+            student_class,
+            reusable_lesson.subject,
+            reusable_lesson.book_name,
+            reusable_lesson.topic,
+            reusable_lesson.notes,
+        )
+        log_learn_metric(
+            "complete",
+            started_at=request_started_at,
+            source="lesson_cache",
+            lesson_id=reusable_lesson.id,
+        )
+        return render_cached_lesson_response(reusable_lesson, name, student_class)
+    log_learn_metric("lesson_cache_miss", logged_in=bool(session.get("user_id")))
+
     selected_textbook_context_section = selected_textbook_context_block(
         student_class,
         board,
@@ -11031,6 +11209,16 @@ Rules:
         print("LEARN RESPONSE ERROR:", error)
         return learn_busy_response(request_started_at, error)
 
+    completion_issues = lesson_completion_issues(response_text, questions)
+    if completion_issues["incomplete"]:
+        log_learn_metric(
+            "lesson_content_incomplete",
+            missing_sections=",".join(completion_issues["missing_sections"]) or "none",
+            reason=";".join(completion_issues["reasons"]),
+            response_length=len(response_text),
+            question_count=len(questions),
+        )
+
     quiz_generation_started_at = time.perf_counter()
     quiz_question_source = "model_response"
     if not questions:
@@ -11064,7 +11252,9 @@ Rules:
                 board=board,
                 textbook_id=textbook.id if textbook else None,
                 chapter_id=chapter.id if chapter else None,
+                student_class=student_class,
             )
+            log_learn_metric("lesson_saved", lesson_id=lesson_id)
             save_learning_session(
                 session["user_id"],
                 name,
