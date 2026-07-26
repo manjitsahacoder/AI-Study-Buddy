@@ -8092,61 +8092,76 @@ Adaptive Quiz Engine:
 """
 
 
-def generate_quiz_questions_for_lesson(
-    student_class,
-    board,
-    subject,
-    book_name,
-    topic,
-    notes,
-    selected_textbook_context_section,
-    selected_textbook_rules_section,
-    adaptive_quiz_prompt_section,
-    textbook_context_section,
-    user_id=None,
-):
-    notes_excerpt = (notes or "").strip()
-    if len(notes_excerpt) > 12000:
-        notes_excerpt = f"{notes_excerpt[:12000]}\n\n[Notes truncated for quiz generation.]"
+FALLBACK_QUIZ_STOPWORDS = {
+    "about",
+    "after",
+    "again",
+    "also",
+    "because",
+    "before",
+    "between",
+    "chapter",
+    "could",
+    "during",
+    "example",
+    "explain",
+    "important",
+    "lesson",
+    "main",
+    "makes",
+    "means",
+    "needs",
+    "notes",
+    "point",
+    "quick",
+    "revision",
+    "should",
+    "student",
+    "their",
+    "there",
+    "these",
+    "thing",
+    "through",
+    "topic",
+    "using",
+    "where",
+    "which",
+    "while",
+    "with",
+    "without",
+    "would",
+}
 
-    prompt = f"""
-You are an expert school teacher creating quiz questions for an existing lesson.
 
-Class: {student_class}
-Board: {board}
-Subject: {subject}
-Textbook: {book_name}
-Chapter: {topic}
-Topic: {topic}
-
-{selected_textbook_context_section}
-{selected_textbook_rules_section}
-{adaptive_quiz_prompt_section}
-{textbook_context_section}
-
-Lesson Notes:
-{notes_excerpt}
-
-Create exactly 5 teacher-style quiz questions from the selected chapter using the Adaptive Quiz Engine rules above.
-
-Rules:
-- Number questions as Q1, Q2, Q3, Q4 and Q5.
-- Put each question on a new line.
-- A question may span multiple lines when needed.
-- Do NOT provide answers.
-- Always include exactly 5 questions.
-- Keep the existing Q1 to Q5 plain-text format so the quiz, scoring, history, analytics, reports, and gamification continue to work.
-
-## Questions
-"""
-    prompt = trim_learn_prompt(prompt)
-    response = gemini_request(
-        "Quiz Questions",
-        prompt,
-        user_id=user_id,
-        **learn_generation_options(),
+def fallback_quiz_terms(notes, topic, limit=3):
+    text = re.sub(r"```.*?```", " ", notes or "", flags=re.DOTALL)
+    text = re.sub(r"[#*_`>{}\[\]():,.;!?\"/\\|-]+", " ", text)
+    topic_words = set(re.findall(r"[a-z][a-z'-]{2,}", (topic or "").lower()))
+    counts = Counter(
+        word.lower()
+        for word in re.findall(r"[A-Za-z][A-Za-z'-]{3,}", text)
+        if word.lower() not in FALLBACK_QUIZ_STOPWORDS
+        and word.lower() not in topic_words
     )
-    return extract_quiz_questions(response_text_or_busy(response))
+    return [
+        word
+        for word, _ in sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:limit]
+    ]
+
+
+def generate_fallback_quiz_questions(topic, notes):
+    topic_label = (topic or "this lesson").strip() or "this lesson"
+    terms = fallback_quiz_terms(notes, topic_label)
+    primary_term = terms[0] if terms else topic_label
+    secondary_term = terms[1] if len(terms) > 1 else topic_label
+
+    return [
+        f"In your own words, explain the main idea of {topic_label} from the lesson.",
+        f"List two important points from the lesson about {topic_label}.",
+        f"What does the lesson explain about {primary_term}?",
+        f"How is {secondary_term} connected to {topic_label}?",
+        f"Write one example or application from the lesson that helps explain {topic_label}.",
+    ]
 
 
 def normalize_lookup_value(value):
@@ -10552,12 +10567,19 @@ def learn():
     class_error = validate_supported_class(student_class)
     if class_error:
         abort(400, description=class_error)
+    textbook_lookup_started_at = time.perf_counter()
     textbook, chapter, textbook_error = validate_selected_textbook_chapter(
         request.form,
         student_class,
         subject,
     )
     if textbook_error:
+        log_learn_metric(
+            "textbook_lookup_complete",
+            duration_ms=round((time.perf_counter() - textbook_lookup_started_at) * 1000, 2),
+            selected_textbook=False,
+            error=True,
+        )
         return render_lesson_form_validation_error(textbook_error)
     if textbook and chapter:
         board = textbook.board or DEFAULT_BOARD
@@ -10566,6 +10588,12 @@ def learn():
     chapter_count = 0
     if textbook and chapter:
         chapter_count = Chapter.query.filter_by(textbook_id=textbook.id).count()
+    log_learn_metric(
+        "textbook_lookup_complete",
+        duration_ms=round((time.perf_counter() - textbook_lookup_started_at) * 1000, 2),
+        selected_textbook=bool(textbook and chapter),
+        chapter_count=chapter_count,
+    )
 
     selected_textbook_context_section = selected_textbook_context_block(
         student_class,
@@ -10730,6 +10758,7 @@ Rules:
 
     try:
         print("Gemini call: Learn")
+        lesson_generation_started_at = time.perf_counter()
         response = gemini_request(
             "Notes",
             prompt,
@@ -10737,8 +10766,18 @@ Rules:
             **learn_generation_options(),
         )
         response_text = response_text_or_busy(response)
+        lesson_generation_duration_ms = round(
+            (time.perf_counter() - lesson_generation_started_at) * 1000,
+            2,
+        )
+        log_learn_metric(
+            "lesson_generation_complete",
+            duration_ms=lesson_generation_duration_ms,
+            response_length=len(response_text),
+        )
         log_learn_metric(
             "gemini_response",
+            duration_ms=lesson_generation_duration_ms,
             gemini_response_length=len(response_text),
             estimated_characters=len(response_text),
             estimated_tokens=estimate_tokens(response_text),
@@ -10754,57 +10793,20 @@ Rules:
             notes, raw_visualization_decision, raw_diagram, questions = split_learning_content(response_text)
     except ValueError as error:
         print("LEARN RESPONSE ERROR:", error)
-        retry_prompt = build_learn_retry_prompt(prompt)
-        log_learn_metric(
-            "retry_prompt_ready",
-            prompt_length=len(retry_prompt),
-            estimated_characters=len(retry_prompt),
-            estimated_tokens=estimate_tokens(retry_prompt),
-        )
-        try:
-            print("Gemini call: Learn retry")
-            response = gemini_request(
-                "Notes",
-                retry_prompt,
-                user_id=session.get("user_id"),
-                **learn_generation_options(),
-            )
-            response_text = response_text_or_busy(response)
-            log_learn_metric(
-                "retry_gemini_response",
-                gemini_response_length=len(response_text),
-                estimated_characters=len(response_text),
-                estimated_tokens=estimate_tokens(response_text),
-            )
-            with performance_span("Learn response parsing", detail="retry"):
-                notes, raw_visualization_decision, raw_diagram, questions = split_learning_content(response_text)
-        except GeminiRequestError as retry_error:
-            return render_gemini_error(retry_error.error_info)
-        except Exception as retry_error:
-            print("LEARN RETRY ERROR:", retry_error)
-            return learn_busy_response(request_started_at, retry_error)
+        return learn_busy_response(request_started_at, error)
 
+    quiz_generation_started_at = time.perf_counter()
+    quiz_question_source = "model_response"
     if not questions:
-        try:
-            with performance_span("Quiz question generation", detail=topic):
-                questions = generate_quiz_questions_for_lesson(
-                    student_class,
-                    board,
-                    subject,
-                    book_name,
-                    topic,
-                    notes,
-                    selected_textbook_context_section,
-                    selected_textbook_rules_section,
-                    adaptive_quiz_prompt_section,
-                    textbook_context_section,
-                    user_id=session.get("user_id"),
-                )
-        except GeminiRequestError as quiz_error:
-            return render_gemini_error(quiz_error.error_info)
-        except Exception as quiz_error:
-            print("QUIZ GENERATION ERROR:", quiz_error)
-            return learn_busy_response(request_started_at, quiz_error)
+        quiz_question_source = "local_fallback"
+        with performance_span("Quiz question generation", detail=topic):
+            questions = generate_fallback_quiz_questions(topic, notes)
+    log_learn_metric(
+        "quiz_generation_complete",
+        duration_ms=round((time.perf_counter() - quiz_generation_started_at) * 1000, 2),
+        source=quiz_question_source,
+        question_count=len(questions),
+    )
 
     with performance_span("Visualization payload", detail=topic):
         diagram_payload = build_visualization_payload(subject, topic, raw_visualization_decision, raw_diagram)
@@ -10851,6 +10853,7 @@ Rules:
         gemini_response_length=len(response_text),
         estimated_characters=len(response_text),
         estimated_tokens=estimate_tokens(response_text),
+        quiz_question_source=quiz_question_source,
     )
     with performance_span("Markdown conversion", detail="learn_notes"):
         explanation_html = markdown.markdown(notes)
