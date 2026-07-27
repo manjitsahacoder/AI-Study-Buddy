@@ -7655,6 +7655,7 @@ Grade: A
             upload_image.assert_called_once_with(
                 b"image-bytes",
                 "8/Science/NCERT/Crop Production/Irrigation.webp",
+                content_type="image/webp",
             )
             cached = DiagramCache.query.one()
             self.assertEqual(cached.image_url, "https://example.test/generated.webp")
@@ -7683,6 +7684,11 @@ Grade: A
         from services import diagram_service
 
         with app_module.app.app_context():
+            cache_key = diagram_service.build_diagram_cache_key(
+                student_class="8",
+                subject="Science",
+                topic="Irrigation",
+            )
             with patch(
                 "services.diagram_service.gemini_image_service.generate_diagram_image",
                 return_value=b"image-bytes",
@@ -7698,7 +7704,122 @@ Grade: A
 
             self.assertIsNone(result)
             self.assertEqual(DiagramCache.query.count(), 0)
+            failure = diagram_service.diagram_failure_for_cache_key(cache_key)
+            self.assertEqual(failure["code"], "storage_upload_failed")
+            self.assertEqual(failure["message"], diagram_service.STORAGE_UPLOAD_FAILURE_MESSAGE)
+            self.assertNotIn("upload failed", failure["message"].lower())
             logger.exception.assert_called()
+
+    def test_diagram_service_records_unsupported_image_format_failure_message(self):
+        from services import diagram_service, gemini_image_service
+
+        with app_module.app.app_context():
+            cache_key = diagram_service.build_diagram_cache_key(
+                student_class="8",
+                subject="Science",
+                topic="Irrigation",
+            )
+            with patch(
+                "services.diagram_service.gemini_image_service.generate_diagram_image",
+                side_effect=gemini_image_service.GeminiImageGenerationError(
+                    "Gemini response did not include a supported image MIME type."
+                ),
+            ) as generate_image, patch(
+                "services.diagram_service.storage_service.upload_diagram_image",
+            ) as upload_image:
+                result = diagram_service.get_or_generate_diagram(
+                    student_class="8",
+                    subject="Science",
+                    topic="Irrigation",
+                )
+
+            self.assertIsNone(result)
+            generate_image.assert_called_once()
+            upload_image.assert_not_called()
+            failure = diagram_service.diagram_failure_for_cache_key(cache_key)
+            self.assertEqual(failure["code"], "unsupported_image_format")
+            self.assertEqual(failure["message"], diagram_service.UNSUPPORTED_IMAGE_FORMAT_MESSAGE)
+            self.assertNotIn("mime", failure["message"].lower())
+
+    def test_diagram_service_retries_temporary_gemini_generation_failure_once(self):
+        from services import diagram_service, gemini_image_service
+
+        temporary_error = gemini_image_service.GeminiImageTimeoutError("Gemini timed out")
+        with app_module.app.app_context(), self.assertLogs(
+            "services.diagram_service",
+            level="INFO",
+        ) as logs, patch(
+            "services.diagram_service.gemini_image_service.generate_diagram_image",
+            side_effect=[temporary_error, b"image-bytes"],
+        ) as generate_image, patch(
+            "services.diagram_service.storage_service.upload_diagram_image",
+            return_value={
+                "storage_path": "class_8/science/ncert/chapter/topic.webp",
+                "public_url": "https://example.test/retried-generation.webp",
+            },
+        ) as upload_image:
+            result = diagram_service.get_or_generate_diagram(
+                board="CBSE",
+                student_class="8",
+                subject="Science",
+                textbook="NCERT",
+                chapter="Chapter",
+                topic="Topic",
+            )
+
+        self.assertEqual(result, "https://example.test/retried-generation.webp")
+        self.assertEqual(generate_image.call_count, 2)
+        upload_image.assert_called_once()
+        log_output = "\n".join(logs.output)
+        self.assertIn("event=image_generation_retry_attempted", log_output)
+        self.assertIn("retry_reason=timeout", log_output)
+        self.assertIn("event=diagram_returned", log_output)
+
+    def test_diagram_service_logs_final_failure_when_generation_retry_fails(self):
+        from services import diagram_service, gemini_image_service
+
+        with app_module.app.app_context(), self.assertLogs(
+            "services.diagram_service",
+            level="INFO",
+        ) as logs:
+            cache_key = diagram_service.build_diagram_cache_key(
+                board="CBSE",
+                student_class="8",
+                subject="Science",
+                textbook="NCERT",
+                chapter="Chapter",
+                topic="Topic",
+            )
+            with patch(
+                "services.diagram_service.gemini_image_service.generate_diagram_image",
+                side_effect=[
+                    gemini_image_service.GeminiImageTimeoutError("Gemini timed out"),
+                    gemini_image_service.GeminiImageTimeoutError("Gemini timed out again"),
+                ],
+            ) as generate_image, patch(
+                "services.diagram_service.storage_service.upload_diagram_image",
+            ) as upload_image:
+                result = diagram_service.get_or_generate_diagram(
+                    board="CBSE",
+                    student_class="8",
+                    subject="Science",
+                    textbook="NCERT",
+                    chapter="Chapter",
+                    topic="Topic",
+                )
+
+        self.assertIsNone(result)
+        self.assertEqual(generate_image.call_count, 2)
+        upload_image.assert_not_called()
+        failure = diagram_service.diagram_failure_for_cache_key(cache_key)
+        self.assertEqual(failure["code"], "generation_failed")
+        self.assertEqual(failure["message"], diagram_service.DIAGRAM_GENERATION_FAILURE_MESSAGE)
+        self.assertNotIn("timed out", failure["message"].lower())
+        log_output = "\n".join(logs.output)
+        self.assertIn("event=image_generation_retry_attempted", log_output)
+        self.assertIn("event=image_generation_retry_failed", log_output)
+        self.assertIn("retry_reason=timeout", log_output)
+        self.assertIn("event=diagram_failed", log_output)
 
     def test_diagram_service_duplicate_request_reuses_cache(self):
         from services import diagram_service
@@ -7824,6 +7945,10 @@ Grade: A
         self.assertIn("event=upload_failed", log_output)
         self.assertIn("event=upload_complete", log_output)
         self.assertIn("event=diagram_returned", log_output)
+        self.assertIn("duration_ms=", log_output)
+        self.assertIn("generation_duration_ms=", log_output)
+        self.assertIn("cache_used=false", log_output)
+        self.assertIn("image_model=", log_output)
 
     def test_diagram_service_never_retries_gemini_generation_failure(self):
         from services import diagram_service
@@ -8050,13 +8175,23 @@ Grade: A
         with patch(
             "app.generated_diagram_service.get_or_generate_diagram",
             return_value=None,
+        ), patch(
+            "app.generated_diagram_service.diagram_failure_for_cache_key",
+            return_value={
+                "code": "storage_upload_failed",
+                "message": "The diagram was created, but we could not save it for display. Please retry the diagram in a moment.",
+            },
         ):
             response = self.client.get(f"/api/learning-history/{lesson_id}/diagram")
 
         self.assertEqual(response.status_code, 200)
         payload = response.get_json()
         self.assertEqual(payload["status"], "failed")
-        self.assertIn("could not create the diagram", payload["message"])
+        self.assertEqual(
+            payload["message"],
+            "The diagram was created, but we could not save it for display. Please retry the diagram in a moment.",
+        )
+        self.assertNotIn("upload failed", payload["message"].lower())
         self.assertIn("retry=1", payload["retry_url"])
 
 

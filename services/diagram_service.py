@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import threading
+import time
 
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
@@ -18,6 +19,39 @@ from services import gemini_image_service, storage_service
 logger = logging.getLogger(__name__)
 _generation_locks = {}
 _generation_locks_guard = threading.Lock()
+_diagram_failures = {}
+_diagram_failures_guard = threading.Lock()
+
+# Bump this when diagram prompt instructions change so outdated generated
+# diagrams miss the cache and are regenerated with the improved prompt.
+PROMPT_VERSION = "v1"
+MAX_GEMINI_IMAGE_GENERATION_RETRIES = 1
+DEFAULT_DIAGRAM_FAILURE_MESSAGE = (
+    "The diagram could not be prepared right now. Your lesson is ready, "
+    "so please try the diagram again in a moment."
+)
+DIAGRAM_GENERATION_FAILURE_MESSAGE = (
+    "The diagram maker is busy right now. Your lesson is ready, "
+    "so please retry the diagram in a moment."
+)
+UNSUPPORTED_IMAGE_FORMAT_MESSAGE = (
+    "The diagram maker returned an image format we cannot display yet. "
+    "Please retry the diagram in a moment."
+)
+STORAGE_UPLOAD_FAILURE_MESSAGE = (
+    "The diagram was created, but we could not save it for display. "
+    "Please retry the diagram in a moment."
+)
+
+
+class DiagramWorkflowError(RuntimeError):
+    """Internal workflow error with a sanitized student-facing message."""
+
+    def __init__(self, failure_code, public_message, original_error):
+        super().__init__(public_message)
+        self.failure_code = failure_code
+        self.public_message = public_message
+        self.original_error = original_error
 
 
 def build_diagram_cache_key(
@@ -33,6 +67,10 @@ def build_diagram_cache_key(
 ):
     """Build a deterministic cache key for diagram lookup."""
     payload = {
+        "prompt_version": PROMPT_VERSION,
+        # Include the resolved model so diagrams from different image models
+        # are never reused accidentally across cache entries.
+        "image_model": _normalize_cache_value(gemini_image_service._gemini_image_model()),
         "board": _normalize_cache_value(board, "CBSE"),
         "student_class": _normalize_cache_value(student_class),
         "subject": _normalize_cache_value(subject),
@@ -138,6 +176,8 @@ def get_or_generate_diagram(
 ):
     """Return a cached public diagram URL or generate, upload, and cache one."""
     database_session = session or db.session
+    workflow_started_at = time.perf_counter()
+    image_model = gemini_image_service._gemini_image_model()
     cache_key = build_diagram_cache_key(
         board=board,
         student_class=student_class,
@@ -148,22 +188,60 @@ def get_or_generate_diagram(
         language=language,
         diagram_type=diagram_type,
     )
+    clear_diagram_failure(cache_key)
 
     try:
+        cache_lookup_started_at = time.perf_counter()
         cached = _find_by_cache_key(database_session, cache_key)
+        cache_lookup_duration_ms = _elapsed_ms(cache_lookup_started_at)
         if cached:
             record_cached_diagram_access(cached, session=database_session)
-            _log_diagram_event("cache_hit", cache_key=cache_key, topic=topic)
-            _log_diagram_event("diagram_returned", cache_key=cache_key, topic=topic, source="cache")
+            _log_diagram_event(
+                "cache_hit",
+                cache_key=cache_key,
+                topic=topic,
+                duration_ms=cache_lookup_duration_ms,
+                image_model=image_model,
+            )
+            _log_diagram_returned(
+                cache_key=cache_key,
+                topic=topic,
+                source="cache",
+                cache_used=True,
+                image_model=image_model,
+                started_at=workflow_started_at,
+            )
             return cached.image_url
 
-        _log_diagram_event("cache_miss", cache_key=cache_key, topic=topic)
+        _log_diagram_event(
+            "cache_miss",
+            cache_key=cache_key,
+            topic=topic,
+            duration_ms=cache_lookup_duration_ms,
+            image_model=image_model,
+        )
         with _generation_lock(cache_key):
+            cache_lookup_started_at = time.perf_counter()
             cached = _find_by_cache_key(database_session, cache_key)
+            cache_lookup_duration_ms = _elapsed_ms(cache_lookup_started_at)
             if cached:
                 record_cached_diagram_access(cached, session=database_session)
-                _log_diagram_event("cache_hit", cache_key=cache_key, topic=topic, source="post_lock")
-                _log_diagram_event("diagram_returned", cache_key=cache_key, topic=topic, source="cache")
+                _log_diagram_event(
+                    "cache_hit",
+                    cache_key=cache_key,
+                    topic=topic,
+                    source="post_lock",
+                    duration_ms=cache_lookup_duration_ms,
+                    image_model=image_model,
+                )
+                _log_diagram_returned(
+                    cache_key=cache_key,
+                    topic=topic,
+                    source="cache",
+                    cache_used=True,
+                    image_model=image_model,
+                    started_at=workflow_started_at,
+                )
                 return cached.image_url
 
             prompt = gemini_image_service.build_diagram_prompt(
@@ -179,12 +257,20 @@ def get_or_generate_diagram(
             if diagram_type:
                 prompt = f"{prompt}\n- Diagram type: {diagram_type}."
 
-            image_bytes = gemini_image_service.generate_diagram_image(prompt)
+            generation_started_at = time.perf_counter()
+            image_bytes = _generate_diagram_image_with_retry(
+                prompt,
+                cache_key=cache_key,
+                topic=topic,
+                image_model=image_model,
+            )
             _log_diagram_event(
                 "image_generated",
                 cache_key=cache_key,
                 topic=topic,
+                generation_duration_ms=_elapsed_ms(generation_started_at),
                 image_bytes=len(image_bytes or b""),
+                image_model=image_model,
             )
             upload_result = _upload_diagram_image_with_retry(
                 image_bytes,
@@ -195,6 +281,7 @@ def get_or_generate_diagram(
                     chapter=chapter,
                     topic=topic,
                 ),
+                content_type=getattr(image_bytes, "mime_type", "image/webp"),
                 cache_key=cache_key,
                 topic=topic,
             )
@@ -209,26 +296,63 @@ def get_or_generate_diagram(
                 prompt=prompt,
                 public_url=upload_result["public_url"],
                 storage_path=upload_result["storage_path"],
-                model=gemini_image_service._gemini_image_model(),
+                model=image_model,
                 session=database_session,
             )
-            _log_diagram_event("diagram_returned", cache_key=cache_key, topic=topic, source="generated")
+            _log_diagram_returned(
+                cache_key=cache_key,
+                topic=topic,
+                source="generated",
+                cache_used=False,
+                image_model=image_model,
+                started_at=workflow_started_at,
+            )
             return diagram.image_url
-    except IntegrityError:
+    except IntegrityError as error:
         database_session.rollback()
+        cache_lookup_started_at = time.perf_counter()
         cached = _find_by_cache_key(database_session, cache_key)
+        cache_lookup_duration_ms = _elapsed_ms(cache_lookup_started_at)
         if cached:
             record_cached_diagram_access(cached, session=database_session)
-            _log_diagram_event("cache_hit", cache_key=cache_key, topic=topic, source="integrity_retry")
-            _log_diagram_event("diagram_returned", cache_key=cache_key, topic=topic, source="cache")
+            _log_diagram_event(
+                "cache_hit",
+                cache_key=cache_key,
+                topic=topic,
+                source="integrity_retry",
+                duration_ms=cache_lookup_duration_ms,
+                image_model=image_model,
+            )
+            _log_diagram_returned(
+                cache_key=cache_key,
+                topic=topic,
+                source="cache",
+                cache_used=True,
+                image_model=image_model,
+                started_at=workflow_started_at,
+            )
             return cached.image_url
+        _log_diagram_failed(
+            cache_key=cache_key,
+            topic=topic,
+            error=error,
+            image_model=image_model,
+            started_at=workflow_started_at,
+        )
         logger.exception("Diagram cache insert conflicted but no cached record was found.")
         return None
-    except Exception:
+    except Exception as error:
         try:
             database_session.rollback()
         except SQLAlchemyError:
             logger.exception("Failed to roll back diagram cache session.")
+        _log_diagram_failed(
+            cache_key=cache_key,
+            topic=topic,
+            error=error,
+            image_model=image_model,
+            started_at=workflow_started_at,
+        )
         logger.exception("Diagram generation workflow failed.")
         return None
 
@@ -246,12 +370,16 @@ def _generation_lock(cache_key):
         return lock
 
 
-def _upload_diagram_image_with_retry(image_bytes, filename, *, cache_key, topic=None):
+def _upload_diagram_image_with_retry(image_bytes, filename, *, content_type="image/webp", cache_key, topic=None):
     max_attempts = _upload_retry_attempts()
     last_error = None
     for attempt in range(1, max_attempts + 1):
         try:
-            result = storage_service.upload_diagram_image(image_bytes, filename)
+            result = storage_service.upload_diagram_image(
+                image_bytes,
+                filename,
+                content_type=content_type,
+            )
             _log_diagram_event(
                 "upload_complete",
                 cache_key=cache_key,
@@ -271,7 +399,108 @@ def _upload_diagram_image_with_retry(image_bytes, filename, *, cache_key, topic=
                 error,
                 exc_info=True,
             )
+    raise DiagramWorkflowError(
+        "storage_upload_failed",
+        STORAGE_UPLOAD_FAILURE_MESSAGE,
+        last_error,
+    ) from last_error
+
+
+def _generate_diagram_image_with_retry(prompt, *, cache_key, topic=None, image_model=""):
+    attempts = MAX_GEMINI_IMAGE_GENERATION_RETRIES + 1
+    last_error = None
+    for attempt in range(1, attempts + 1):
+        try:
+            return gemini_image_service.generate_diagram_image(prompt)
+        except Exception as error:
+            last_error = error
+            retry_reason = _temporary_generation_failure_reason(error)
+            if not retry_reason or attempt >= attempts:
+                if attempt > 1:
+                    _log_diagram_event(
+                        "image_generation_retry_failed",
+                        cache_key=cache_key,
+                        topic=topic,
+                        attempt=attempt,
+                        retry_reason=retry_reason or "non_retryable",
+                        image_model=image_model,
+                    )
+                raise _diagram_generation_workflow_error(error) from error
+            _log_diagram_event(
+                "image_generation_retry_attempted",
+                cache_key=cache_key,
+                topic=topic,
+                attempt=attempt + 1,
+                retry_reason=retry_reason,
+                image_model=image_model,
+            )
     raise last_error
+
+
+def _temporary_generation_failure_reason(error):
+    if isinstance(error, gemini_image_service.GeminiImageTimeoutError):
+        return "timeout"
+    if isinstance(error, (ValueError, gemini_image_service.GeminiImageConfigurationError)):
+        return ""
+
+    combined = f"{type(error).__name__} {error}".lower()
+    if "unsupported image mime" in combined or "supported image mime" in combined:
+        return ""
+    if any(term in combined for term in ("invalid request", "invalid argument", "bad request", "400")):
+        return ""
+    if any(term in combined for term in ("timeout", "timed out", "deadline")):
+        return "timeout"
+    if any(term in combined for term in ("429", "rate limit", "ratelimit", "resource_exhausted")):
+        return "rate_limit"
+    if any(
+        term in combined
+        for term in (
+            "500",
+            "502",
+            "503",
+            "504",
+            "server error",
+            "internal error",
+            "temporarily unavailable",
+            "service unavailable",
+        )
+    ):
+        return "temporary_server_error"
+    return ""
+
+
+def _diagram_generation_workflow_error(error):
+    if _unsupported_image_format_error(error):
+        return DiagramWorkflowError(
+            "unsupported_image_format",
+            UNSUPPORTED_IMAGE_FORMAT_MESSAGE,
+            error,
+        )
+    return DiagramWorkflowError(
+        "generation_failed",
+        DIAGRAM_GENERATION_FAILURE_MESSAGE,
+        error,
+    )
+
+
+def _unsupported_image_format_error(error):
+    combined = f"{type(error).__name__} {error}".lower()
+    return "unsupported image mime" in combined or "supported image mime" in combined
+
+
+def diagram_failure_for_cache_key(cache_key):
+    with _diagram_failures_guard:
+        failure = _diagram_failures.get(cache_key)
+        return dict(failure) if failure else {}
+
+
+def clear_diagram_failure(cache_key):
+    with _diagram_failures_guard:
+        _diagram_failures.pop(cache_key, None)
+
+
+def default_diagram_failure_message():
+    return DEFAULT_DIAGRAM_FAILURE_MESSAGE
 
 
 def _upload_retry_attempts():
@@ -286,6 +515,49 @@ def _upload_retry_attempts():
 def _log_diagram_event(event, **fields):
     details = " ".join(f"{key}={value}" for key, value in fields.items())
     logger.info("diagram_workflow event=%s %s", event, details)
+
+
+def _log_diagram_returned(*, cache_key, topic=None, source, cache_used, image_model, started_at):
+    _log_diagram_event(
+        "diagram_returned",
+        cache_key=cache_key,
+        topic=topic,
+        source=source,
+        cache_used=str(bool(cache_used)).lower(),
+        duration_ms=_elapsed_ms(started_at),
+        image_model=image_model,
+    )
+
+
+def _log_diagram_failed(*, cache_key, topic=None, error=None, image_model, started_at):
+    failure = _diagram_failure_payload(error)
+    with _diagram_failures_guard:
+        _diagram_failures[cache_key] = failure
+    _log_diagram_event(
+        "diagram_failed",
+        cache_key=cache_key,
+        topic=topic,
+        cache_used="false",
+        failure_code=failure["code"],
+        duration_ms=_elapsed_ms(started_at),
+        image_model=image_model,
+    )
+
+
+def _diagram_failure_payload(error):
+    if isinstance(error, DiagramWorkflowError):
+        return {
+            "code": error.failure_code,
+            "message": error.public_message,
+        }
+    return {
+        "code": "diagram_generation_unavailable",
+        "message": DEFAULT_DIAGRAM_FAILURE_MESSAGE,
+    }
+
+
+def _elapsed_ms(started_at):
+    return round((time.perf_counter() - started_at) * 1000, 2)
 
 
 def _diagram_filename(*, student_class=None, subject=None, textbook=None, chapter=None, topic=None):

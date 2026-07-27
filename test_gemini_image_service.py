@@ -56,7 +56,8 @@ class GeminiImageServiceTests(unittest.TestCase):
         image_bytes = b"generated-webp-bytes"
         response = SimpleNamespace(
             output_image=SimpleNamespace(
-                data=base64.b64encode(image_bytes).decode("ascii")
+                data=base64.b64encode(image_bytes).decode("ascii"),
+                mime_type="image/webp",
             )
         )
         interactions = FakeInteractions(response=response)
@@ -75,6 +76,7 @@ class GeminiImageServiceTests(unittest.TestCase):
             result = gemini_image_service.generate_diagram_image("Draw photosynthesis.")
 
         self.assertEqual(result, image_bytes)
+        self.assertEqual(result.mime_type, "image/webp")
         create_client.assert_called_once_with("test-key")
         self.assertEqual(
             interactions.calls,

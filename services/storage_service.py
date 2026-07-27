@@ -26,7 +26,7 @@ class SupabaseStorageConfigurationError(RuntimeError):
     """Raised when Supabase Storage environment configuration is incomplete."""
 
 
-def upload_diagram_image(image_bytes, filename):
+def upload_diagram_image(image_bytes, filename, *, content_type="image/webp"):
     """Upload a diagram image to Supabase Storage and return its path and public URL."""
     storage_path = build_diagram_storage_path(filename)
     client = _storage_client()
@@ -34,7 +34,7 @@ def upload_diagram_image(image_bytes, filename):
         DIAGRAM_BUCKET,
         storage_path,
         image_bytes,
-        content_type="image/webp",
+        content_type=content_type,
         upsert=True,
     )
     return {

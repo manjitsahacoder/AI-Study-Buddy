@@ -9,8 +9,18 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 from config import GEMINI_API_KEY
 
 
-DEFAULT_GEMINI_IMAGE_MODEL = "gemini-3.1-flash-image"
+DEFAULT_GEMINI_IMAGE_MODEL = "gemini-3.1-flash-lite-image"
 DEFAULT_IMAGE_TIMEOUT_SECONDS = 60.0
+SUPPORTED_IMAGE_MIME_TYPES = {
+    "image/png",
+    "image/jpeg",
+    "image/webp",
+    "image/gif",
+    "image/bmp",
+    "image/tiff",
+    "image/heic",
+    "image/heif",
+}
 
 
 class GeminiImageConfigurationError(RuntimeError):
@@ -23,6 +33,15 @@ class GeminiImageGenerationError(RuntimeError):
 
 class GeminiImageTimeoutError(GeminiImageGenerationError):
     """Raised when Gemini image generation exceeds the configured timeout."""
+
+
+class GeneratedDiagramImage(bytes):
+    """Generated image bytes with MIME metadata from Gemini or byte detection."""
+
+    def __new__(cls, data, mime_type):
+        value = super().__new__(cls, data)
+        value.mime_type = mime_type
+        return value
 
 
 def build_diagram_prompt(board, student_class, subject, textbook, chapter, topic):
@@ -50,7 +69,7 @@ def build_diagram_prompt(board, student_class, subject, textbook, chapter, topic
 
 
 def generate_diagram_image(prompt):
-    """Generate a diagram image with Gemini and return raw image bytes only."""
+    """Generate a diagram image with Gemini and return bytes with MIME metadata."""
     if not prompt or not str(prompt).strip():
         raise ValueError("prompt is required")
 
@@ -82,6 +101,7 @@ def _run_image_generation(client, model_name, prompt):
         response_format={
             "type": "image",
             "aspect_ratio": "4:3",
+            # Nano Banana 2 Lite supports 1K image generation.
             "image_size": "1K",
         },
     )
@@ -103,17 +123,66 @@ def _run_with_timeout(factory, timeout_seconds):
 
 def _extract_image_bytes(response):
     output_image = getattr(response, "output_image", None)
-    encoded_image = getattr(output_image, "data", None)
+    encoded_image = _image_field(output_image, "data")
     if not encoded_image:
         raise GeminiImageGenerationError("Gemini response did not include an image.")
 
     if isinstance(encoded_image, bytes):
-        return encoded_image
+        image_bytes = encoded_image
+    else:
+        try:
+            image_bytes = base64.b64decode(encoded_image)
+        except Exception as error:
+            raise GeminiImageGenerationError("Gemini response image data was invalid.") from error
 
-    try:
-        return base64.b64decode(encoded_image)
-    except Exception as error:
-        raise GeminiImageGenerationError("Gemini response image data was invalid.") from error
+    mime_type = _resolved_image_mime_type(output_image, image_bytes)
+    return GeneratedDiagramImage(image_bytes, mime_type)
+
+
+def _image_field(output_image, field_name):
+    if isinstance(output_image, dict):
+        return output_image.get(field_name)
+    return getattr(output_image, field_name, None)
+
+
+def _resolved_image_mime_type(output_image, image_bytes):
+    sdk_mime_type = _normalize_image_mime_type(_image_field(output_image, "mime_type"))
+    detected_mime_type = _detect_image_mime_type(image_bytes)
+    mime_type = detected_mime_type or sdk_mime_type
+    if not mime_type:
+        raise GeminiImageGenerationError(
+            "Gemini response did not include a supported image MIME type."
+        )
+    return mime_type
+
+
+def _normalize_image_mime_type(value):
+    mime_type = str(value or "").split(";")[0].strip().lower()
+    return mime_type if mime_type in SUPPORTED_IMAGE_MIME_TYPES else ""
+
+
+def _detect_image_mime_type(data):
+    if not data:
+        return ""
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    if data.startswith((b"GIF87a", b"GIF89a")):
+        return "image/gif"
+    if data.startswith(b"BM"):
+        return "image/bmp"
+    if data.startswith((b"II*\x00", b"MM\x00*")):
+        return "image/tiff"
+    if len(data) >= 12 and data[4:8] == b"ftyp":
+        brand = data[8:12].lower()
+        if brand in {b"heic", b"heix", b"hevc", b"hevx"}:
+            return "image/heic"
+        if brand in {b"heif", b"heim", b"mif1", b"msf1"}:
+            return "image/heif"
+    return ""
 
 
 def _create_genai_client(api_key):

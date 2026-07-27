@@ -2518,11 +2518,13 @@ def run_generated_diagram_job(lesson_id, user_id, student_class):
                 public_url=public_url,
             )
         else:
+            failure = generated_diagram_service.diagram_failure_for_cache_key(cache_key)
             set_generated_diagram_job_state(
                 cache_key,
                 status="failed",
                 lesson_id=lesson_id,
-                message="We could not create the diagram right now. You can retry in a moment.",
+                message=failure.get("message")
+                or generated_diagram_service.default_diagram_failure_message(),
             )
         db.session.remove()
 
@@ -10799,7 +10801,7 @@ def learning_history_diagram_status(lesson_id):
                     "diagram_available": True,
                     "diagram_payload": diagram_payload,
                     "message": state.get("message")
-                    or "We could not create the diagram right now. You can retry in a moment.",
+                    or generated_diagram_service.default_diagram_failure_message(),
                     "retry_url": url_for("learning_history_diagram_status", lesson_id=lesson.id, retry=1),
                 }
             )
