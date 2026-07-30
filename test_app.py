@@ -8080,12 +8080,37 @@ Grade: A
         with patch(
             "app.generated_diagram_service.get_or_generate_diagram",
             return_value="https://cdn.example.test/generated.webp",
-        ):
+        ), self.assertLogs(app_module.app.logger.name, level="INFO") as logs:
             app_module.run_generated_diagram_job(lesson_id, user_id, "8")
 
         state = app_module.generated_diagram_job_state(cache_key)
         self.assertEqual(state["status"], "ready")
         self.assertEqual(state["public_url"], "https://cdn.example.test/generated.webp")
+        log_output = "\n".join(logs.output)
+        self.assertIn(f"diagram_thread_lookup_start lesson_id={lesson_id} user_id={user_id}", log_output)
+        self.assertIn(f"diagram_thread_lookup_result lesson_found=True lesson_id={lesson_id}", log_output)
+        self.assertIn(
+            f"event=diagram_thread_service_start lesson_id={lesson_id} topic=Photosynthesis",
+            log_output,
+        )
+
+    def test_async_diagram_background_job_logs_missing_lesson_return(self):
+        lesson_id = 404
+        user_id = 505
+
+        with patch(
+            "app.generated_diagram_service.get_or_generate_diagram",
+        ) as get_or_generate, self.assertLogs(app_module.app.logger.name, level="INFO") as logs:
+            app_module.run_generated_diagram_job(lesson_id, user_id, "8")
+
+        get_or_generate.assert_not_called()
+        log_output = "\n".join(logs.output)
+        self.assertIn(f"diagram_thread_lookup_start lesson_id={lesson_id} user_id={user_id}", log_output)
+        self.assertIn("diagram_thread_lookup_result lesson_found=False lesson_id=None", log_output)
+        self.assertIn(
+            f"event=diagram_thread_missing_lesson lesson_id={lesson_id} user_id={user_id}",
+            log_output,
+        )
 
     def test_diagram_polling_endpoint_returns_cached_generated_diagram(self):
         from services import diagram_service

@@ -2501,12 +2501,28 @@ def generated_diagram_status_payload(status, *, message="", public_url="", retry
 
 def run_generated_diagram_job(lesson_id, user_id, student_class):
     with app.app_context():
+        app.logger.info("diagram_thread_lookup_start lesson_id=%s user_id=%s", lesson_id, user_id)
         lesson = get_learning_history_entry(lesson_id, user_id)
+        app.logger.info(
+            "diagram_thread_lookup_result lesson_found=%s lesson_id=%s",
+            bool(lesson),
+            lesson.id if lesson else None,
+        )
         if not lesson:
+            app.logger.info(
+                "event=diagram_thread_missing_lesson lesson_id=%s user_id=%s",
+                lesson_id,
+                user_id,
+            )
             return
         diagram_payload = decode_diagram_payload(lesson.diagram_data, lesson.subject, lesson.topic)
         cache_key = generated_diagram_cache_key_for_lesson(lesson, diagram_payload, student_class)
         set_generated_diagram_job_state(cache_key, status="generating", lesson_id=lesson_id)
+        app.logger.info(
+            "event=diagram_thread_service_start lesson_id=%s topic=%s",
+            lesson_id,
+            lesson.topic,
+        )
         public_url = generated_diagram_service.get_or_generate_diagram(
             **generated_diagram_context(lesson, diagram_payload, student_class)
         )
