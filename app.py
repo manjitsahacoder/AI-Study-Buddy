@@ -82,7 +82,6 @@ from models import (
     LearningHistory,
     LearningSession,
     MemoryChallenge,
-    MindMap,
     QuizHistory,
     RevisionSheet,
     StudyPlanProgress,
@@ -390,7 +389,6 @@ DEVELOPER_USERS_PER_PAGE = 25
 GAMIFICATION_XP_VALUES = {
     "notes": 10,
     "revision": 15,
-    "mind_map": 20,
     "flashcards": 15,
     "memory_match": 20,
     "tutor": 10,
@@ -411,13 +409,12 @@ MEMORY_MATCH_DIFFICULTIES = {
 STUDY_PLAN_ACTIVITY_DEFINITIONS = (
     ("notes", "Notes", "Review saved notes", 12, "lesson_notes"),
     ("revision", "Quick Revision", "Create a compact revision sheet", 10, "revision"),
-    ("mind_map", "Mind Map", "Map the lesson concepts", 8, "mindmap"),
     ("flashcards", "Flashcards", "Build active-recall cards", 15, "flashcards"),
     ("memory_challenge", "Memory Challenge", "Play a matching recall round", 10, "memory_match"),
     ("ai_tutor", "AI Tutor", "Ask for guided help", 12, "start_ai_tutor"),
     ("quiz", "Quiz", "Test the lesson questions", 15, "quiz"),
 )
-ALL_ROUND_LEARNER_ACTIVITIES = ("notes", "revision", "mind_map", "flashcards", "tutor", "quiz")
+ALL_ROUND_LEARNER_ACTIVITIES = ("notes", "revision", "flashcards", "tutor", "quiz")
 GAMIFICATION_LEVEL_XP = 100
 LEARN_BUSY_MESSAGE = "AI Study Buddy is temporarily busy. Please try again in a moment."
 LEARN_MAX_TEXTBOOK_CONTEXT_CHARS = int(os.environ.get("LEARN_MAX_TEXTBOOK_CONTEXT_CHARS", "7000"))
@@ -1540,12 +1537,6 @@ def account_data_export(user):
             .order_by(RevisionSheet.created_at.asc(), RevisionSheet.id.asc())
             .all()
         ],
-        "mind_maps": [
-            serialize_model_record(row)
-            for row in MindMap.query.filter_by(user_id=user_id)
-            .order_by(MindMap.created_at.asc(), MindMap.id.asc())
-            .all()
-        ],
         "important_question_sets": [
             serialize_model_record(row)
             for row in ImportantQuestionSet.query.filter_by(user_id=user_id)
@@ -1563,7 +1554,6 @@ def delete_account_data(user):
     FlashcardSet.query.filter_by(user_id=user_id).delete(synchronize_session=False)
     MemoryChallenge.query.filter_by(user_id=user_id).delete(synchronize_session=False)
     RevisionSheet.query.filter_by(user_id=user_id).delete(synchronize_session=False)
-    MindMap.query.filter_by(user_id=user_id).delete(synchronize_session=False)
     ImportantQuestionSet.query.filter_by(user_id=user_id).delete(synchronize_session=False)
     LearningHistory.query.filter_by(user_id=user_id).delete(synchronize_session=False)
     LearningSession.query.filter_by(user_id=user_id).delete(synchronize_session=False)
@@ -1981,6 +1971,7 @@ VISUALIZATION_DECISION_TYPES = {
     "map",
     "tree",
     "hierarchy",
+    "concept_map",
     "network",
     "database",
     "flow",
@@ -1990,7 +1981,6 @@ VISUALIZATION_DECISION_TYPES = {
     "solar_system",
     "electric_circuit",
     "grammar_tree",
-    "mind_map",
 }
 
 TEXT_BASED_VISUALIZATION_TOPICS = [
@@ -2034,7 +2024,7 @@ VISUALIZATION_TYPE_RULES = [
     ("solar_system", ["solar system", "planet", "orbit"]),
     ("electric_circuit", ["electric circuit", "circuit", "battery", "resistor"]),
     ("grammar_tree", ["sentence structure", "parse tree", "parts of speech tree"]),
-    ("mind_map", ["mind map", "concept map"]),
+    ("concept_map", ["concept map"]),
 ]
 
 VISUALIZATION_RENDER_TYPE_MAP = {
@@ -2051,6 +2041,7 @@ VISUALIZATION_RENDER_TYPE_MAP = {
     "map": "concept_map",
     "tree": "tree",
     "hierarchy": "hierarchy",
+    "concept_map": "concept_map",
     "network": "network_graph",
     "database": "er_diagram",
     "flow": "flowchart",
@@ -2060,7 +2051,6 @@ VISUALIZATION_RENDER_TYPE_MAP = {
     "solar_system": "orbit",
     "electric_circuit": "circuit",
     "grammar_tree": "tree",
-    "mind_map": "mind_map",
 }
 
 TEXT_BASED_VISUALIZATION_REASON = (
@@ -2132,13 +2122,11 @@ def get_learning_history_entries(user_id, search="", subject_filter="all", sort_
     lessons = query.all()
     lesson_ids_with_flashcards = flashcard_lesson_ids(user_id, [lesson.id for lesson in lessons])
     lesson_ids_with_revisions = revision_lesson_ids(user_id, [lesson.id for lesson in lessons])
-    lesson_ids_with_mind_maps = mind_map_lesson_ids(user_id, [lesson.id for lesson in lessons])
     lesson_ids_with_important_questions = important_question_lesson_ids(user_id, [lesson.id for lesson in lessons])
     lesson_ids_with_favourites = favourite_lesson_ids(user_id, [lesson.id for lesson in lessons])
     for lesson in lessons:
         lesson.has_flashcards = lesson.id in lesson_ids_with_flashcards
         lesson.has_revision = lesson.id in lesson_ids_with_revisions
-        lesson.has_mind_map = lesson.id in lesson_ids_with_mind_maps
         lesson.has_important_questions = lesson.id in lesson_ids_with_important_questions
         lesson.is_favourite = lesson.id in lesson_ids_with_favourites
         lesson.has_visualization = learning_history_lesson_has_visualization(lesson)
@@ -2234,25 +2222,6 @@ def get_revision_lesson(entry_id, user_id):
     )
 
 
-def get_mind_map_lesson(entry_id, user_id):
-    return (
-        LearningHistory.query.options(
-            load_only(
-                LearningHistory.id,
-                LearningHistory.user_id,
-                LearningHistory.subject,
-                LearningHistory.book_name,
-                LearningHistory.topic,
-                LearningHistory.notes,
-                LearningHistory.quiz_questions,
-                LearningHistory.created_at,
-            )
-        )
-        .filter_by(id=entry_id, user_id=user_id)
-        .first()
-    )
-
-
 def get_important_questions_lesson(entry_id, user_id):
     return (
         LearningHistory.query.options(
@@ -2310,16 +2279,6 @@ def revision_lesson_ids(user_id, lesson_ids):
     }
 
 
-def existing_mind_map(lesson_id, user_id):
-    return (
-        MindMap.query.filter_by(
-            user_id=user_id,
-            learning_history_id=lesson_id,
-        )
-        .first()
-    )
-
-
 def existing_important_question_set(lesson_id, user_id):
     return (
         ImportantQuestionSet.query.filter_by(
@@ -2339,20 +2298,6 @@ def important_question_lesson_ids(user_id, lesson_ids):
         .filter(
             ImportantQuestionSet.user_id == user_id,
             ImportantQuestionSet.learning_history_id.in_(lesson_ids),
-        )
-        .all()
-    }
-
-
-def mind_map_lesson_ids(user_id, lesson_ids):
-    if not lesson_ids:
-        return set()
-    return {
-        row.learning_history_id
-        for row in MindMap.query.with_entities(MindMap.learning_history_id)
-        .filter(
-            MindMap.user_id == user_id,
-            MindMap.learning_history_id.in_(lesson_ids),
         )
         .all()
     }
@@ -3279,147 +3224,6 @@ def build_structured_evaluation(response_text, questions, answers):
     )
 
 
-def normalize_mind_map_payload(payload, lesson_title):
-    if isinstance(payload, dict):
-        raw_nodes = payload.get("nodes") or payload.get("mind_map") or payload.get("mindMap") or []
-    else:
-        raw_nodes = payload if isinstance(payload, list) else []
-
-    normalized_nodes = []
-    seen_ids = set()
-    for index, raw_node in enumerate(raw_nodes[:30], start=1):
-        if not isinstance(raw_node, dict):
-            continue
-
-        node_id = str(raw_node.get("id") or f"node-{index}").strip()
-        title = str(raw_node.get("title") or raw_node.get("label") or "").strip()
-        parent = raw_node.get("parent")
-
-        if not title:
-            continue
-        if not node_id or node_id in seen_ids:
-            node_id = f"node-{index}"
-
-        parent_id = "" if parent is None else str(parent).strip()
-        normalized_nodes.append(
-            {
-                "id": node_id[:60],
-                "title": title[:80],
-                "parent": parent_id[:60],
-            }
-        )
-        seen_ids.add(node_id)
-
-    if not normalized_nodes:
-        raise ValueError("The AI did not return valid mind map nodes.")
-
-    valid_ids = {node["id"] for node in normalized_nodes}
-    root_indexes = [
-        index
-        for index, node in enumerate(normalized_nodes)
-        if not node["parent"] or node["parent"] not in valid_ids or node["parent"] == node["id"]
-    ]
-
-    if not root_indexes:
-        normalized_nodes[0]["parent"] = ""
-    else:
-        primary_root_id = normalized_nodes[root_indexes[0]]["id"]
-        for root_index in root_indexes[1:]:
-            normalized_nodes[root_index]["parent"] = primary_root_id
-
-    root_node = next((node for node in normalized_nodes if not node["parent"]), normalized_nodes[0])
-    if not root_node["title"]:
-        root_node["title"] = lesson_title or "Lesson"
-
-    return {"nodes": normalized_nodes[:30]}
-
-
-def build_mind_map_prompt(lesson, student_class):
-    notes_excerpt = (lesson.notes or "").strip()
-    if len(notes_excerpt) > 14000:
-        notes_excerpt = f"{notes_excerpt[:14000]}\n\n[Notes truncated for mind map generation.]"
-
-    return f"""
-You are an expert school teacher creating a structured concept map.
-
-{lesson_textbook_context_for_prompt(lesson, student_class)}
-Chapter / Topic: {lesson.topic}
-
-Lesson Notes:
-{notes_excerpt}
-
-Create a mind map for this existing lesson.
-Represent the lesson as a tree.
-Use only concepts supported by the notes.
-Keep titles short.
-Use language suitable for the student's class level.
-Use one center/root node for the chapter.
-Maximum 30 nodes.
-
-Return structured JSON only. Do not include markdown, code fences, or extra text.
-
-Each node must contain:
-- id
-- title
-- parent
-
-Use this exact structure:
-{{
-  "nodes": [
-    {{
-      "id": "root",
-      "title": "Chapter title",
-      "parent": null
-    }},
-    {{
-      "id": "concept-1",
-      "title": "Short concept",
-      "parent": "root"
-    }}
-  ]
-}}
-"""
-
-
-def create_mind_map(lesson, user_id, student_class):
-    prompt = build_mind_map_prompt(lesson, student_class)
-    if session.get("user_id"):
-        prompt += ai_preference_prompt_context(current_user())
-    print("Gemini call: Mind Map")
-    response = gemini_request(
-        "Mind Map",
-        prompt,
-        user_id=user_id,
-        lesson_id=lesson.id,
-    )
-    payload = normalize_mind_map_payload(extract_json_payload(response.text), lesson.topic)
-
-    mind_map = MindMap(
-        user_id=user_id,
-        learning_history_id=lesson.id,
-        map_json=json.dumps(payload),
-        source_model="gemini-2.5-flash",
-    )
-    db.session.add(mind_map)
-    try:
-        db.session.commit()
-    except IntegrityError:
-        db.session.rollback()
-        mind_map = existing_mind_map(lesson.id, user_id)
-    return mind_map
-
-
-def get_or_create_mind_map(lesson, user_id, student_class):
-    mind_map = existing_mind_map(lesson.id, user_id)
-    if mind_map:
-        return mind_map, False
-    return create_mind_map(lesson, user_id, student_class), True
-
-
-def mind_map_payload(mind_map):
-    return normalize_mind_map_payload(extract_json_payload(mind_map.map_json), "Lesson")
-
-
 def normalize_flashcard_payload(payload):
     if isinstance(payload, dict):
         cards = payload.get("flashcards") or payload.get("cards") or []
@@ -4128,7 +3932,6 @@ def get_dashboard_stats(user_id):
         "study_streak": study_streak,
         "flashcards_studied": flashcards_studied,
         "revision_sheets_generated": counts["revision"],
-        "mind_maps_generated": counts["mind_map"],
         "important_question_sets_generated": important_question_sets_generated,
         "memory_match": summarize_memory_match_dashboard(user_id),
         "total_xp": gamification["total_xp"],
@@ -4298,7 +4101,6 @@ def study_plan_bulk_context(user_id, lessons):
             return {
                 "flashcards": set(),
                 "revisions": set(),
-                "mind_maps": set(),
                 "important_questions": set(),
                 "memory_challenges": set(),
                 "tutor_lessons": set(),
@@ -4331,7 +4133,6 @@ def study_plan_bulk_context(user_id, lessons):
         return {
             "flashcards": flashcard_lesson_ids(user_id, lesson_ids),
             "revisions": revision_lesson_ids(user_id, lesson_ids),
-            "mind_maps": mind_map_lesson_ids(user_id, lesson_ids),
             "important_questions": important_question_lesson_ids(user_id, lesson_ids),
             "memory_challenges": {
                 row.lesson_id
@@ -4366,7 +4167,6 @@ def study_plan_activity_statuses(lesson, user_id, current_page_url=None):
     completions = {
         "notes": True,
         "revision": bool(existing_revision_sheet(lesson.id, user_id)),
-        "mind_map": bool(existing_mind_map(lesson.id, user_id)),
         "flashcards": bool(flashcard_set),
         "memory_challenge": bool(MemoryChallenge.query.filter_by(user_id=user_id, lesson_id=lesson.id).first()),
         "ai_tutor": bool(TutorLesson.query.filter_by(user_id=user_id, learning_history_id=lesson.id).first()),
@@ -4394,7 +4194,6 @@ def study_plan_activity_statuses(lesson, user_id, current_page_url=None):
             action_label = {
                 "notes": "Open Notes",
                 "revision": "Generate Revision",
-                "mind_map": "Generate Mind Map",
                 "flashcards": "Generate Flashcards",
                 "memory_challenge": "Generate Flashcards" if not flashcard_set else "Play Challenge",
                 "ai_tutor": "Start Tutor",
@@ -4421,7 +4220,6 @@ def study_plan_activity_statuses_from_bulk(lesson, bulk_context, current_page_ur
     completions = {
         "notes": True,
         "revision": lesson.id in bulk_context["revisions"],
-        "mind_map": lesson.id in bulk_context["mind_maps"],
         "flashcards": has_flashcards,
         "memory_challenge": lesson.id in bulk_context["memory_challenges"],
         "ai_tutor": lesson.id in bulk_context["tutor_lessons"],
@@ -4449,7 +4247,6 @@ def study_plan_activity_statuses_from_bulk(lesson, bulk_context, current_page_ur
             action_label = {
                 "notes": "Open Notes",
                 "revision": "Generate Revision",
-                "mind_map": "Generate Mind Map",
                 "flashcards": "Generate Flashcards",
                 "memory_challenge": "Generate Flashcards" if not has_flashcards else "Play Challenge",
                 "ai_tutor": "Start Tutor",
@@ -4640,12 +4437,6 @@ def get_developer_study_planner_stats():
             .filter(RevisionSheet.learning_history_id.in_(lesson_ids))
             .all()
         }
-        mind_maps = {
-            (row.user_id, row.learning_history_id)
-            for row in MindMap.query.with_entities(MindMap.user_id, MindMap.learning_history_id)
-            .filter(MindMap.learning_history_id.in_(lesson_ids))
-            .all()
-        }
         important_questions = {
             (row.user_id, row.learning_history_id)
             for row in ImportantQuestionSet.query.with_entities(
@@ -4674,7 +4465,7 @@ def get_developer_study_planner_stats():
             .all()
         }
     else:
-        flashcards = revisions = mind_maps = important_questions = memory_challenges = tutor_lessons = quiz_pairs = set()
+        flashcards = revisions = important_questions = memory_challenges = tutor_lessons = quiz_pairs = set()
 
     completion_percentages = []
     completed_lessons = 0
@@ -4682,7 +4473,6 @@ def get_developer_study_planner_stats():
         lesson_key = (lesson.user_id, lesson.id)
         completed_count = 1
         completed_count += int(lesson_key in revisions)
-        completed_count += int(lesson_key in mind_maps)
         completed_count += int(lesson_key in flashcards)
         completed_count += int(lesson_key in memory_challenges)
         completed_count += int(lesson_key in tutor_lessons)
@@ -4727,7 +4517,6 @@ def get_gamification_counts(user_id):
         return {
             "notes": count_user_rows(LearningHistory, user_id),
             "revision": count_user_rows(RevisionSheet, user_id),
-            "mind_map": count_user_rows(MindMap, user_id),
             "flashcards": count_user_rows(FlashcardSet, user_id),
             "memory_match": count_user_rows(MemoryChallenge, user_id),
             "tutor": count_user_rows(TutorLesson, user_id),
@@ -4784,7 +4573,7 @@ def gamification_level(total_xp):
 def get_gamification_activity_dates(user_id):
     def load_dates():
         activity_dates = []
-        for model in (LearningHistory, RevisionSheet, MindMap, FlashcardSet, TutorLesson, QuizHistory):
+        for model in (LearningHistory, RevisionSheet, FlashcardSet, TutorLesson, QuizHistory):
             activity_dates.extend(
                 row.created_at
                 for row in model.query.with_entities(model.created_at)
@@ -4856,12 +4645,6 @@ def build_gamification_badges(counts, total_xp, study_streak, memory_stats=None)
             "unlocked": counts["quiz"] >= 3,
         },
         {
-            "icon": "&#129504;",
-            "title": "Mind Mapper",
-            "description": "Create your first mind map.",
-            "unlocked": counts["mind_map"] >= 1,
-        },
-        {
             "icon": "&#127183;",
             "title": "Flashcard Starter",
             "description": "Generate flashcards for a lesson.",
@@ -4929,7 +4712,6 @@ def build_gamification_achievements(counts, total_xp, study_streak, memory_stats
     achievements = [
         ("First Notes", "Save a lesson note.", counts["notes"], 1),
         ("Revision Ready", "Generate a quick revision sheet.", counts["revision"], 1),
-        ("Visual Thinker", "Create a mind map.", counts["mind_map"], 1),
         ("Card Collector", "Generate flashcards.", counts["flashcards"], 1),
         ("Memory Master", "Complete a Memory Match game.", counts["memory_match"], 1),
         ("Memory Beginner", "Complete your first AI Memory Challenge.", counts["memory_match"], 1),
@@ -4961,7 +4743,6 @@ def get_today_gamification_counts(user_id):
         return {
             "notes": count_user_rows_between(LearningHistory, user_id, today_start, tomorrow_start),
             "revision": count_user_rows_between(RevisionSheet, user_id, today_start, tomorrow_start),
-            "mind_map": count_user_rows_between(MindMap, user_id, today_start, tomorrow_start),
             "flashcards": count_user_rows_between(FlashcardSet, user_id, today_start, tomorrow_start),
             "memory_match": count_user_rows_between(MemoryChallenge, user_id, today_start, tomorrow_start),
             "tutor": count_user_rows_between(TutorLesson, user_id, today_start, tomorrow_start),
@@ -5008,14 +4789,6 @@ def build_daily_challenges(user_id):
             "progress": today_counts["revision"],
             "target": 1,
             "xp": GAMIFICATION_XP_VALUES["revision"],
-        },
-        {
-            "key": "mind_map",
-            "title": "Build a mind map",
-            "description": "+20 XP for visual learning.",
-            "progress": today_counts["mind_map"],
-            "target": 1,
-            "xp": GAMIFICATION_XP_VALUES["mind_map"],
         },
         {
             "key": "flashcards",
@@ -5096,7 +4869,6 @@ def get_gamification_rollups(user_ids):
     model_activity_pairs = (
         (LearningHistory, "notes"),
         (RevisionSheet, "revision"),
-        (MindMap, "mind_map"),
         (FlashcardSet, "flashcards"),
         (MemoryChallenge, "memory_match"),
         (TutorLesson, "tutor"),
@@ -5349,7 +5121,6 @@ def get_performance_analytics(user_id):
     study_streak = calculate_study_streak(activity_dates)
     learning_session_count = count_user_rows(LearningSession, user_id)
     revision_sheet_count = count_user_rows(RevisionSheet, user_id)
-    mind_map_count = count_user_rows(MindMap, user_id)
     tutor_session_count = count_user_rows(TutorLesson, user_id)
     important_question_set_count = count_user_rows(ImportantQuestionSet, user_id)
     flashcards_completed = (
@@ -5362,7 +5133,6 @@ def get_performance_analytics(user_id):
     artifact_total = (
         flashcards_completed
         + revision_sheet_count
-        + mind_map_count
         + tutor_session_count
         + important_question_set_count
     )
@@ -5396,7 +5166,6 @@ def get_performance_analytics(user_id):
         "flashcards_completed": flashcards_completed,
         "flashcards_created": flashcards_created,
         "revision_sheets": revision_sheet_count,
-        "mind_maps": mind_map_count,
         "tutor_sessions": tutor_session_count,
         "important_question_sets": important_question_set_count,
         "last_study_date": format_activity_date(last_activity_date),
@@ -5466,11 +5235,10 @@ def get_performance_analytics(user_id):
         "tutor": [timeline_buckets[date_value]["Tutor"] for date_value in timeline_dates],
     }
     chart_data["learning_tools"] = {
-        "labels": ["Flashcards", "Revision Sheets", "Mind Maps", "Tutor Sessions", "Question Sets"],
+        "labels": ["Flashcards", "Revision Sheets", "Tutor Sessions", "Question Sets"],
         "values": [
             flashcards_completed,
             revision_sheet_count,
-            mind_map_count,
             tutor_session_count,
             important_question_set_count,
         ],
@@ -5534,7 +5302,6 @@ def get_developer_panel_stats():
         "quiz_history": QuizHistory.query.count(),
         "downloaded_files": DownloadedFile.query.count(),
         "revision_sheets": RevisionSheet.query.count(),
-        "mind_maps": MindMap.query.count(),
         "flashcard_sets": FlashcardSet.query.count(),
         "memory_challenges": MemoryChallenge.query.count(),
         "tutor_lessons": TutorLesson.query.count(),
@@ -5545,7 +5312,6 @@ def get_developer_panel_stats():
         (LearningHistory, LearningHistory.created_at),
         (LearningSession, LearningSession.created_at),
         (RevisionSheet, RevisionSheet.created_at),
-        (MindMap, MindMap.created_at),
         (FlashcardSet, FlashcardSet.created_at),
         (MemoryChallenge, MemoryChallenge.completed_at),
         (TutorLesson, TutorLesson.created_at),
@@ -6160,7 +5926,6 @@ def qa_panel_items():
             {"name": "Lesson Generator", "status": "Ready" if gemini_online else "Unavailable", "state": "ready" if gemini_online else "unavailable"},
             {"name": "Quiz Generator", "status": "Ready" if gemini_online else "Unavailable", "state": "ready" if gemini_online else "unavailable"},
             {"name": "Revision Generator", "status": "Ready" if gemini_online else "Unavailable", "state": "ready" if gemini_online else "unavailable"},
-            {"name": "Mind Map Generator", "status": "Ready" if gemini_online else "Unavailable", "state": "ready" if gemini_online else "unavailable"},
             {"name": "Flashcards", "status": "Ready" if gemini_online else "Unavailable", "state": "ready" if gemini_online else "unavailable"},
             {"name": "AI Tutor", "status": "Ready" if gemini_online else "Unavailable", "state": "ready" if gemini_online else "unavailable"},
         ],
@@ -6197,7 +5962,6 @@ def qa_panel_items():
             "Diagram Library",
             "Diagram Reviewer",
             "Flashcards",
-            "Mind Maps",
             "Quick Revision",
             "Quiz",
             "Analytics",
@@ -6980,7 +6744,6 @@ def normalize_visualization_decision_type(value):
     aliases = {
         "process": "flow",
         "flowchart": "flow",
-        "concept_map": "mind_map",
         "network_graph": "network",
         "er_diagram": "database",
         "scientific_process": "biology_process",
@@ -7028,7 +6791,7 @@ def normalize_visualization_decision(subject, topic, raw_decision=None, raw_diag
         }
 
     if required is True:
-        visualization_type = visualization_type or infer_visualization_decision_type(subject, topic) or "mind_map"
+        visualization_type = visualization_type or infer_visualization_decision_type(subject, topic) or "concept_map"
         return {
             "visualization_required": True,
             "visualization_type": visualization_type,
@@ -7049,7 +6812,7 @@ def normalize_visualization_decision(subject, topic, raw_decision=None, raw_diag
             visualization_type = (
                 normalize_visualization_decision_type(raw_type)
                 or infer_visualization_decision_type(subject, topic)
-                or "mind_map"
+                or "concept_map"
             )
             return {
                 "visualization_required": True,
@@ -10312,7 +10075,6 @@ def view_learning_history(lesson_id):
         questions=questions,
         has_flashcards=has_flashcards,
         has_revision=bool(existing_revision_sheet(lesson.id, session["user_id"])),
-        has_mind_map=bool(existing_mind_map(lesson.id, session["user_id"])),
         has_important_questions=bool(existing_important_question_set(lesson.id, session["user_id"])),
         is_favourite=bool(existing_favourite_note(lesson.id, session["user_id"])),
         study_plan=build_study_plan(lesson, session["user_id"], current_page_url=current_page_url),
@@ -10392,7 +10154,6 @@ def revision(lesson_id):
         revision_html=markdown.markdown(revision_sheet.content_markdown),
         questions=decode_json_list(lesson.quiz_questions),
         has_flashcards=bool(existing_flashcard_set(lesson.id, session["user_id"])),
-        has_mind_map=bool(existing_mind_map(lesson.id, session["user_id"])),
         has_important_questions=bool(existing_important_question_set(lesson.id, session["user_id"])),
         **learning_tool_context(lesson.id),
     )
@@ -10482,7 +10243,6 @@ def important_questions(lesson_id):
         questions_html=markdown.markdown(question_set.markdown),
         questions=decode_json_list(lesson.quiz_questions),
         has_revision=bool(existing_revision_sheet(lesson.id, session["user_id"])),
-        has_mind_map=bool(existing_mind_map(lesson.id, session["user_id"])),
         has_flashcards=bool(existing_flashcard_set(lesson.id, session["user_id"])),
         **learning_tool_context(lesson.id),
     )
@@ -10508,47 +10268,6 @@ def download_important_questions_pdf(lesson_id):
         mimetype="application/pdf",
         as_attachment=True,
         download_name=safe_notes_filename(f"{lesson.topic}_important_questions", extension="pdf"),
-    )
-
-
-@app.route("/mindmap/<int:lesson_id>")
-@login_required
-def mindmap(lesson_id):
-    lesson = get_mind_map_lesson(lesson_id, session["user_id"])
-    if not lesson:
-        abort(404)
-
-    student_class = preferred_class_for_user(current_user())
-    class_error = validate_supported_class(student_class)
-    if class_error:
-        abort(400, description=class_error)
-
-    try:
-        mind_map, created = get_or_create_mind_map(
-            lesson,
-            session["user_id"],
-            student_class,
-        )
-    except GeminiRequestError as error:
-        return render_gemini_error(error.error_info)
-    except ValueError as error:
-        abort(502, description=str(error))
-    except Exception:
-        abort(503, description="The mind map service is unavailable. Please try again later.")
-
-    if created:
-        flash("Mind Map generated. Your lesson is ready to explore visually.", "success")
-
-    payload = mind_map_payload(mind_map)
-    return render_template(
-        "mindmap.html",
-        lesson=lesson,
-        mind_map=mind_map,
-        nodes=payload["nodes"],
-        has_flashcards=bool(existing_flashcard_set(lesson.id, session["user_id"])),
-        has_important_questions=bool(existing_important_question_set(lesson.id, session["user_id"])),
-        questions=decode_json_list(lesson.quiz_questions),
-        **learning_tool_context(lesson.id),
     )
 
 
@@ -11530,7 +11249,7 @@ The JSON must be structured data only.
 Use exactly this structure when a visualization helps:
 {{
   "visualization_required": true,
-  "visualization_type": "biology_process, biology_structure, chemistry_process, physics_process, water_cycle, food_chain, cell_diagram, human_body, plant_diagram, timeline, map, tree, hierarchy, network, database, flow, cycle, comparison, graph, solar_system, electric_circuit, grammar_tree, or mind_map",
+  "visualization_type": "biology_process, biology_structure, chemistry_process, physics_process, water_cycle, food_chain, cell_diagram, human_body, plant_diagram, timeline, map, tree, hierarchy, concept_map, network, database, flow, cycle, comparison, graph, solar_system, electric_circuit, or grammar_tree",
   "confidence": 0.0 to 1.0
 }}
 Use exactly this structure when the lesson is mainly textual:

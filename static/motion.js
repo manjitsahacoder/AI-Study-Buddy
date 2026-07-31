@@ -382,7 +382,6 @@
             { pattern: /quiz history/i, message: "Opening Quiz History..." },
             { pattern: /saved notes|favourite/i, message: "Opening Saved Notes..." },
             { pattern: /revision/i, message: "Preparing Revision..." },
-            { pattern: /mind map|mindmap/i, message: "Preparing Mind Map..." },
             { pattern: /important questions/i, message: "Preparing Important Questions..." },
             { pattern: /flashcards/i, message: "Preparing Flashcards..." },
             { pattern: /memory/i, message: "Opening Memory Challenge..." },
@@ -430,7 +429,7 @@
         }
 
         function progressMessagesFor(text) {
-            if (/learn|lesson|revision|flashcards|mind map|mindmap|quiz|tutor/i.test(text)) {
+            if (/learn|lesson|revision|flashcards|quiz|tutor/i.test(text)) {
                 return defaultProgressMessages;
             }
             if (/performance|analytics|dashboard/i.test(text)) {

@@ -31,7 +31,6 @@ from models import (
     LearningSession,
     MemoryChallenge,
     MemoryChallengeSession,
-    MindMap,
     QuizHistory,
     RevisionSheet,
     StudyPlanProgress,
@@ -4044,7 +4043,6 @@ Grade: A
                     QuizHistory,
                     DownloadedFile,
                     RevisionSheet,
-                    MindMap,
                     ImportantQuestionSet,
                     FlashcardSet,
                     Flashcard,
@@ -4075,7 +4073,6 @@ Grade: A
                     QuizHistory,
                     DownloadedFile,
                     RevisionSheet,
-                    MindMap,
                     ImportantQuestionSet,
                     FlashcardSet,
                     Flashcard,
@@ -4172,12 +4169,6 @@ Grade: A
                         content_markdown="# Quick Revision",
                         source_model="local-test",
                     ),
-                    MindMap(
-                        user_id=user.id,
-                        learning_history_id=lesson_one_id,
-                        map_json="{}",
-                        source_model="local-test",
-                    ),
                     FlashcardSet(
                         user_id=user.id,
                         learning_history_id=lesson_two_id,
@@ -4198,12 +4189,11 @@ Grade: A
 
             summary = app_module.get_gamification_summary(user.id)
 
-        self.assertEqual(summary["total_xp"], 105)
-        self.assertEqual(summary["level"]["level"], 2)
-        self.assertEqual(summary["level"]["progress_percentage"], 5)
+        self.assertEqual(summary["total_xp"], 85)
+        self.assertEqual(summary["level"]["level"], 1)
+        self.assertEqual(summary["level"]["progress_percentage"], 85)
         self.assertEqual(summary["counts"]["notes"], 2)
         self.assertEqual(summary["counts"]["revision"], 1)
-        self.assertEqual(summary["counts"]["mind_map"], 1)
         self.assertEqual(summary["counts"]["flashcards"], 1)
         self.assertEqual(summary["counts"]["tutor"], 1)
         self.assertEqual(summary["counts"]["quiz"], 1)
@@ -4220,13 +4210,13 @@ Grade: A
         self.assertEqual(profile_response.status_code, 200)
         dashboard_page = dashboard_response.get_data(as_text=True)
         profile_page = profile_response.get_data(as_text=True)
-        self.assertIn("105 XP earned", dashboard_page)
-        self.assertIn("Level 2", dashboard_page)
+        self.assertIn("85 XP earned", dashboard_page)
+        self.assertIn("Level 1", dashboard_page)
         self.assertIn("Daily Challenges", dashboard_page)
         self.assertIn("Notes <strong>+10</strong>", dashboard_page)
         self.assertIn("All-round Learner", dashboard_page)
         self.assertIn("Milestone Progress", dashboard_page)
-        self.assertIn("Level 2 &middot; 105 XP", profile_page)
+        self.assertIn("Level 1 &middot; 85 XP", profile_page)
         self.assertIn("Badges Unlocked", profile_page)
 
     def test_study_plan_computes_local_activity_status_without_gemini(self):
@@ -4261,12 +4251,12 @@ Grade: A
         self.assertFalse(gemini_request.called)
         page = response.get_data(as_text=True)
         self.assertIn("AI Study Planner", page)
-        self.assertIn("28%", page)
-        self.assertIn("2/7", page)
+        self.assertIn("33%", page)
+        self.assertIn("2/6", page)
         self.assertIn("Notes", page)
         self.assertIn("Quick Revision", page)
         self.assertIn("Complete", page)
-        self.assertIn("Generate Mind Map", page)
+        self.assertNotIn("/mind" + "map/", page)
         self.assertIn("Generate Flashcards", page)
         self.assertIn("Take Quiz", page)
         self.assertIn("Completion XP", page)
@@ -4292,12 +4282,6 @@ Grade: A
                         user_id=user.id,
                         learning_history_id=lesson_id,
                         content_markdown="# Quick Revision",
-                        source_model="local-test",
-                    ),
-                    MindMap(
-                        user_id=user.id,
-                        learning_history_id=lesson_id,
-                        map_json="{}",
                         source_model="local-test",
                     ),
                     FlashcardSet(
@@ -4358,7 +4342,7 @@ Grade: A
             self.assertEqual(StudyPlanProgress.query.count(), 1)
 
         self.assertEqual(summary["counts"]["study_plan"], 1)
-        self.assertEqual(summary["total_xp"], 155)
+        self.assertEqual(summary["total_xp"], 135)
         self.assertEqual(planner_stats["completed_lessons"], 1)
         self.assertEqual(planner_stats["xp_awarded"], 40)
 
@@ -5009,20 +4993,6 @@ Photosynthesis helps plants prepare food and release oxygen.
 """
         )
 
-    def mind_map_response(self):
-        return MockResponse(
-            json.dumps(
-                {
-                    "nodes": [
-                        {"id": "root", "title": "Photosynthesis", "parent": None},
-                        {"id": "light", "title": "Sunlight", "parent": "root"},
-                        {"id": "chlorophyll", "title": "Chlorophyll", "parent": "root"},
-                        {"id": "products", "title": "Food and oxygen", "parent": "root"},
-                    ]
-                }
-            )
-        )
-
     @patch.object(app_module, "generate_content_with_fallback")
     def test_revision_generates_once_and_reopens(self, generate_content):
         self.register_user()
@@ -5160,7 +5130,6 @@ Photosynthesis helps plants prepare food and release oxygen.
         self.assertIn("Revision Tips", page)
         self.assertIn("Download PDF", page)
         self.assertIn("Open Revision", page)
-        self.assertIn("Open Mind Map", page)
         self.assertIn("Open Flashcards", page)
         self.assertIn("AI Tutor", page)
         self.assertIn("Quiz", page)
@@ -5245,177 +5214,6 @@ Photosynthesis helps plants prepare food and release oxygen.
 
         self.assertEqual(response.status_code, 404)
 
-    @patch.object(app_module, "generate_content_with_fallback")
-    def test_mind_map_generates_once_and_reopens(self, generate_content):
-        self.register_user()
-        self.login_user()
-        generate_content.return_value = self.mind_map_response()
-        with app_module.app.app_context():
-            lesson_id = app_module.save_learning_history(
-                1,
-                "Science",
-                "NCERT",
-                "Photosynthesis",
-                "Plants make food using sunlight and chlorophyll.",
-                {},
-                self.questions,
-            )
-
-        first_response = self.client.get(f"/mindmap/{lesson_id}")
-        second_response = self.client.get(f"/mindmap/{lesson_id}")
-
-        self.assertEqual(first_response.status_code, 200)
-        self.assertEqual(second_response.status_code, 200)
-        generate_content.assert_called_once()
-        page = first_response.get_data(as_text=True)
-        self.assertIn('<meta name="viewport"', page)
-        self.assertIn("AI Mind Map", page)
-        self.assertIn("Photosynthesis", page)
-        self.assertIn("Sunlight", page)
-        self.assertIn("data-zoom-in", page)
-        self.assertIn("data-zoom-out", page)
-        self.assertIn("data-zoom-reset", page)
-        self.assertIn("window.print()", page)
-        self.assertIn("mindmap-stage", page)
-        self.assertIn("data-mindmap-viewport", page)
-        self.assertIn("mindmap-zoom-surface", page)
-        self.assertIn("mindmap-connections", page)
-        self.assertIn("mindmap-node-layer", page)
-        self.assertIn("renderMindMap()", page)
-        self.assertIn("siblingGap", page)
-        with app_module.app.app_context():
-            self.assertEqual(MindMap.query.count(), 1)
-            mind_map = MindMap.query.first()
-            self.assertEqual(mind_map.learning_history_id, lesson_id)
-            self.assertEqual(mind_map.user_id, 1)
-            self.assertEqual(mind_map.learning_history.topic, "Photosynthesis")
-            self.assertNotIn("Plants make food", mind_map.map_json)
-
-    @patch.object(app_module, "generate_content_with_fallback")
-    def test_mind_map_permissions_require_lesson_owner(self, generate_content):
-        self.register_user()
-        with app_module.app.app_context():
-            lesson_id = app_module.save_learning_history(
-                1,
-                "Science",
-                "NCERT",
-                "Photosynthesis",
-                "Plants make food using sunlight.",
-                {},
-                self.questions,
-            )
-        self.register_user(username="other", email="other@example.com")
-        self.login_user(identifier="other")
-
-        response = self.client.get(f"/mindmap/{lesson_id}")
-
-        self.assertEqual(response.status_code, 404)
-        generate_content.assert_not_called()
-
-    @patch.object(app_module, "generate_content_with_fallback")
-    def test_mind_map_dashboard_history_and_json_integration(self, generate_content):
-        self.register_user()
-        self.login_user()
-        generate_content.return_value = MockResponse(
-            """```json
-{
-  "nodes": [
-    {"id": "root", "title": "Photosynthesis", "parent": null},
-    {"id": "raw-materials", "title": "Raw materials", "parent": "root"},
-    {"id": "water", "title": "Water", "parent": "raw-materials"}
-  ]
-}
-```"""
-        )
-        with app_module.app.app_context():
-            lesson_id = app_module.save_learning_history(
-                1,
-                "Science",
-                "NCERT",
-                "Photosynthesis",
-                "Plants make food using sunlight.",
-                {},
-                self.questions,
-            )
-
-        mind_map_response = self.client.get(f"/mindmap/{lesson_id}")
-        history_response = self.client.get("/learning-history")
-        dashboard_response = self.client.get("/dashboard")
-        detail_response = self.client.get(f"/learning-history/{lesson_id}")
-
-        self.assertEqual(mind_map_response.status_code, 200)
-        self.assertIn("Raw materials", mind_map_response.get_data(as_text=True))
-        self.assertIn("Open Mind Map", history_response.get_data(as_text=True))
-        self.assertIn("Open Mind Map", detail_response.get_data(as_text=True))
-        dashboard_page = dashboard_response.get_data(as_text=True)
-        self.assertIn("Mind Maps Generated", dashboard_page)
-        self.assertIn("<strong>1</strong>", dashboard_page)
-
-    @patch.object(app_module, "generate_content_with_fallback")
-    def test_existing_mind_map_renders_with_new_layout_without_gemini(self, generate_content):
-        self.register_user()
-        self.login_user()
-        with app_module.app.app_context():
-            lesson_id = self.create_saved_lesson(notes="Stored notes should not be sent again.")
-            db.session.add(
-                MindMap(
-                    user_id=1,
-                    learning_history_id=lesson_id,
-                    map_json=json.dumps(
-                        {
-                            "nodes": [
-                                {"id": "root", "title": "Photosynthesis", "parent": ""},
-                                {
-                                    "id": "long-child",
-                                    "title": "Raw materials from roots and air used during food making",
-                                    "parent": "root",
-                                },
-                                {"id": "water", "title": "Water carried through stem", "parent": "long-child"},
-                            ]
-                        }
-                    ),
-                )
-            )
-            db.session.commit()
-
-        mind_map_response = self.client.get(f"/mindmap/{lesson_id}")
-        history_response = self.client.get("/learning-history")
-        detail_response = self.client.get(f"/learning-history/{lesson_id}")
-
-        self.assertEqual(mind_map_response.status_code, 200)
-        self.assertEqual(history_response.status_code, 200)
-        self.assertEqual(detail_response.status_code, 200)
-        page = mind_map_response.get_data(as_text=True)
-        self.assertIn("Raw materials from roots and air used during food making", page)
-        self.assertIn("data-mindmap-connections", page)
-        self.assertIn("nodeMetrics", page)
-        self.assertIn("applyZoom", page)
-        self.assertIn("pointermove", page)
-        generate_content.assert_not_called()
-
-    def test_mind_map_json_parsing_limits_and_repairs_tree(self):
-        payload = {
-            "nodes": [
-                {"id": "root", "title": "Main Topic", "parent": None},
-                {"id": "duplicate", "title": "First", "parent": "root"},
-                {"id": "duplicate", "title": "Second", "parent": "root"},
-                {"id": "orphan", "title": "Orphan", "parent": "missing"},
-            ]
-            + [
-                {"id": f"extra-{index}", "title": f"Extra {index}", "parent": "root"}
-                for index in range(1, 40)
-            ]
-        }
-
-        normalized = app_module.normalize_mind_map_payload(payload, "Main Topic")
-
-        self.assertEqual(len(normalized["nodes"]), 30)
-        ids = [node["id"] for node in normalized["nodes"]]
-        self.assertEqual(len(ids), len(set(ids)))
-        self.assertEqual(normalized["nodes"][0]["parent"], "")
-        orphan = next(node for node in normalized["nodes"] if node["id"] == "orphan")
-        self.assertEqual(orphan["parent"], "root")
-
     @patch.object(app_module.model, "generate_content")
     def test_learning_tool_opened_from_notes_returns_to_notes_hub(self, generate_content):
         self.register_user()
@@ -5453,16 +5251,16 @@ Q5. What is question five?
 
         self.assertEqual(notes_response.status_code, 200)
         notes_page = notes_response.get_data(as_text=True)
-        self.assertIn('href="/mindmap/1?next=/notes/1"', notes_page)
+        self.assertIn('href="/revision/1?next=/notes/1"', notes_page)
 
-        with patch.object(app_module, "generate_content_with_fallback") as mind_map_generate:
-            mind_map_generate.return_value = self.mind_map_response()
-            mind_map_response = self.client.get("/mindmap/1?next=/notes/1")
+        with patch.object(app_module, "generate_content_with_fallback") as revision_generate:
+            revision_generate.return_value = self.revision_response()
+            revision_response = self.client.get("/revision/1?next=/notes/1")
 
-        self.assertEqual(mind_map_response.status_code, 200)
-        mind_map_page = mind_map_response.get_data(as_text=True)
-        self.assertIn('href="/notes/1"', mind_map_page)
-        self.assertNotIn('href="/learning-history/1">Back to Lesson</a>', mind_map_page)
+        self.assertEqual(revision_response.status_code, 200)
+        revision_page = revision_response.get_data(as_text=True)
+        self.assertIn('href="/notes/1"', revision_page)
+        self.assertNotIn('href="/learning-history/1">Back to Lesson</a>', revision_page)
 
     @patch.object(app_module, "generate_content_with_fallback")
     def test_learning_tool_opened_from_history_detail_returns_to_history_detail(self, generate_content):
@@ -6770,12 +6568,6 @@ Q5. What is question five?
                         content_markdown="# Plants",
                         created_at=third_date,
                     ),
-                    MindMap(
-                        user_id=1,
-                        learning_history_id=2,
-                        map_json="{}",
-                        created_at=third_date,
-                    ),
                     ImportantQuestionSet(
                         user_id=1,
                         learning_history_id=3,
@@ -6889,7 +6681,6 @@ Q5. What is question five?
         self.assertIn("Study Streak", page)
         self.assertIn("Flashcards Completed", page)
         self.assertIn("Revision Sheets", page)
-        self.assertIn("Mind Maps", page)
         self.assertIn("Tutor Sessions", page)
         self.assertIn("Important Question Sets", page)
         self.assertIn("Highest Score", page)

@@ -50,7 +50,6 @@ Method: Three runs per major feature where applicable; first run treated as cold
 | Diagram Status API | 27 ms | 40 ms | 36 ms | JSON serialization/cache lookup | Excellent |
 | Diagram Explanation | 8.75 s | 56 ms | 2.95 s | Gemini diagram explanation | Needs Improvement |
 | Quick Revision | 12.08 s | 35 ms | 4.05 s | Gemini revision generation | Needs Improvement |
-| Mind Map | 16.85 s | 17 ms | 5.63 s | Gemini mind-map generation | Slow |
 | Flashcards | 7.98 s | 16 ms | 2.67 s | Gemini flashcard generation | Needs Improvement |
 | Important Questions | 21.00 s | 66 ms | 7.04 s | Gemini important-question generation | Slow |
 | Study Plan | 58 ms | 45 ms | 49 ms | Completion/status calculations | Excellent |
@@ -94,13 +93,12 @@ Tutor page load is excellent. Actual tutor message response through UI completed
 
 Quiz render is excellent. Quiz evaluation is Slow, averaging 14.73 seconds because each submission calls Gemini.
 
-### Quick Revision, Flashcards, Mind Map, Important Questions
+### Quick Revision, Flashcards, Important Questions
 
 These features perform well after cached generation. First-run costs are AI-bound:
 
 - Flashcards: 7.98 seconds first run.
 - Quick Revision: 12.08 seconds first run.
-- Mind Map: 16.85 seconds first run.
 - Important Questions: 21.00 seconds first run.
 
 ### Downloads
@@ -116,11 +114,10 @@ All admin/support/QA pages are excellent with the current dataset. Manage Users 
 1. Important Questions first generation: 21.00 s.
 2. Cell Division AI Lesson: 20.39 s.
 3. Photosynthesis AI Lesson: 17.27 s.
-4. Mind Map first generation: 16.85 s.
-5. Water Cycle AI Lesson: 16.78 s.
-6. Digestive System AI Lesson: 16.64 s.
-7. Mitochondria AI Lesson: 16.36 s.
-8. Learning History Detail first load with diagram review: 15.97 s.
+4. Water Cycle AI Lesson: 16.78 s.
+5. Digestive System AI Lesson: 16.64 s.
+6. Mitochondria AI Lesson: 16.36 s.
+7. Learning History Detail first load with diagram review: 15.97 s.
 9. Quiz Evaluation: 14.73 s average.
 10. Democracy AI Lesson: 14.75 s.
 
@@ -143,7 +140,7 @@ All admin/support/QA pages are excellent with the current dataset. Manage Users 
 
 - Gemini lesson generation for all new topics.
 - Gemini evaluation for quiz answers.
-- Gemini generation for mind maps and important questions.
+- Gemini generation for important questions.
 - Gemini diagram explanation and diagram review.
 
 ### Database Bottlenecks
@@ -161,7 +158,7 @@ All admin/support/QA pages are excellent with the current dataset. Manage Users 
 
 ### Caching Improvements
 
-- Existing generated-artifact caching works well for revision, mind map, flashcards, and important questions after first generation.
+- Existing generated-artifact caching works well for revision, flashcards, and important questions after first generation.
 - Diagram cache worked for repeat status/download checks.
 - Major opportunity: pre-warm and reuse lesson generation and quiz evaluation for known exhibition topics.
 - PDF generation could be cached for unchanged artifacts to avoid repeated 500 ms Learning History PDF builds.
@@ -176,7 +173,7 @@ For the exhibition, pre-generate at least:
 - Water Cycle
 - Solar System
 
-Then demonstrate cached history/detail/revision/flashcards/mind-map/tutor flows first, and run only one live AI generation if time allows. A live generation should be introduced as a 10-20 second AI step so the wait feels expected rather than broken.
+Then demonstrate cached history/detail/revision/flashcards/tutor flows first, and run only one live AI generation if time allows. A live generation should be introduced as a 10-20 second AI step so the wait feels expected rather than broken.
 
 ## Performance Scores
 

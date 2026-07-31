@@ -49,7 +49,6 @@ Discovered features:
 - Quick Revision.
 - Flashcards with status update.
 - Memory Match / Memory Challenge.
-- Mind Maps.
 - Important Questions.
 - Study Planner.
 - Recommendations engine.
@@ -78,7 +77,7 @@ Discovered features:
 - Exhibition mode enabled for developer and hid admin links in exhibition view.
 - PWA manifest and service worker were present and returned 200.
 - All 10 AI topics returned 200, included lesson signals, diagram/visualization signals, and 5 quiz questions.
-- Quick Revision, Mind Map, Flashcards, Important Questions, Study Plan, Memory Match, downloads, and PDFs returned 200.
+- Quick Revision, Flashcards, Important Questions, Study Plan, Memory Match, downloads, and PDFs returned 200.
 - Tutor UI accepted a real message and displayed an assistant response.
 - Quiz render and AI evaluation returned 200.
 - No browser console errors were captured.
@@ -160,7 +159,7 @@ Discovered features:
 - Steps to reproduce:
   1. Submit new AI lesson topics.
   2. Observe 9.7-20.4 second lesson generation.
-  3. Generate Important Questions, Mind Map, Quick Revision, Quiz Evaluation.
+  3. Generate Important Questions, Quick Revision, Quiz Evaluation.
 - Files involved:
   - `app.py:9594`
   - `app.py:2857`
@@ -314,7 +313,6 @@ Tables verified:
 - `support_feedback`
 - `diagram_library`
 - `revision_sheets`
-- `mind_maps`
 - `important_question_sets`
 - `flashcard_sets`
 - `flashcards`
@@ -323,7 +321,7 @@ Tables verified:
 - `tutor_lessons`
 - `tutor_messages`
 
-Indexes are present on most user/time/topic lookups. Unique constraints exist for one-per-user generated artifacts such as favourite notes, revision sheets, mind maps, important question sets, flashcard sets, tutor lessons, and study plan progress.
+Indexes are present on most user/time/topic lookups. Unique constraints exist for one-per-user generated artifacts such as favourite notes, revision sheets, important question sets, flashcard sets, tutor lessons, and study plan progress.
 
 Warning: SQLite foreign keys exist in schema metadata but are not enforced in the live connection (`PRAGMA foreign_keys = 0`).
 
@@ -339,7 +337,6 @@ Post-audit live data counts:
 | support_feedback | 1 |
 | diagram_library | 1 |
 | revision_sheets | 1 |
-| mind_maps | 1 |
 | important_question_sets | 1 |
 | flashcard_sets | 1 |
 | flashcards | 12 |

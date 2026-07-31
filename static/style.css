@@ -4266,7 +4266,7 @@ button:hover,
     margin: 24px 0;
 }
 
-.learn-page :where(#lesson-start, #lesson-notes, #diagram-section, #revision-tools, #ai-tutor-step, #quiz-step, #flashcards-step, #mindmap-step, #memory-step) {
+.learn-page :where(#lesson-start, #lesson-notes, #diagram-section, #revision-tools, #ai-tutor-step, #quiz-step, #flashcards-step, #memory-step) {
     scroll-margin-top: 96px;
 }
 
@@ -4652,7 +4652,6 @@ button:hover,
 .learning-card-tutor,
 .learning-card-flashcards,
 .learning-card-revision,
-.learning-card-mindmap,
 .learning-card-important,
 .learning-card-memory,
 .learning-action-card.is-coming-soon {
@@ -4684,10 +4683,6 @@ button:hover,
 
 .learning-card-flashcards .learning-card-icon {
     background: var(--green);
-}
-
-.learning-card-mindmap .learning-card-icon {
-    background: var(--amber);
 }
 
 .learning-card-revision .learning-card-icon {
@@ -5003,190 +4998,6 @@ button:hover,
     border: 1px solid rgba(49, 87, 213, 0.12);
     border-radius: 8px;
     background: rgba(49, 87, 213, 0.06);
-}
-
-.mindmap-shell {
-    max-width: 1240px;
-}
-
-.mindmap-header p {
-    margin: 8px 0 0;
-    color: var(--muted);
-    font-weight: 700;
-}
-
-.mindmap-toolbar {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 10px;
-    margin: 18px 0;
-    padding: 14px;
-    border: 1px solid rgba(231, 223, 210, 0.88);
-    border-radius: 8px;
-    background: rgba(255, 253, 248, 0.9);
-    box-shadow: 0 12px 30px rgba(30, 40, 58, 0.08);
-}
-
-.mindmap-toolbar form {
-    margin: 0;
-}
-
-.mindmap-toolbar button,
-.mindmap-toolbar .button-link {
-    min-height: 42px;
-}
-
-.mindmap-stage {
-    overflow: hidden;
-    min-height: clamp(560px, calc(100vh - 360px), 780px);
-    border: 1px solid rgba(49, 87, 213, 0.16);
-    border-radius: 8px;
-    background:
-        linear-gradient(135deg, rgba(49, 87, 213, 0.08), rgba(4, 125, 135, 0.07), rgba(189, 138, 32, 0.08)),
-        rgba(255, 253, 248, 0.96);
-    box-shadow: var(--soft-shadow);
-}
-
-.mindmap-scroll {
-    width: 100%;
-    height: clamp(560px, calc(100vh - 360px), 780px);
-    overflow: auto;
-    cursor: grab;
-    overscroll-behavior: contain;
-    touch-action: none;
-    scrollbar-color: rgba(49, 87, 213, 0.46) rgba(49, 87, 213, 0.08);
-}
-
-.mindmap-scroll.is-panning {
-    cursor: grabbing;
-    user-select: none;
-}
-
-.mindmap-zoom-surface {
-    position: relative;
-    min-width: 100%;
-    min-height: 100%;
-}
-
-.mindmap-canvas {
-    position: relative;
-    min-width: 100%;
-    min-height: 100%;
-    transform-origin: top left;
-    transition: transform 0.18s ease;
-}
-
-.mindmap-connections,
-.mindmap-node-layer {
-    position: absolute;
-    inset: 0;
-}
-
-.mindmap-connections {
-    overflow: visible;
-    pointer-events: none;
-}
-
-.mindmap-connection {
-    fill: none;
-    stroke: rgba(49, 87, 213, 0.38);
-    stroke-width: 2.5;
-    stroke-linecap: round;
-}
-
-.mindmap-node-layer {
-    pointer-events: none;
-}
-
-.mindmap-node {
-    position: absolute;
-    z-index: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 168px;
-    max-width: 286px;
-    padding: 12px 16px;
-    border: 1px solid rgba(49, 87, 213, 0.2);
-    border-radius: 8px;
-    color: #1f2a44;
-    background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(244, 248, 255, 0.96)),
-        #ffffff;
-    box-shadow: 0 12px 24px rgba(30, 40, 58, 0.1);
-    font: inherit;
-    font-weight: 800;
-    line-height: 1.28;
-    text-align: center;
-    white-space: normal;
-    overflow-wrap: anywhere;
-    word-break: break-word;
-    hyphens: auto;
-    overflow: hidden;
-    cursor: pointer;
-    pointer-events: auto;
-    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
-}
-
-.mindmap-node:hover,
-.mindmap-node:focus-visible {
-    transform: translateY(-2px);
-    border-color: rgba(4, 125, 135, 0.42);
-    box-shadow: 0 18px 32px rgba(30, 40, 58, 0.14);
-}
-
-.mindmap-node-root {
-    max-width: 356px;
-    padding: 18px 24px;
-    border-color: rgba(4, 125, 135, 0.34);
-    color: #ffffff;
-    background:
-        linear-gradient(135deg, #3157d5, #047d87 58%, #1f7a4d),
-        #3157d5;
-    box-shadow: 0 20px 46px rgba(49, 87, 213, 0.22);
-    font-size: clamp(1.1rem, 2vw, 1.45rem);
-}
-
-.mindmap-node-has-children {
-    padding-right: 38px;
-}
-
-.mindmap-node-root.mindmap-node-has-children {
-    padding-right: 46px;
-}
-
-.mindmap-node-has-children::after {
-    content: "-";
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    display: grid;
-    place-items: center;
-    width: 22px;
-    height: 22px;
-    border-radius: 999px;
-    color: #3157d5;
-    background: rgba(49, 87, 213, 0.1);
-    font-size: 1rem;
-    line-height: 1;
-}
-
-.mindmap-node-root.mindmap-node-has-children::after {
-    color: #ffffff;
-    background: rgba(255, 255, 255, 0.2);
-}
-
-.mindmap-node-has-children[aria-expanded="false"]::after {
-    content: "+";
-}
-
-.mindmap-canvas.is-empty {
-    display: grid;
-    place-items: center;
-    min-height: 420px;
-    color: var(--muted);
-    font-weight: 800;
 }
 
 .learning-card-copy {
@@ -9384,9 +9195,7 @@ html.dark-mode body::before {
 .dark-mode .revision-section-nav,
 .dark-mode .revision-sheet-card,
 .dark-mode .study-plan-preview-section,
-.dark-mode .study-plan-card,
-.dark-mode .mindmap-toolbar,
-.dark-mode .mindmap-stage {
+.dark-mode .study-plan-card {
     background:
         linear-gradient(145deg, rgba(32, 40, 58, 0.78), rgba(21, 27, 41, 0.96)),
         rgba(21, 27, 41, 0.94);
@@ -9534,8 +9343,7 @@ html.dark-mode body::before {
 
 .dark-mode .revision-sheet-content p,
 .dark-mode .revision-sheet-content li,
-.dark-mode .revision-header p,
-.dark-mode .mindmap-header p {
+.dark-mode .revision-header p {
     color: var(--muted);
 }
 
@@ -9546,31 +9354,6 @@ html.dark-mode body::before {
 
 .dark-mode .important-questions-content th {
     background: rgba(134, 161, 255, 0.1);
-}
-
-.dark-mode .mindmap-node {
-    color: var(--ink);
-    border-color: rgba(134, 161, 255, 0.22);
-    background:
-        linear-gradient(180deg, rgba(32, 40, 58, 0.94), rgba(21, 27, 41, 0.98)),
-        rgba(21, 27, 41, 0.94);
-    box-shadow: 0 14px 28px rgba(0, 0, 0, 0.22);
-}
-
-.dark-mode .mindmap-node-root {
-    color: #ffffff;
-    background:
-        linear-gradient(135deg, #496ff0, #11959f 58%, #249061),
-        #496ff0;
-}
-
-.dark-mode .mindmap-node-has-children::after {
-    color: #ffffff;
-    background: rgba(134, 161, 255, 0.22);
-}
-
-.dark-mode .mindmap-connection {
-    stroke: rgba(134, 161, 255, 0.42);
 }
 
 .dark-mode .coming-soon-pill {
@@ -10035,8 +9818,6 @@ p + p {
     .study-plan-preview-card,
     .study-plan-summary-card,
     .study-plan-task,
-    .mindmap-toolbar,
-    .mindmap-stage,
     .tutor-header,
     .tutor-chat-panel,
     .tutor-lesson-strip span,
@@ -10076,7 +9857,6 @@ p + p {
     .memory-command-panel,
     .revision-sheet-card,
     .study-plan-card,
-    .mindmap-stage,
     .tutor-chat-panel
 ) {
     box-shadow: var(--soft-shadow);
@@ -10275,7 +10055,6 @@ textarea[aria-invalid="true"] {
 .header-actions,
 .result-actions,
 .revision-command-bar,
-.mindmap-toolbar,
 .flashcards-header-actions,
 .flashcard-primary-actions,
 .flashcard-secondary-actions,
@@ -10404,7 +10183,6 @@ textarea[aria-invalid="true"] {
     .memory-command-panel,
     .revision-sheet-card,
     .study-plan-card,
-    .mindmap-stage,
     .tutor-chat-panel
 ) {
     box-shadow: var(--soft-shadow);
@@ -10467,12 +10245,6 @@ textarea[aria-invalid="true"] {
 
     .revision-tool-grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
-    .mindmap-stage,
-    .mindmap-scroll {
-        min-height: 540px;
-        height: 540px;
     }
 
     .tutor-header-actions {
@@ -10933,19 +10705,6 @@ textarea[aria-invalid="true"] {
     .revision-command-bar .button-link,
     .revision-command-bar button,
     .revision-command-bar form {
-        width: 100%;
-    }
-
-    .mindmap-stage,
-    .mindmap-scroll {
-        min-height: 520px;
-        height: 520px;
-    }
-
-    .mindmap-toolbar,
-    .mindmap-toolbar .button-link,
-    .mindmap-toolbar button,
-    .mindmap-toolbar form {
         width: 100%;
     }
 
@@ -11418,51 +11177,6 @@ textarea[aria-invalid="true"] {
     .help-center-pulse,
     .support-feedback-form button {
         width: 100%;
-    }
-}
-
-@media print {
-    body.mindmap-page {
-        background: #ffffff;
-    }
-
-    body.mindmap-page .auth-page-actions,
-    body.mindmap-page .mindmap-toolbar,
-    body.mindmap-page footer {
-        display: none;
-    }
-
-    body.mindmap-page .learn-container {
-        width: 100%;
-        max-width: none;
-        margin: 0;
-        padding: 0;
-        border: 0;
-        box-shadow: none;
-    }
-
-    body.mindmap-page .mindmap-stage {
-        min-height: auto;
-        border: 0;
-        box-shadow: none;
-        background: #ffffff;
-    }
-
-    body.mindmap-page .mindmap-scroll {
-        height: auto;
-        min-height: auto;
-        overflow: visible;
-        padding: 16px 0;
-    }
-
-    body.mindmap-page .mindmap-zoom-surface {
-        width: auto !important;
-        height: auto !important;
-    }
-
-    body.mindmap-page .mindmap-canvas {
-        min-width: 0;
-        transform: none !important;
     }
 }
 

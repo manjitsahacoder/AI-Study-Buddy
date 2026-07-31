@@ -32,7 +32,6 @@
         <a href="#ai-tutor-step" data-lesson-nav>Tutor</a>
         <a href="#quiz-step" data-lesson-nav>Quiz</a>
         <a href="#flashcards-step" data-lesson-nav>Flashcards</a>
-        <a href="#mindmap-step" data-lesson-nav>Mind Map</a>
         <a href="#memory-step" data-lesson-nav>Memory Challenge</a>
     </nav>
 
@@ -90,19 +89,6 @@
                 <a class="learning-card-button" href="{{ url_for('revision', lesson_id=lesson_id, next=current_page_url) }}">Generate Revision <span aria-hidden="true">&rarr;</span></a>
                 {% else %}
                 <a class="learning-card-button" href="{{ url_for('login', next=url_for('home')) }}">Generate Revision <span aria-hidden="true">&rarr;</span></a>
-                {% endif %}
-            </article>
-
-            <article class="learning-action-card learning-card-mindmap" id="mindmap-step">
-                <span class="learning-card-icon" aria-hidden="true">&#129504;</span>
-                <div class="learning-card-copy">
-                    <h3>AI Mind Map</h3>
-                    <p>Visualize this lesson as a structured concept map.</p>
-                </div>
-                {% if lesson_id %}
-                <a class="learning-card-button" href="{{ url_for('mindmap', lesson_id=lesson_id, next=current_page_url) }}">Generate Mind Map <span aria-hidden="true">&rarr;</span></a>
-                {% else %}
-                <a class="learning-card-button" href="{{ url_for('login', next=url_for('home')) }}">Generate Mind Map <span aria-hidden="true">&rarr;</span></a>
                 {% endif %}
             </article>
 

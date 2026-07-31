@@ -255,7 +255,7 @@ def _complete_payload(payload, subject="", topic=""):
         connections = sequential_connections(nodes)
         if visualization_type in {"cycle", "orbit"} and len(nodes) > 2:
             connections.append({"from": nodes[-1]["id"], "to": nodes[0]["id"]})
-        if visualization_type in {"tree", "hierarchy", "organization_chart", "concept_map", "mind_map", "anatomy"} and len(nodes) > 2:
+        if visualization_type in {"tree", "hierarchy", "organization_chart", "concept_map", "anatomy"} and len(nodes) > 2:
             root = nodes[0]["id"]
             connections = [{"from": root, "to": node["id"]} for node in nodes[1:]]
 
@@ -290,7 +290,6 @@ def reason_for_type(visualization_type):
         "tree": "This topic branches from broad categories into smaller groups.",
         "hierarchy": "This topic describes levels, roles, or authority relationships.",
         "concept_map": "This topic has connected ideas that are easier to learn as a relationship map.",
-        "mind_map": "This topic has a central idea with supporting branches.",
         "comparison": "This topic compares two or more ideas side by side.",
         "network_graph": "This topic is made of connected parts with multiple relationships.",
         "organization_chart": "This topic describes roles and reporting relationships.",

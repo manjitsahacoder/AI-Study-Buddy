@@ -82,9 +82,6 @@
                 <a class="button-link secondary-link" href="{{ url_for('revision', lesson_id=lesson.id, next=current_page_url) }}">
                     {% if lesson.has_revision %}&#128214; Open Revision{% else %}&#128214; Generate Revision{% endif %}
                 </a>
-                <a class="button-link secondary-link" href="{{ url_for('mindmap', lesson_id=lesson.id, next=current_page_url) }}">
-                    {% if lesson.has_mind_map %}&#129504; Open Mind Map{% else %}&#129504; Generate Mind Map{% endif %}
-                </a>
                 <a class="button-link secondary-link" href="{{ url_for('important_questions', lesson_id=lesson.id, next=current_page_url) }}">
                     {% if lesson.has_important_questions %}&#11088; Open Important Questions{% else %}&#11088; Generate Questions{% endif %}
                 </a>

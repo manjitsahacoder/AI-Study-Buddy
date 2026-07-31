@@ -9,7 +9,6 @@ SUPPORTED_VISUALIZATION_TYPES = {
     "tree": "Tree Diagram",
     "hierarchy": "Hierarchy Diagram",
     "concept_map": "Concept Map",
-    "mind_map": "Mind Map",
     "comparison": "Comparison Diagram",
     "network_graph": "Network Graph",
     "organization_chart": "Organization Chart",
