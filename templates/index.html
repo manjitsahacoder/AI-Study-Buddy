@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>AI Study Buddy</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=premium-home-final-polish-20260720f">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=homepage-ui-fix-20260801">
     {% include 'components/pwa_head.html' %}
 </head>
 
@@ -33,7 +33,7 @@
 
 <div class="container premium-home-container">
     <header class="exhibition-header premium-home-nav">
-        <a class="premium-brand" href="{{ url_for('home') }}" aria-label="AI Study Buddy home">
+        <a class="premium-brand" href="{{ url_for('home') }}" aria-label="AI Study Buddy home" data-page-loader="false">
             <span class="school-mark premium-school-mark">
                 <img
                     class="school-logo"
@@ -216,49 +216,59 @@
         </div>
     </section>
 
-    <section class="premium-stat-strip" aria-label="Learning statistics">
-        <article>
+    <section class="premium-stat-strip" aria-label="Learning shortcuts">
+        <button type="button" class="premium-stat-card" data-home-shortcut="notes" aria-label="Go to AI Notes form and focus the topic input">
             <span class="premium-stat-icon" aria-hidden="true">&#128218;</span>
             <div>
                 <span>Lessons Studied</span>
                 <strong>AI Notes</strong>
             </div>
-        </article>
-        <article>
+        </button>
+        {% if user %}
+        <a class="premium-stat-card" href="{{ url_for('history') }}" aria-label="Open Quiz History for Smart MCQs">
             <span class="premium-stat-icon" aria-hidden="true">&#128221;</span>
             <div>
                 <span>Quizzes Completed</span>
                 <strong>Smart MCQs</strong>
             </div>
-        </article>
-        <article>
+        </a>
+        {% else %}
+        <button type="button" class="premium-stat-card" data-home-shortcut="quiz" aria-label="Go to the Quiz Generator section">
+            <span class="premium-stat-icon" aria-hidden="true">&#128221;</span>
+            <div>
+                <span>Quizzes Completed</span>
+                <strong>Smart MCQs</strong>
+            </div>
+        </button>
+        {% endif %}
+        <button type="button" class="premium-stat-card" data-home-shortcut="class" aria-label="Go to the class selector">
             <span class="premium-stat-icon" aria-hidden="true">&#127891;</span>
             <div>
                 <span>Current Level</span>
                 <strong>Classes 6-10</strong>
             </div>
-        </article>
-        <article>
+        </button>
+        <a class="premium-stat-card" href="{{ url_for('dashboard') }}" aria-label="Open Dashboard for gamified learning">
             <span class="premium-stat-icon" aria-hidden="true">&#9889;</span>
             <div>
                 <span>XP</span>
                 <strong>Gamified</strong>
             </div>
-        </article>
-        <article>
+        </a>
+        <a class="premium-stat-card" href="{{ url_for('learning_history') }}" aria-label="Open Learning History tracking">
             <span class="premium-stat-icon" aria-hidden="true">&#128293;</span>
             <div>
                 <span>Current Streak</span>
                 <strong>Tracked</strong>
             </div>
-        </article>
-        <article>
+        </a>
+        <a class="premium-stat-card" href="{{ url_for('performance') }}" aria-label="Open Performance Analytics dashboard">
             <span class="premium-stat-icon" aria-hidden="true">&#128200;</span>
             <div>
                 <span>Average Score</span>
                 <strong>Analytics</strong>
             </div>
-        </article>
+        </a>
     </section>
 
     {% if exhibition_mode %}
@@ -390,7 +400,7 @@
                 </ul>
             </article>
 
-            <article class="feature-card">
+            <article class="feature-card" id="quiz-feature-card" tabindex="-1">
                 <div class="feature-icon" aria-hidden="true">&#10067;</div>
                 <h3>Quiz Generator</h3>
                 <p>Generate intelligent practice quizzes that help students test recall and improve accuracy.</p>
@@ -642,6 +652,58 @@ function showLoader() {
         loaderMessageIndex = (loaderMessageIndex + 1) % loaderMessages.length;
         loaderMessage.innerHTML = loaderMessages[loaderMessageIndex];
     }, 2000);
+}
+
+function initializeHomeShortcutCards() {
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const lessonForm = document.getElementById("lesson-form");
+    const topicInput = document.getElementById("topic");
+    const classSelect = document.getElementById("student_class");
+    const quizSection = document.getElementById("quiz-feature-card");
+    const shortcuts = document.querySelectorAll("[data-home-shortcut]");
+
+    function scrollAndFocus(target, focusTarget, shouldHighlight) {
+        if (!target) {
+            return;
+        }
+
+        target.scrollIntoView({
+            behavior: reduceMotion ? "auto" : "smooth",
+            block: "center",
+        });
+
+        window.setTimeout(function () {
+            if (focusTarget && typeof focusTarget.focus === "function") {
+                focusTarget.focus({ preventScroll: true });
+            }
+            if (shouldHighlight && focusTarget) {
+                focusTarget.classList.add("shortcut-highlight");
+                window.setTimeout(function () {
+                    focusTarget.classList.remove("shortcut-highlight");
+                }, 1500);
+            }
+        }, reduceMotion ? 0 : 360);
+    }
+
+    shortcuts.forEach(function (shortcut) {
+        shortcut.addEventListener("click", function () {
+            shortcut.classList.remove("is-clicking");
+            window.requestAnimationFrame(function () {
+                shortcut.classList.add("is-clicking");
+                window.setTimeout(function () {
+                    shortcut.classList.remove("is-clicking");
+                }, 220);
+            });
+
+            if (shortcut.dataset.homeShortcut === "notes") {
+                scrollAndFocus(lessonForm, topicInput, false);
+            } else if (shortcut.dataset.homeShortcut === "class") {
+                scrollAndFocus(classSelect, classSelect, true);
+            } else if (shortcut.dataset.homeShortcut === "quiz") {
+                scrollAndFocus(quizSection, quizSection, true);
+            }
+        });
+    });
 }
 
 function initializeTextbookAutocomplete() {
@@ -1544,10 +1606,15 @@ function initializeTextbookAutocomplete() {
     updateChapterState();
 }
 
-if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", initializeTextbookAutocomplete);
-} else {
+function initializeHomePageScripts() {
+    initializeHomeShortcutCards();
     initializeTextbookAutocomplete();
+}
+
+if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initializeHomePageScripts);
+} else {
+    initializeHomePageScripts();
 }
 </script>
 </body>
