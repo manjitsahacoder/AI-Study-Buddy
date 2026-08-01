@@ -17,16 +17,13 @@
 </div>
 
 <div id="loader">
+    <img
+        class="loader-brand-logo"
+        src="{{ url_for('static', filename='images/ai-study-buddy-logo.png') }}"
+        alt="AI Study Buddy">
     <div class="spinner"></div>
-    <div class="loader-icons" aria-hidden="true">
-        <span>&#128214;</span>
-        <span>&#129504;</span>
-        <span>&#9997;</span>
-        <span>&#128218;</span>
-        <span>&#127912;</span>
-    </div>
-    <h2>AI is preparing your lesson...</h2>
-    <p id="loader-message">&#128214; Reading your request...</p>
+    <h2>AI Study Buddy</h2>
+    <p id="loader-message">Loading...</p>
     <div class="loader-skeleton-stack" aria-hidden="true">
         <span></span>
         <span></span>
@@ -44,7 +41,10 @@
                     alt="Delhi Public School Dhaligaon logo">
             </span>
             <span class="premium-brand-copy">
-                <strong>AI Study Buddy</strong>
+                <img
+                    class="premium-app-logo"
+                    src="{{ url_for('static', filename='images/ai-study-buddy-logo.png') }}"
+                    alt="AI Study Buddy">
                 <span>Your Intelligent Learning Companion</span>
                 <small>Delhi Public School Dhaligaon</small>
             </span>

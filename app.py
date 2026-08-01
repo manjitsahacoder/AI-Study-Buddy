@@ -9732,6 +9732,15 @@ def manifest():
     )
 
 
+@app.route("/favicon.ico")
+def favicon():
+    return send_from_directory(
+        os.path.join(app.static_folder, "icons"),
+        "favicon.ico",
+        mimetype="image/vnd.microsoft.icon",
+    )
+
+
 @app.route("/service-worker.js")
 def service_worker():
     response = send_from_directory(

@@ -1,4 +1,4 @@
-const CACHE_VERSION = "ai-study-buddy-pwa-v3";
+const CACHE_VERSION = "ai-study-buddy-pwa-v4";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const OFFLINE_URL = "/offline";
 
@@ -13,6 +13,8 @@ const PRECACHE_URLS = [
     "/static/js/visualization.js",
     "/static/js/memory_challenge.js",
     "/static/images/SCHOOL_LOGO.png",
+    "/static/images/ai-study-buddy-logo.png",
+    "/static/images/ai-study-buddy-icon.png",
     "/static/images/study_banner.png",
     "/static/images/backgrounds/ai-brain-circuit.svg",
     "/static/images/backgrounds/home-education.svg",
@@ -20,8 +22,22 @@ const PRECACHE_URLS = [
     "/static/images/backgrounds/pencil.svg",
     "/static/images/backgrounds/quiz-doodles.svg",
     "/static/images/backgrounds/result-success.svg",
+    "/static/icons/favicon.ico",
+    "/static/icons/favicon-16x16.png",
+    "/static/icons/favicon-32x32.png",
+    "/static/icons/apple-touch-icon.png",
+    "/static/icons/icon-48.png",
+    "/static/icons/icon-72.png",
+    "/static/icons/icon-96.png",
+    "/static/icons/icon-128.png",
+    "/static/icons/icon-144.png",
+    "/static/icons/icon-152.png",
     "/static/icons/icon-192.png",
-    "/static/icons/icon-512.png"
+    "/static/icons/icon-256.png",
+    "/static/icons/icon-384.png",
+    "/static/icons/icon-512.png",
+    "/static/icons/maskable-192.png",
+    "/static/icons/maskable-512.png"
 ];
 
 const STATIC_DESTINATIONS = new Set(["style", "script", "image", "font", "manifest"]);
