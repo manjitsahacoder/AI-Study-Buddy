@@ -3830,12 +3830,14 @@ Grade: A
             ("128x128", "/static/icons/icon-128.png", "any"),
             ("144x144", "/static/icons/icon-144.png", "any"),
             ("152x152", "/static/icons/icon-152.png", "any"),
+            ("180x180", "/static/icons/icon-180.png", "any"),
             ("192x192", "/static/icons/icon-192.png", "any"),
             ("256x256", "/static/icons/icon-256.png", "any"),
             ("384x384", "/static/icons/icon-384.png", "any"),
             ("512x512", "/static/icons/icon-512.png", "any"),
             ("192x192", "/static/icons/maskable-192.png", "maskable"),
             ("512x512", "/static/icons/maskable-512.png", "maskable"),
+            ("512x512", "/static/icons/maskable-icon.png", "maskable"),
         }
         self.assertEqual(
             {(icon["sizes"], icon["src"], icon["purpose"]) for icon in manifest["icons"]},
@@ -3858,7 +3860,7 @@ Grade: A
         self.assertEqual(response.headers["Service-Worker-Allowed"], "/")
         self.assertEqual(response.headers["Cache-Control"], "no-cache")
         script = response.get_data(as_text=True)
-        self.assertIn('const CACHE_VERSION = "ai-study-buddy-pwa-v4"', script)
+        self.assertIn('const CACHE_VERSION = "ai-study-buddy-pwa-v5"', script)
         self.assertIn('request.method !== "GET"', script)
         self.assertIn('request.mode === "navigate"', script)
         self.assertIn("networkOnlyNavigation(request)", script)

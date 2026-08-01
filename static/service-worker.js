@@ -1,4 +1,4 @@
-const CACHE_VERSION = "ai-study-buddy-pwa-v4";
+const CACHE_VERSION = "ai-study-buddy-pwa-v5";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const OFFLINE_URL = "/offline";
 
@@ -23,7 +23,9 @@ const PRECACHE_URLS = [
     "/static/images/backgrounds/quiz-doodles.svg",
     "/static/images/backgrounds/result-success.svg",
     "/static/icons/favicon.ico",
+    "/static/icons/favicon-16.png",
     "/static/icons/favicon-16x16.png",
+    "/static/icons/favicon-32.png",
     "/static/icons/favicon-32x32.png",
     "/static/icons/apple-touch-icon.png",
     "/static/icons/icon-48.png",
@@ -32,12 +34,14 @@ const PRECACHE_URLS = [
     "/static/icons/icon-128.png",
     "/static/icons/icon-144.png",
     "/static/icons/icon-152.png",
+    "/static/icons/icon-180.png",
     "/static/icons/icon-192.png",
     "/static/icons/icon-256.png",
     "/static/icons/icon-384.png",
     "/static/icons/icon-512.png",
     "/static/icons/maskable-192.png",
-    "/static/icons/maskable-512.png"
+    "/static/icons/maskable-512.png",
+    "/static/icons/maskable-icon.png"
 ];
 
 const STATIC_DESTINATIONS = new Set(["style", "script", "image", "font", "manifest"]);
