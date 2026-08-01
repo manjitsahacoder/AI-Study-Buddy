@@ -32,9 +32,46 @@
     </div>
     {% include 'components/flash_messages.html' %}
 
-    <div class="content">
-        {{ notes_html|safe }}
-    </div>
+    <section class="lesson-notes-section" id="lesson-notes" data-listen-notes-section>
+        <div class="listen-notes-player" data-listen-notes-player aria-labelledby="listen-notes-title">
+            <div class="listen-notes-heading">
+                <h2 id="listen-notes-title">&#128266; Listen to Notes</h2>
+                <span class="listen-notes-status-badge" data-listen-notes-badge aria-live="polite">&#8987; Preparing...</span>
+                <p data-listen-notes-status>Ready to read the lesson notes.</p>
+            </div>
+            <div class="listen-notes-estimate" aria-live="polite">
+                <span>Estimated listening time:</span>
+                <strong data-listen-notes-estimate>Calculating...</strong>
+            </div>
+            <div class="listen-notes-progress" aria-label="Listening progress">
+                <div class="listen-notes-progress-track" aria-hidden="true">
+                    <span data-listen-notes-progress></span>
+                </div>
+                <div class="listen-notes-time-row">
+                    <span data-listen-notes-elapsed>Elapsed 0 sec</span>
+                    <span data-listen-notes-remaining>Remaining --</span>
+                </div>
+            </div>
+            <div class="listen-notes-controls" aria-label="Listen to Notes controls">
+                <button type="button" role="button" aria-label="Play lesson notes" data-listen-action="play">&#9654; Play</button>
+                <button type="button" role="button" aria-label="Pause lesson notes" data-listen-action="pause">&#9208; Pause</button>
+                <button type="button" role="button" aria-label="Resume lesson notes" data-listen-action="resume">&#9654; Resume</button>
+                <button type="button" role="button" aria-label="Stop lesson notes" data-listen-action="stop">&#9209; Stop</button>
+                <button type="button" role="button" aria-label="Restart lesson notes" data-listen-action="restart">&#128257; Restart</button>
+            </div>
+            <fieldset class="listen-notes-speed" aria-label="Playback speed">
+                <legend>Speed</legend>
+                <label><input type="radio" name="listen-notes-speed" value="0.75"> <span>0.75&times;</span></label>
+                <label><input type="radio" name="listen-notes-speed" value="1" checked> <span>1&times;</span></label>
+                <label><input type="radio" name="listen-notes-speed" value="1.25"> <span>1.25&times;</span></label>
+                <label><input type="radio" name="listen-notes-speed" value="1.5"> <span>1.5&times;</span></label>
+            </fieldset>
+        </div>
+
+        <div class="content lesson-notes-content" data-listen-notes-content>
+            {{ notes_html|safe }}
+        </div>
+    </section>
 
     <section class="revision-tools-section" aria-labelledby="saved-revision-tools-title">
         <div class="continue-learning-heading">
@@ -165,5 +202,6 @@
 </main>
 
 <script src="{{ url_for('static', filename='js/visualization.js', v='diagram-fit-2') }}"></script>
+<script src="{{ url_for('static', filename='js/listen_notes.js', v='listen-notes-premium-20260801') }}"></script>
 </body>
 </html>

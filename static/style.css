@@ -4317,6 +4317,241 @@ button:hover,
     line-height: 1.82;
 }
 
+.lesson-notes-section {
+    scroll-margin-top: 96px;
+}
+
+.listen-notes-player {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+    max-width: 880px;
+    margin: 0 auto 24px;
+    padding: clamp(18px, 2.6vw, 24px);
+    border: 1px solid rgba(49, 87, 213, 0.16);
+    border-radius: 8px;
+    background:
+        linear-gradient(135deg, rgba(255, 255, 255, 0.72), rgba(255, 253, 248, 0.9)),
+        linear-gradient(135deg, rgba(49, 87, 213, 0.1), rgba(4, 125, 135, 0.08), rgba(189, 138, 32, 0.06)),
+        rgba(255, 253, 248, 0.94);
+    box-shadow: 0 18px 44px rgba(30, 40, 58, 0.1);
+    backdrop-filter: blur(16px);
+}
+
+.listen-notes-heading {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.listen-notes-heading h2 {
+    margin: 0;
+    color: var(--primary);
+    font-size: clamp(1.25rem, 2vw, 1.65rem);
+    line-height: 1.2;
+}
+
+.listen-notes-heading p {
+    flex-basis: 100%;
+    margin: 0;
+    color: #445064;
+    font-size: 0.94rem;
+    font-weight: 700;
+    line-height: 1.45;
+}
+
+.listen-notes-status-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 34px;
+    padding: 7px 12px;
+    border: 1px solid rgba(49, 87, 213, 0.16);
+    border-radius: var(--radius-pill);
+    color: var(--primary);
+    background: rgba(49, 87, 213, 0.08);
+    box-shadow: 0 8px 18px rgba(49, 87, 213, 0.08);
+    font-size: 0.86rem;
+    font-weight: 900;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.listen-notes-status-badge.is-speaking {
+    color: #ffffff;
+    border-color: rgba(49, 87, 213, 0.28);
+    background: linear-gradient(135deg, var(--primary), var(--teal));
+    box-shadow: 0 12px 26px rgba(49, 87, 213, 0.22);
+}
+
+.listen-notes-status-badge.is-paused {
+    color: #6b4607;
+    border-color: rgba(169, 109, 19, 0.24);
+    background: rgba(169, 109, 19, 0.12);
+}
+
+.listen-notes-status-badge.is-finished {
+    color: var(--green);
+    border-color: rgba(31, 122, 77, 0.24);
+    background: rgba(31, 122, 77, 0.1);
+}
+
+.listen-notes-status-badge.is-stopped {
+    color: var(--muted);
+    border-color: rgba(102, 112, 133, 0.2);
+    background: rgba(102, 112, 133, 0.08);
+}
+
+.listen-notes-status-badge.is-preparing {
+    color: var(--teal);
+    border-color: rgba(4, 125, 135, 0.2);
+    background: rgba(4, 125, 135, 0.09);
+}
+
+.listen-notes-estimate {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 10px;
+    align-items: baseline;
+    width: fit-content;
+    max-width: 100%;
+    padding: 10px 12px;
+    border: 1px solid rgba(4, 125, 135, 0.14);
+    border-radius: 8px;
+    color: #445064;
+    background: rgba(255, 255, 255, 0.58);
+    font-size: 0.92rem;
+    font-weight: 800;
+}
+
+.listen-notes-estimate strong {
+    color: var(--ink);
+    font-size: 1rem;
+}
+
+.listen-notes-progress {
+    display: grid;
+    gap: 8px;
+}
+
+.listen-notes-progress-track {
+    position: relative;
+    height: 10px;
+    overflow: hidden;
+    border-radius: var(--radius-pill);
+    background: rgba(49, 87, 213, 0.12);
+}
+
+.listen-notes-progress-track span {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 0%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, var(--primary), var(--teal));
+    box-shadow: 0 0 18px rgba(49, 87, 213, 0.22);
+    transition: width 0.35s ease;
+}
+
+.listen-notes-time-row {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 8px;
+    color: var(--muted);
+    font-size: 0.82rem;
+    font-weight: 900;
+}
+
+.listen-notes-controls,
+.listen-notes-speed {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+}
+
+.listen-notes-controls button {
+    min-height: 42px;
+    padding: 9px 12px;
+    border: 1px solid rgba(49, 87, 213, 0.18);
+    border-radius: 8px;
+    color: var(--primary);
+    background: rgba(255, 255, 255, 0.78);
+    box-shadow: 0 8px 18px rgba(30, 40, 58, 0.07);
+    font-size: 0.9rem;
+}
+
+.listen-notes-controls button:hover,
+.listen-notes-controls button:focus-visible {
+    color: #ffffff;
+    background: var(--primary);
+}
+
+.listen-notes-controls button:focus-visible,
+.listen-notes-speed input:focus-visible + span {
+    outline: 3px solid rgba(49, 87, 213, 0.28);
+    outline-offset: 3px;
+}
+
+.listen-notes-controls button:disabled {
+    color: rgba(102, 112, 133, 0.78);
+    background: rgba(248, 250, 252, 0.72);
+    box-shadow: none;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.listen-notes-speed {
+    margin: 0;
+    padding: 0;
+    border: 0;
+}
+
+.listen-notes-speed legend {
+    margin: 0 2px 0 0;
+    color: var(--muted);
+    font-size: 0.82rem;
+    font-weight: 900;
+}
+
+.listen-notes-speed label {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    min-height: 36px;
+    padding: 7px 10px;
+    border: 1px solid rgba(4, 125, 135, 0.16);
+    border-radius: var(--radius-pill);
+    color: var(--ink);
+    background: rgba(255, 255, 255, 0.68);
+    font-size: 0.86rem;
+    font-weight: 900;
+    transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease, transform 0.18s ease;
+    cursor: pointer;
+}
+
+.listen-notes-speed input {
+    accent-color: var(--primary);
+}
+
+.listen-notes-speed label:has(input:checked) {
+    color: var(--primary);
+    border-color: rgba(49, 87, 213, 0.3);
+    background: rgba(49, 87, 213, 0.11);
+    box-shadow: 0 8px 18px rgba(49, 87, 213, 0.08);
+}
+
+.listen-notes-highlight {
+    border-radius: 5px;
+    background: rgba(255, 207, 102, 0.58);
+    box-shadow:
+        0 0 0 2px rgba(255, 207, 102, 0.28),
+        0 8px 18px rgba(169, 109, 19, 0.12);
+    transition: background 0.2s ease, box-shadow 0.2s ease;
+}
+
 .content h1,
 .content h2,
 .content h3,
@@ -8986,6 +9221,7 @@ html.dark-mode body::before {
 
 .dark-mode .lesson-navigator,
 .dark-mode .lesson-hero,
+.dark-mode .listen-notes-player,
 .dark-mode .lesson-callout {
     background: rgba(21, 27, 41, 0.94);
     border-color: rgba(134, 161, 255, 0.18);
@@ -9004,9 +9240,74 @@ html.dark-mode body::before {
 }
 
 .dark-mode.learn-page .lesson-info-strip span,
+.dark-mode .listen-notes-controls button,
+.dark-mode .listen-notes-speed label,
 .dark-mode .content blockquote {
     background: rgba(134, 161, 255, 0.1);
     border-color: rgba(134, 161, 255, 0.18);
+}
+
+.dark-mode .listen-notes-heading p {
+    color: var(--muted);
+}
+
+.dark-mode .listen-notes-estimate,
+.dark-mode .listen-notes-progress-track {
+    background: rgba(134, 161, 255, 0.1);
+    border-color: rgba(134, 161, 255, 0.18);
+}
+
+.dark-mode .listen-notes-estimate strong {
+    color: var(--ink);
+}
+
+.dark-mode .listen-notes-status-badge.is-stopped {
+    color: var(--muted);
+    background: rgba(134, 161, 255, 0.08);
+}
+
+.dark-mode .listen-notes-status-badge.is-paused {
+    color: #ffe1ad;
+    background: rgba(240, 179, 95, 0.14);
+}
+
+.dark-mode .listen-notes-status-badge.is-finished {
+    color: #7ee2a8;
+    background: rgba(31, 122, 77, 0.16);
+}
+
+.dark-mode .listen-notes-status-badge.is-preparing {
+    color: #90f2f8;
+    background: rgba(92, 203, 211, 0.13);
+}
+
+.dark-mode .listen-notes-controls button {
+    color: #dce5ff;
+}
+
+.dark-mode .listen-notes-controls button:hover,
+.dark-mode .listen-notes-controls button:focus-visible {
+    color: #ffffff;
+    background: var(--primary);
+}
+
+.dark-mode .listen-notes-controls button:disabled {
+    color: rgba(185, 195, 212, 0.62);
+    background: rgba(17, 24, 39, 0.5);
+}
+
+.dark-mode .listen-notes-speed label:has(input:checked) {
+    color: #dce5ff;
+    border-color: rgba(134, 161, 255, 0.32);
+    background: rgba(134, 161, 255, 0.14);
+}
+
+.dark-mode .listen-notes-highlight {
+    color: #fff8dd;
+    background: rgba(189, 138, 32, 0.42);
+    box-shadow:
+        0 0 0 2px rgba(240, 179, 95, 0.22),
+        0 8px 18px rgba(0, 0, 0, 0.2);
 }
 
 .dark-mode .lesson-callout-definition {
@@ -10487,6 +10788,38 @@ textarea[aria-invalid="true"] {
     .content {
         font-size: 1rem;
         line-height: 1.72;
+    }
+
+    .listen-notes-player {
+        margin-bottom: 20px;
+        padding: 16px;
+    }
+
+    .listen-notes-heading {
+        display: grid;
+        justify-items: start;
+    }
+
+    .listen-notes-status-badge,
+    .listen-notes-estimate,
+    .listen-notes-time-row {
+        width: 100%;
+    }
+
+    .listen-notes-controls,
+    .listen-notes-controls button,
+    .listen-notes-speed,
+    .listen-notes-speed label {
+        width: 100%;
+    }
+
+    .listen-notes-speed legend {
+        width: 100%;
+    }
+
+    .listen-notes-controls button,
+    .listen-notes-speed label {
+        justify-content: center;
     }
 
     .content h1,
