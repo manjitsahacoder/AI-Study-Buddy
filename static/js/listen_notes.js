@@ -9,7 +9,7 @@
         preparing: { text: "\u231B Preparing...", className: "is-preparing" },
         speaking: { text: "\u{1F50A} Speaking...", className: "is-speaking" },
         paused: { text: "\u23F8 Paused", className: "is-paused" },
-        finished: { text: "\u2705 Finished", className: "is-finished" },
+        finished: { text: "\u2705 Completed", className: "is-finished" },
         stopped: { text: "\u23F9 Stopped", className: "is-stopped" },
     };
 

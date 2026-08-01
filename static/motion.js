@@ -332,13 +332,17 @@
     function setupPageTransitionOverlay() {
         const overlay = document.querySelector("[data-page-transition-overlay]");
         const messageTarget = document.querySelector("[data-page-transition-message]");
+        const generationStepper = document.querySelector("[data-generation-stepper]");
+        const generationSteps = generationStepper ? Array.from(generationStepper.querySelectorAll("[data-generation-step]")) : [];
         if (!overlay || !messageTarget) {
             return;
         }
 
         let pendingHideTimer = null;
         let messageTimer = null;
+        let generationStepTimer = null;
         let messageIndex = 0;
+        let generationStepIndex = 0;
         let navigationLocked = false;
         let suppressUnloadOverlayUntil = 0;
         const minimumOverlayPaintDelay = 180;
@@ -353,13 +357,12 @@
         ];
         const attachmentExtensions = /\.(?:pdf|png|jpe?g|gif|webp|svg|json|zip)$/i;
         const defaultProgressMessages = [
-            "Preparing your lesson...",
             "Understanding your topic...",
-            "Searching educational diagrams...",
-            "Selecting the best NCERT-style diagram...",
-            "Generating revision notes...",
-            "Creating quiz...",
-            "Almost ready...",
+            "Preparing lesson...",
+            "Creating notes...",
+            "Building quiz...",
+            "Preparing flashcards...",
+            "Finalizing lesson...",
         ];
         const navigationProgressMessages = [
             "Opening your workspace...",
@@ -447,6 +450,42 @@
                 messageIndex = (messageIndex + 1) % rotation.length;
                 messageTarget.textContent = rotation[messageIndex];
             }, 1650);
+        }
+
+        function stopGenerationStepper() {
+            window.clearInterval(generationStepTimer);
+            generationStepTimer = null;
+            generationStepIndex = 0;
+            overlay.removeAttribute("data-generation");
+            generationSteps.forEach(function (step) {
+                step.classList.remove("is-active", "is-complete");
+            });
+        }
+
+        function setGenerationStep(index) {
+            generationStepIndex = Math.max(0, Math.min(index, generationSteps.length - 1));
+            generationSteps.forEach(function (step, stepIndex) {
+                step.classList.toggle("is-complete", stepIndex < generationStepIndex);
+                step.classList.toggle("is-active", stepIndex === generationStepIndex);
+            });
+            if (generationSteps[generationStepIndex]) {
+                const label = generationSteps[generationStepIndex].querySelector("strong");
+                if (label) {
+                    messageTarget.textContent = `${label.textContent}...`;
+                }
+            }
+        }
+
+        function startGenerationStepper() {
+            if (!generationSteps.length) {
+                return;
+            }
+            overlay.dataset.generation = "lesson";
+            setGenerationStep(0);
+            window.clearInterval(generationStepTimer);
+            generationStepTimer = window.setInterval(function () {
+                setGenerationStep((generationStepIndex + 1) % generationSteps.length);
+            }, 1450);
         }
 
         function normalizeUrl(destination) {
@@ -623,6 +662,7 @@
         function hidePageTransitionOverlay() {
             window.clearTimeout(pendingHideTimer);
             window.clearInterval(messageTimer);
+            stopGenerationStepper();
             pendingHideTimer = null;
             messageTimer = null;
             navigationLocked = false;
@@ -631,10 +671,15 @@
             document.documentElement.classList.remove("page-transition-active");
         }
 
-        function showOverlay(message, label) {
+        function showOverlay(message, label, options) {
             window.clearTimeout(pendingHideTimer);
             ensurePageTransitionOverlayViewport();
             startMessageRotation(message, progressMessagesFor(label));
+            if (options && options.generation === "lesson") {
+                startGenerationStepper();
+            } else {
+                stopGenerationStepper();
+            }
             overlay.hidden = false;
             lockNavigation();
             overlay.offsetHeight;
@@ -678,7 +723,7 @@
             }
 
             const context = contextualFormMessage(form, submitter, url);
-            showOverlay(context.message, context.label);
+            showOverlay(context.message, context.label, { generation: form.dataset.generationLoader });
             return true;
         }
 

@@ -40,11 +40,14 @@
                     src="{{ url_for('static', filename='images/SCHOOL_LOGO.png') }}"
                     alt="Delhi Public School Dhaligaon logo">
             </span>
-            <span class="premium-brand-copy">
+            <span class="premium-app-mark" aria-hidden="true">
                 <img
                     class="premium-app-logo"
                     src="{{ url_for('static', filename='images/ai-study-buddy-logo.png') }}"
                     alt="AI Study Buddy">
+            </span>
+            <span class="premium-brand-copy">
+                <strong>AI Study Buddy</strong>
                 <span>Your Intelligent Learning Companion</span>
                 <small>Delhi Public School Dhaligaon</small>
             </span>
@@ -104,7 +107,7 @@
         </div>
 
         <div class="premium-learning-stage">
-            <form id="lesson-form" class="study-form premium-learning-card" action="{{ url_for('learn') }}" method="POST" data-tour-title="Live Lesson Generator" data-tour-body="This form starts the real learning workflow. It generates notes, a diagram, quiz questions, and saved history for logged-in students.">
+            <form id="lesson-form" class="study-form premium-learning-card" action="{{ url_for('learn') }}" method="POST" data-generation-loader="lesson" data-tour-title="Live Lesson Generator" data-tour-body="This form starts the real learning workflow. It generates notes, a diagram, quiz questions, and saved history for logged-in students.">
                 <div class="learning-card-header">
                     <div>
                         <span class="eyebrow">Start Learning</span>
