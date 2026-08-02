@@ -16,28 +16,6 @@
     <img class="bg-illustration bg-illustration-medium bg-bottom-right" src="{{ url_for('static', filename='images/backgrounds/home-education.svg') }}" alt="">
 </div>
 
-<div id="loader">
-    <img
-        class="loader-brand-logo"
-        src="{{ url_for('static', filename='images/ai-study-buddy-logo.png') }}"
-        alt="AI Study Buddy">
-    <div class="ai-generation-orb loader-ai-orb" aria-hidden="true">
-        <span class="ai-orb-core"></span>
-        <span class="ai-orb-ring ai-orb-ring-one"></span>
-        <span class="ai-orb-ring ai-orb-ring-two"></span>
-        <span class="ai-orb-node ai-orb-node-one"></span>
-        <span class="ai-orb-node ai-orb-node-two"></span>
-        <span class="ai-orb-node ai-orb-node-three"></span>
-    </div>
-    <h2>AI Study Buddy</h2>
-    <p id="loader-message">Loading...</p>
-    <div class="loader-skeleton-stack" aria-hidden="true">
-        <span></span>
-        <span></span>
-        <span></span>
-    </div>
-</div>
-
 <div class="container premium-home-container">
     <header class="exhibition-header premium-home-nav">
         <a class="premium-brand" href="{{ url_for('home') }}" aria-label="AI Study Buddy home" data-page-loader="false">
@@ -577,37 +555,6 @@
 {% endif %}
 
 <script>
-const loaderMessages = [
-    "Understanding Topic...",
-    "Reading Textbook Context...",
-    "Generating AI Notes...",
-    "Creating Quiz...",
-    "Building Flashcards...",
-    "Generating Educational Diagram...",
-    "Finalizing Lesson..."
-];
-
-let loaderMessageIndex = 0;
-let loaderInterval;
-
-function showLoader() {
-    if (window.AIStudyBuddyPageLoader && typeof window.AIStudyBuddyPageLoader.showForForm === "function") {
-        window.AIStudyBuddyPageLoader.showForForm(document.getElementById("lesson-form"), null);
-        return;
-    }
-
-    document.getElementById("loader").style.display = "flex";
-    const loaderMessage = document.getElementById("loader-message");
-    loaderMessageIndex = 0;
-    loaderMessage.innerHTML = loaderMessages[loaderMessageIndex];
-
-    clearInterval(loaderInterval);
-    loaderInterval = setInterval(function() {
-        loaderMessageIndex = (loaderMessageIndex + 1) % loaderMessages.length;
-        loaderMessage.innerHTML = loaderMessages[loaderMessageIndex];
-    }, 2000);
-}
-
 function initializeHomeShortcutCards() {
     const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const lessonForm = document.getElementById("lesson-form");

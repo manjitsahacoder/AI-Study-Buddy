@@ -355,7 +355,10 @@
         let generationPercent = 0;
         let navigationLocked = false;
         let suppressUnloadOverlayUntil = 0;
+        let temporaryOverlayTimer = null;
+        let temporaryOverlayCleanup = null;
         const minimumOverlayPaintDelay = 180;
+        const temporaryOverlayTimeout = 12000;
         const nativeLocationAssign = window.location.assign.bind(window.location);
         const nativeLocationReplace = window.location.replace.bind(window.location);
         const nativeFormSubmit = HTMLFormElement.prototype.submit;
@@ -392,6 +395,12 @@
             "Loading analytics...",
             "Reading your learning history...",
             "Preparing charts...",
+            "Almost ready...",
+        ];
+        const downloadProgressMessages = [
+            "Preparing your download...",
+            "Generating your file...",
+            "Finalizing document...",
             "Almost ready...",
         ];
         const messageRules = [
@@ -450,6 +459,9 @@
         }
 
         function progressMessagesFor(text) {
+            if (/download|pdf|report|document|file/i.test(text)) {
+                return downloadProgressMessages;
+            }
             if (/learn|lesson|revision|flashcards|quiz|tutor/i.test(text)) {
                 return defaultProgressMessages;
             }
@@ -457,6 +469,20 @@
                 return analyticsProgressMessages;
             }
             return navigationProgressMessages;
+        }
+
+        function downloadMessage(destinationUrl) {
+            const path = destinationUrl ? destinationUrl.pathname : "";
+            if (/pdf|notes|revision|important-questions|learning-history|downloaded-reports/i.test(path)) {
+                return "Preparing PDF Download...";
+            }
+            if (/diagram/i.test(path) || /\.(?:png|jpe?g|gif|webp|svg)$/i.test(path)) {
+                return "Preparing Image Download...";
+            }
+            if (/settings\/download-data/i.test(path) || /\.(?:json|zip)$/i.test(path)) {
+                return "Preparing Data Download...";
+            }
+            return "Preparing Download...";
         }
 
         function startMessageRotation(firstMessage, messages) {
@@ -616,6 +642,10 @@
                 return source.dataset.pageLoadingMessage;
             }
 
+            if (destinationUrl && isAttachmentUrl(destinationUrl)) {
+                return downloadMessage(destinationUrl);
+            }
+
             const label = source && source.tagName === "A" ? linkLabel(source) : sourceLabel(source);
             const path = destinationUrl ? destinationUrl.pathname.replace(/[-_/]+/g, " ") : "";
             const haystack = `${label} ${path}`;
@@ -684,7 +714,7 @@
                 /^(?:mailto|tel|javascript):/i.test(rawDestination) ||
                 url.origin !== window.location.origin ||
                 isSamePageAnchor(rawDestination, url) ||
-                isAttachmentUrl(url)
+                (isAttachmentUrl(url) && !(options && options.allowAttachments))
             ) {
                 return null;
             }
@@ -756,7 +786,7 @@
                 return false;
             }
 
-            if (isSamePageAnchor(rawHref, url) || isAttachmentLink(link, url)) {
+            if (isSamePageAnchor(rawHref, url)) {
                 suppressUnloadOverlay();
                 return false;
             }
@@ -774,10 +804,21 @@
             event.stopImmediatePropagation();
         }
 
+        function clearTemporaryOverlay(runCleanup) {
+            const cleanup = temporaryOverlayCleanup;
+            window.clearTimeout(temporaryOverlayTimer);
+            temporaryOverlayTimer = null;
+            temporaryOverlayCleanup = null;
+            if (runCleanup && typeof cleanup === "function") {
+                cleanup();
+            }
+        }
+
         function hidePageTransitionOverlay() {
             window.clearTimeout(pendingHideTimer);
             window.clearInterval(messageTimer);
             stopGenerationStepper();
+            clearTemporaryOverlay(true);
             pendingHideTimer = null;
             messageTimer = null;
             navigationLocked = false;
@@ -786,8 +827,15 @@
             document.documentElement.classList.remove("page-transition-active");
         }
 
+        function scheduleTemporaryOverlayHide(cleanup) {
+            clearTemporaryOverlay(false);
+            temporaryOverlayCleanup = cleanup || null;
+            temporaryOverlayTimer = window.setTimeout(hidePageTransitionOverlay, temporaryOverlayTimeout);
+        }
+
         function showOverlay(message, label, options) {
             window.clearTimeout(pendingHideTimer);
+            clearTemporaryOverlay(true);
             ensurePageTransitionOverlayViewport();
             startMessageRotation(message, progressMessagesFor(label));
             if (options && options.generation === "lesson") {
@@ -799,6 +847,9 @@
             lockNavigation();
             overlay.offsetHeight;
             overlay.classList.add("is-visible");
+            if (options && options.temporary) {
+                scheduleTemporaryOverlayHide(options.cleanup);
+            }
         }
 
         function afterOverlayPaint(callback) {
@@ -814,15 +865,16 @@
             }
 
             const label = `${linkLabel(link)} ${url.pathname}`;
-            showOverlay(contextualMessage(link, url), label);
+            showOverlay(contextualMessage(link, url), label, {
+                temporary: isAttachmentLink(link, url),
+            });
         }
 
         function shouldSkipFormTransition(form, url, method) {
             return Boolean(
                 form.matches("[data-page-loader='false'], [data-no-page-loader], [data-endpoint], .tutor-composer") ||
                 form.target && form.target !== "_self" ||
-                method === "DIALOG" ||
-                isAttachmentUrl(url)
+                method === "DIALOG"
             );
         }
 
@@ -838,12 +890,29 @@
             }
 
             const context = contextualFormMessage(form, submitter, url);
-            showOverlay(context.message, context.label, { generation: form.dataset.generationLoader });
-            return true;
+            const isDownload = isAttachmentUrl(url);
+            showOverlay(isDownload ? downloadMessage(url) : context.message, context.label, {
+                generation: form.dataset.generationLoader,
+                temporary: isDownload,
+            });
+            return {
+                temporary: isDownload,
+            };
         }
 
         function markFormSubmitting(form, submitter) {
             const actualSubmitter = submitter || form.querySelector("button[type='submit'], input[type='submit']");
+            const priorSubmitting = Object.prototype.hasOwnProperty.call(form.dataset, "submitting")
+                ? form.dataset.submitting
+                : null;
+            const buttonStates = Array.from(form.querySelectorAll("button[type='submit'], input[type='submit']")).map(function (button) {
+                return {
+                    button,
+                    disabled: button.disabled,
+                    hadLoading: button.classList.contains("is-loading"),
+                    ariaBusy: button.getAttribute("aria-busy"),
+                };
+            });
             form.dataset.submitting = "true";
 
             if (actualSubmitter) {
@@ -856,10 +925,43 @@
             });
 
             const loadingRegion = form.closest(".quiz-box, .study-form, .tutor-composer, .report-download-form, .learning-action-card, .quiz-start-form, .notes-download-form");
+            const regionState = loadingRegion
+                ? {
+                    hadLoading: loadingRegion.classList.contains("is-loading"),
+                    ariaBusy: loadingRegion.getAttribute("aria-busy"),
+                }
+                : null;
             if (loadingRegion) {
                 loadingRegion.classList.add("is-loading");
                 loadingRegion.setAttribute("aria-busy", "true");
             }
+
+            return function restoreFormSubmitting() {
+                if (priorSubmitting === null) {
+                    delete form.dataset.submitting;
+                } else {
+                    form.dataset.submitting = priorSubmitting;
+                }
+
+                buttonStates.forEach(function (state) {
+                    state.button.disabled = state.disabled;
+                    state.button.classList.toggle("is-loading", state.hadLoading);
+                    if (state.ariaBusy === null) {
+                        state.button.removeAttribute("aria-busy");
+                    } else {
+                        state.button.setAttribute("aria-busy", state.ariaBusy);
+                    }
+                });
+
+                if (loadingRegion && regionState) {
+                    loadingRegion.classList.toggle("is-loading", regionState.hadLoading);
+                    if (regionState.ariaBusy === null) {
+                        loadingRegion.removeAttribute("aria-busy");
+                    } else {
+                        loadingRegion.setAttribute("aria-busy", regionState.ariaBusy);
+                    }
+                }
+            };
         }
 
         function preserveSubmitterValue(form, submitter) {
@@ -876,9 +978,12 @@
             return input;
         }
 
-        function submitAfterOverlayPaint(form, submitter) {
+        function submitAfterOverlayPaint(form, submitter, options) {
             const hiddenSubmitter = preserveSubmitterValue(form, submitter);
-            markFormSubmitting(form, submitter);
+            const restoreFormSubmitting = markFormSubmitting(form, submitter);
+            if (options && options.temporary) {
+                scheduleTemporaryOverlayHide(restoreFormSubmitting);
+            }
             afterOverlayPaint(function () {
                 nativeFormSubmit.call(form);
                 if (hiddenSubmitter && hiddenSubmitter.parentNode) {
@@ -901,7 +1006,9 @@
             if (source && source.tagName === "A") {
                 showPageTransitionOverlay(source, url.href);
             } else {
-                showOverlay(contextualMessage(source, url), `${sourceLabel(source)} ${url.pathname}`);
+                showOverlay(contextualMessage(source, url), `${sourceLabel(source)} ${url.pathname}`, {
+                    temporary: isAttachmentUrl(url),
+                });
             }
 
             afterOverlayPaint(function () {
@@ -957,17 +1064,18 @@
             }
 
             event.preventDefault();
-            if (!showFormTransitionOverlay(form, event.submitter)) {
+            const transition = showFormTransitionOverlay(form, event.submitter);
+            if (!transition) {
                 nativeFormSubmit.call(form);
                 return;
             }
-            submitAfterOverlayPaint(form, event.submitter);
+            submitAfterOverlayPaint(form, event.submitter, transition);
         }
 
         function patchLocationMethod(methodName, nativeMethod, replace) {
             try {
                 window.location[methodName] = function (destination) {
-                    if (!navigate(destination, null, { allowCurrentPage: true, replace })) {
+                    if (!navigate(destination, null, { allowCurrentPage: true, allowAttachments: true, replace })) {
                         nativeMethod(destination);
                     }
                 };

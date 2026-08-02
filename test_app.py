@@ -3733,6 +3733,7 @@ Grade: A
         self.assertEqual(response.status_code, 200)
         page = response.get_data(as_text=True)
         self.assertIn('id="page-transition-overlay"', page)
+        self.assertEqual(1, page.count('id="page-transition-overlay"'))
         self.assertIn("data-page-transition-overlay", page)
         self.assertIn("data-page-transition-message", page)
         self.assertIn("AI Study Buddy", page)
@@ -3761,9 +3762,14 @@ Grade: A
         self.assertIn("Loading Dashboard...", script)
         self.assertIn("Opening Profile...", script)
         self.assertIn("Preparing Learning History...", script)
+        self.assertIn("Preparing PDF Download...", script)
+        self.assertIn("downloadProgressMessages", script)
+        self.assertIn("scheduleTemporaryOverlayHide", script)
+        self.assertIn("allowAttachments: true", script)
         self.assertIn("[data-developer-users-link]", script)
         self.assertIn("download-data", script)
         self.assertIn("download(?:", script)
+        self.assertNotIn("show" + "Loader", script)
 
         auth_nav = Path("templates/components/auth_nav.html").read_text(encoding="utf-8")
         self.assertIn("event.stopPropagation();", auth_nav)
@@ -3782,7 +3788,10 @@ Grade: A
         self.assertIn("opacity: 1;", css)
         self.assertIn("pointer-events: auto;", css)
         self.assertIn(".page-transition-active body", css)
-        self.assertIn("#loader", css)
+        self.assertNotIn("#" + "loader", css)
+        self.assertNotIn("#" + "loader-" + "message", css)
+        self.assertNotIn("." + "loader-" + "steps", css)
+        self.assertNotIn("." + "spinner", css)
 
         self.assertIn("ensurePageTransitionOverlayViewport", script)
         self.assertIn("overlay.parentElement !== document.body", script)
@@ -3792,6 +3801,7 @@ Grade: A
     def test_full_page_templates_include_transition_overlay_runtime(self):
         missing_overlay = []
         missing_motion = []
+        duplicate_overlay = []
 
         for template_path in Path("templates").glob("*.html"):
             source = template_path.read_text(encoding="utf-8")
@@ -3802,13 +3812,28 @@ Grade: A
             has_overlay = "components/loading_overlay.html" in source
             has_motion = "motion.js" in source
 
+            if has_footer and has_overlay:
+                duplicate_overlay.append(template_path.name)
             if not has_footer and not has_overlay:
                 missing_overlay.append(template_path.name)
             if not has_footer and not has_motion:
                 missing_motion.append(template_path.name)
 
+        self.assertEqual([], duplicate_overlay)
         self.assertEqual([], missing_overlay)
         self.assertEqual([], missing_motion)
+
+    def test_legacy_homepage_loader_is_removed(self):
+        response = self.client.get("/")
+
+        self.assertEqual(response.status_code, 200)
+        page = response.get_data(as_text=True)
+        self.assertEqual(1, page.count('id="page-transition-overlay"'))
+        self.assertNotIn('id="' + 'loader"', page)
+        self.assertNotIn("loader-" + "message", page)
+        self.assertNotIn("loader-" + "skeleton-stack", page)
+        self.assertNotIn("loader-" + "brand-logo", page)
+        self.assertNotIn("show" + "Loader", page)
 
     def test_pwa_manifest_contains_install_metadata_and_icons(self):
         response = self.client.get("/manifest.json")
@@ -3860,7 +3885,7 @@ Grade: A
         self.assertEqual(response.headers["Service-Worker-Allowed"], "/")
         self.assertEqual(response.headers["Cache-Control"], "no-cache")
         script = response.get_data(as_text=True)
-        self.assertIn('const CACHE_VERSION = "ai-study-buddy-pwa-v5"', script)
+        self.assertIn('const CACHE_VERSION = "ai-study-buddy-pwa-v6"', script)
         self.assertIn('request.method !== "GET"', script)
         self.assertIn('request.mode === "navigate"', script)
         self.assertIn("networkOnlyNavigation(request)", script)

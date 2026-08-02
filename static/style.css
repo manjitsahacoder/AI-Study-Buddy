@@ -7663,142 +7663,12 @@ footer p {
     user-select: none;
 }
 
-#loader {
-    display: none;
-    position: fixed;
-    top: 0;
-    right: 0;
-    bottom: 0;
-    left: 0;
-    width: 100vw;
-    min-height: 100vh;
-    min-height: 100dvh;
-    z-index: 10000;
-    align-items: center;
-    justify-content: center;
-    flex-direction: column;
-    padding: 24px;
-    text-align: center;
-    background: rgba(255, 253, 248, 0.94);
-    backdrop-filter: blur(12px);
-}
-
-#loader::before,
-#loader::after {
-    content: "";
-    position: absolute;
-    width: min(34vw, 280px);
-    aspect-ratio: 1;
-    border-radius: 50%;
-    opacity: 0.12;
-    pointer-events: none;
-}
-
-#loader::before {
-    top: 8%;
-    left: 8%;
-    background: radial-gradient(circle, rgba(49, 87, 213, 0.45), transparent 68%);
-}
-
-#loader::after {
-    right: 8%;
-    bottom: 8%;
-    background: radial-gradient(circle, rgba(4, 125, 135, 0.42), transparent 68%);
-}
-
-.spinner {
-    width: 62px;
-    height: 62px;
-    margin-bottom: 22px;
-    border: 7px solid rgba(49, 87, 213, 0.16);
-    border-top-color: var(--primary);
-    border-radius: 50%;
-    animation: spin 0.9s linear infinite;
-}
-
-#loader .loader-brand-logo,
-#loader .loader-ai-orb,
-#loader h2,
-#loader-message {
-    position: relative;
-    z-index: 1;
-}
-
-.loader-brand-logo {
-    width: min(220px, 58vw);
-    height: auto;
-    margin-bottom: 10px;
-    border-radius: 18px;
-    box-shadow: 0 22px 54px rgba(1, 21, 92, 0.26);
-}
-
-.loader-ai-orb {
-    width: min(132px, 38vw);
-    margin: 2px 0 12px;
-}
-
 @keyframes spin {
     to {
         transform: rotate(360deg);
     }
 }
 
-#loader h2 {
-    margin-bottom: 16px;
-}
-
-#loader p,
-#loader-message {
-    margin: 0;
-    font-weight: 700;
-}
-
-#loader-message {
-    width: min(420px, 100%);
-    min-height: 54px;
-    padding: 14px 18px;
-    border: 1px solid rgba(49, 87, 213, 0.16);
-    border-radius: 8px;
-    color: var(--ink);
-    background: rgba(255, 255, 255, 0.72);
-    box-shadow: var(--soft-shadow);
-    font-size: clamp(1rem, 1.5vw, 1.15rem);
-    animation: loaderPulse 2s ease-in-out infinite;
-}
-
-.loader-steps {
-    display: grid;
-    gap: 10px;
-    width: min(360px, 100%);
-}
-
-.loader-steps p {
-    padding: 12px 14px;
-    border: 1px solid rgba(49, 87, 213, 0.16);
-    border-radius: 8px;
-    color: var(--muted);
-    background: rgba(255, 255, 255, 0.7);
-    animation: loaderStep 2.4s ease-in-out infinite;
-}
-
-.loader-steps p:nth-child(2) {
-    animation-delay: 0.8s;
-}
-
-.loader-steps p:nth-child(3) {
-    animation-delay: 1.6s;
-}
-
-.loader-skeleton-stack {
-    position: relative;
-    z-index: 1;
-    display: grid;
-    gap: 10px;
-    width: min(420px, 100%);
-    margin-top: 18px;
-}
-
-.loader-skeleton-stack span,
 .skeleton-line {
     display: block;
     height: 12px;
@@ -7809,30 +7679,6 @@ footer p {
         rgba(49, 87, 213, 0.12);
     background-size: 220% 100%;
     animation: skeletonShimmer 1.45s var(--ease-premium) infinite;
-}
-
-.loader-skeleton-stack span:nth-child(2) {
-    width: 84%;
-}
-
-.loader-skeleton-stack span:nth-child(3) {
-    width: 62%;
-}
-
-@keyframes loaderStep {
-    0%,
-    100% {
-        color: var(--muted);
-        border-color: rgba(49, 87, 213, 0.16);
-        box-shadow: none;
-        transform: translateX(0);
-    }
-    35% {
-        color: var(--ink);
-        border-color: rgba(49, 87, 213, 0.42);
-        box-shadow: 0 0 22px rgba(49, 87, 213, 0.22);
-        transform: translateX(4px);
-    }
 }
 
 @keyframes skeletonShimmer {
@@ -7862,18 +7708,6 @@ footer p {
 @keyframes successSweep {
     to {
         transform: translateX(100%);
-    }
-}
-
-@keyframes loaderPulse {
-    0%,
-    100% {
-        transform: translateY(0);
-        box-shadow: var(--soft-shadow);
-    }
-    50% {
-        transform: translateY(-2px);
-        box-shadow: 0 0 28px rgba(49, 87, 213, 0.2);
     }
 }
 
@@ -9400,9 +9234,7 @@ html.dark-mode body::before {
 .dark-mode .locked-feature-grid button,
 .dark-mode .history-table-wrap,
 .dark-mode .history-table th,
-.dark-mode .empty-history,
-.dark-mode #loader-message,
-.dark-mode .loader-steps p {
+.dark-mode .empty-history {
     background: rgba(134, 161, 255, 0.1);
     border-color: rgba(134, 161, 255, 0.18);
 }
@@ -9779,10 +9611,6 @@ html.dark-mode body::before {
 .exhibition-mode .page-transition-card {
     border-color: rgba(189, 138, 32, 0.28);
     box-shadow: 0 26px 76px rgba(49, 87, 213, 0.2);
-}
-
-.dark-mode #loader {
-    background: rgba(16, 20, 31, 0.94);
 }
 
 .dark-mode .continue-learning-heading p,
