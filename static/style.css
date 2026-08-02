@@ -11831,7 +11831,7 @@ body.dashboard-page::after {
 }
 
 .home-page .premium-home-container {
-    --premium-nav-height: 104px;
+    --premium-nav-height: 88px;
     width: min(1280px, calc(100% - 36px));
     margin: 18px auto 36px;
 }
@@ -12428,9 +12428,14 @@ body.dashboard-page::after {
     font-weight: 800;
 }
 
+.premium-stat-card div > span {
+    margin-top: 6px;
+    line-height: 1.35;
+}
+
 .premium-stat-strip strong {
     display: block;
-    margin-top: 8px;
+    margin-top: 0;
     color: var(--premium-text);
     font-size: clamp(1rem, 1.3vw, 1.28rem);
     line-height: 1.15;
@@ -13235,16 +13240,16 @@ body.dashboard-page::after {
 
 .home-page .premium-home-nav {
     grid-template-columns: minmax(620px, 1fr) auto minmax(170px, auto);
-    gap: clamp(18px, 2.8vw, 36px);
-    min-height: 112px;
-    padding: clamp(14px, 1.8vw, 22px);
+    gap: clamp(14px, 2vw, 26px);
+    min-height: var(--premium-nav-height);
+    padding: 2px 14px;
     border-radius: 24px;
     box-shadow: var(--shadow-glass);
 }
 
 .premium-brand {
-    grid-template-columns: 64px 92px max-content;
-    gap: 18px;
+    grid-template-columns: 60px 60px max-content;
+    gap: 12px;
     align-items: center;
     width: max-content;
     max-width: 100%;
@@ -13253,39 +13258,39 @@ body.dashboard-page::after {
 }
 
 .home-page .premium-school-mark {
-    width: 64px;
-    height: 64px;
+    width: 60px;
+    height: 60px;
     padding: 0;
     border-radius: 13px;
     box-shadow: 0 10px 24px rgba(30, 40, 58, 0.13);
-    flex: 0 0 64px;
+    flex: 0 0 60px;
     overflow: visible;
 }
 
 .home-page .premium-school-mark .school-logo {
-    width: 64px;
-    height: 64px;
+    width: 60px;
+    height: 60px;
     max-width: none;
     object-fit: contain;
 }
 
 .premium-app-mark,
 .premium-app-logo {
-    width: 92px;
-    height: 92px;
-    flex: 0 0 92px;
+    width: 60px;
+    height: 60px;
+    flex: 0 0 60px;
 }
 
 .premium-app-mark {
     display: grid;
     place-items: center;
-    border-radius: 22px;
+    border-radius: 16px;
     background: rgba(255, 255, 255, 0.74);
-    box-shadow: 0 18px 36px rgba(49, 87, 213, 0.18);
+    box-shadow: 0 10px 24px rgba(49, 87, 213, 0.16);
 }
 
 .premium-app-logo {
-    border-radius: 22px;
+    border-radius: 16px;
     object-fit: contain;
 }
 
@@ -13298,6 +13303,7 @@ body.dashboard-page::after {
 }
 
 .premium-brand-copy {
+    gap: 0;
     min-width: 0;
 }
 
@@ -13543,8 +13549,8 @@ textarea:focus-visible {
     gap: clamp(28px, 4vw, 52px);
     align-items: center;
     min-height: 0;
-    margin-top: clamp(8px, 1.5vw, 14px);
-    padding: clamp(6px, 1.4vw, 14px) clamp(26px, 3.8vw, 46px) clamp(22px, 3.2vw, 38px);
+    margin-top: clamp(20px, 2.5vw, 30px);
+    padding: clamp(28px, 3vw, 42px) clamp(26px, 3.8vw, 46px) clamp(22px, 3.2vw, 38px);
 }
 
 .page-transition-card {
