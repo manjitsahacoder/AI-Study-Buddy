@@ -334,6 +334,13 @@
         const messageTarget = document.querySelector("[data-page-transition-message]");
         const generationStepper = document.querySelector("[data-generation-stepper]");
         const generationSteps = generationStepper ? Array.from(generationStepper.querySelectorAll("[data-generation-step]")) : [];
+        const generationStageTarget = document.querySelector("[data-generation-current-stage]");
+        const generationKickerTarget = document.querySelector("[data-generation-kicker]");
+        const generationProgressBar = document.querySelector("[data-generation-progress-bar]");
+        const generationProgressMeter = document.querySelector("[data-generation-progress-meter]");
+        const generationPercentTarget = document.querySelector("[data-generation-percent]");
+        const generationTipTarget = document.querySelector("[data-generation-tip]");
+        const generationSuccessTarget = document.querySelector("[data-generation-success]");
         if (!overlay || !messageTarget) {
             return;
         }
@@ -341,8 +348,11 @@
         let pendingHideTimer = null;
         let messageTimer = null;
         let generationStepTimer = null;
+        let generationTipTimer = null;
         let messageIndex = 0;
         let generationStepIndex = 0;
+        let generationTipIndex = 0;
+        let generationPercent = 0;
         let navigationLocked = false;
         let suppressUnloadOverlayUntil = 0;
         const minimumOverlayPaintDelay = 180;
@@ -363,6 +373,13 @@
             "Building quiz...",
             "Preparing flashcards...",
             "Finalizing lesson...",
+        ];
+        const educationalTips = [
+            "Tip: Read the summary first, then use the quiz to find what needs one more pass.",
+            "Tip: Turn one hard paragraph into three flashcards before moving on.",
+            "Tip: Ask the AI Tutor for a class 8 version, then a class 10 version, to level up quickly.",
+            "Tip: Save the clearest notes so revision stays fast before exams.",
+            "Tip: After the lesson opens, explain the topic aloud once to check your understanding.",
         ];
         const navigationProgressMessages = [
             "Opening your workspace...",
@@ -454,12 +471,64 @@
 
         function stopGenerationStepper() {
             window.clearInterval(generationStepTimer);
+            window.clearInterval(generationTipTimer);
             generationStepTimer = null;
+            generationTipTimer = null;
             generationStepIndex = 0;
+            generationTipIndex = 0;
+            generationPercent = 0;
             overlay.removeAttribute("data-generation");
+            overlay.classList.remove("is-generation-success");
             generationSteps.forEach(function (step) {
-                step.classList.remove("is-active", "is-complete");
+                step.classList.remove("is-active", "is-complete", "is-upcoming");
             });
+            if (generationProgressBar) {
+                generationProgressBar.style.width = "0%";
+            }
+            if (generationPercentTarget) {
+                generationPercentTarget.textContent = "0%";
+            }
+            if (generationProgressMeter) {
+                generationProgressMeter.setAttribute("aria-valuenow", "0");
+            }
+            if (generationStageTarget) {
+                generationStageTarget.textContent = "Preparing your learning workspace";
+            }
+            if (generationKickerTarget) {
+                generationKickerTarget.textContent = "Preparing workspace";
+            }
+            if (generationTipTarget) {
+                generationTipTarget.textContent = educationalTips[0];
+            }
+            if (generationSuccessTarget) {
+                generationSuccessTarget.setAttribute("aria-hidden", "true");
+            }
+        }
+
+        function setGenerationPercent(percent) {
+            generationPercent = Math.max(0, Math.min(percent, 100));
+            if (generationProgressBar) {
+                generationProgressBar.style.width = `${generationPercent}%`;
+            }
+            if (generationPercentTarget) {
+                generationPercentTarget.textContent = `${generationPercent}%`;
+            }
+            if (generationProgressMeter) {
+                generationProgressMeter.setAttribute("aria-valuenow", String(generationPercent));
+            }
+        }
+
+        function startEducationalTips() {
+            window.clearInterval(generationTipTimer);
+            generationTipIndex = 0;
+            if (!generationTipTarget) {
+                return;
+            }
+            generationTipTarget.textContent = educationalTips[generationTipIndex];
+            generationTipTimer = window.setInterval(function () {
+                generationTipIndex = (generationTipIndex + 1) % educationalTips.length;
+                generationTipTarget.textContent = educationalTips[generationTipIndex];
+            }, 4200);
         }
 
         function setGenerationStep(index) {
@@ -467,13 +536,19 @@
             generationSteps.forEach(function (step, stepIndex) {
                 step.classList.toggle("is-complete", stepIndex < generationStepIndex);
                 step.classList.toggle("is-active", stepIndex === generationStepIndex);
+                step.classList.toggle("is-upcoming", stepIndex > generationStepIndex);
             });
             if (generationSteps[generationStepIndex]) {
                 const label = generationSteps[generationStepIndex].querySelector("strong");
                 if (label) {
+                    if (generationStageTarget) {
+                        generationStageTarget.textContent = label.textContent;
+                    }
                     messageTarget.textContent = `${label.textContent}...`;
                 }
             }
+            const stepPercent = Math.min(94, Math.round(((generationStepIndex + 1) / generationSteps.length) * 88) + 6);
+            setGenerationPercent(Math.max(generationPercent, stepPercent));
         }
 
         function startGenerationStepper() {
@@ -481,11 +556,50 @@
                 return;
             }
             overlay.dataset.generation = "lesson";
+            overlay.classList.remove("is-generation-success");
+            if (generationKickerTarget) {
+                generationKickerTarget.textContent = "AI lesson generation";
+            }
+            setGenerationPercent(0);
+            startEducationalTips();
             setGenerationStep(0);
             window.clearInterval(generationStepTimer);
             generationStepTimer = window.setInterval(function () {
-                setGenerationStep((generationStepIndex + 1) % generationSteps.length);
+                if (generationStepIndex < generationSteps.length - 1) {
+                    setGenerationStep(generationStepIndex + 1);
+                    return;
+                }
+                setGenerationPercent(Math.min(96, generationPercent + 1));
             }, 1450);
+        }
+
+        function showGenerationSuccess() {
+            if (overlay.dataset.generation !== "lesson") {
+                return;
+            }
+            window.clearInterval(generationStepTimer);
+            window.clearInterval(generationTipTimer);
+            generationStepTimer = null;
+            generationTipTimer = null;
+            overlay.classList.add("is-generation-success");
+            if (generationSuccessTarget) {
+                generationSuccessTarget.setAttribute("aria-hidden", "false");
+            }
+            generationSteps.forEach(function (step) {
+                step.classList.add("is-complete");
+                step.classList.remove("is-active", "is-upcoming");
+            });
+            setGenerationPercent(100);
+            if (generationKickerTarget) {
+                generationKickerTarget.textContent = "Lesson ready";
+            }
+            if (generationStageTarget) {
+                generationStageTarget.textContent = "Lesson Ready";
+            }
+            messageTarget.textContent = "Opening your finished lesson...";
+            if (generationTipTarget) {
+                generationTipTarget.textContent = "Your AI-generated lesson is ready to explore.";
+            }
         }
 
         function normalizeUrl(destination) {
@@ -862,7 +976,12 @@
         }
 
         function handleBeforeUnload() {
-            if ("navigation" in window || navigationLocked || Date.now() < suppressUnloadOverlayUntil) {
+            if (navigationLocked) {
+                showGenerationSuccess();
+                return;
+            }
+
+            if ("navigation" in window || Date.now() < suppressUnloadOverlayUntil) {
                 return;
             }
 
@@ -900,6 +1019,7 @@
             window.navigation.addEventListener("navigate", handleNavigationEvent);
         }
         window.addEventListener("beforeunload", handleBeforeUnload);
+        window.addEventListener("pagehide", showGenerationSuccess);
         window.addEventListener("pageshow", hidePageTransitionOverlay);
         window.addEventListener("focus", function () {
             if (!document.hidden) {
