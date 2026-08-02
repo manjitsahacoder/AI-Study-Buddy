@@ -367,19 +367,20 @@
         ];
         const attachmentExtensions = /\.(?:pdf|png|jpe?g|gif|webp|svg|json|zip)$/i;
         const defaultProgressMessages = [
-            "Understanding your topic...",
-            "Preparing lesson...",
-            "Creating notes...",
-            "Building quiz...",
-            "Preparing flashcards...",
-            "Finalizing lesson...",
+            "Understanding Topic...",
+            "Reading Textbook Context...",
+            "Generating AI Notes...",
+            "Creating Quiz...",
+            "Building Flashcards...",
+            "Generating Educational Diagram...",
+            "Finalizing Lesson...",
         ];
         const educationalTips = [
-            "Tip: Read the summary first, then use the quiz to find what needs one more pass.",
-            "Tip: Turn one hard paragraph into three flashcards before moving on.",
-            "Tip: Ask the AI Tutor for a class 8 version, then a class 10 version, to level up quickly.",
-            "Tip: Save the clearest notes so revision stays fast before exams.",
-            "Tip: After the lesson opens, explain the topic aloud once to check your understanding.",
+            "Tip: AI is creating personalized notes for your class.",
+            "Tip: Flashcards improve long-term memory retention.",
+            "Tip: Educational diagrams help visual understanding.",
+            "Tip: Preparing your revision summary.",
+            "Tip: A quick quiz after notes helps reveal what to revise first.",
         ];
         const navigationProgressMessages = [
             "Opening your workspace...",
@@ -594,9 +595,9 @@
                 generationKickerTarget.textContent = "Lesson ready";
             }
             if (generationStageTarget) {
-                generationStageTarget.textContent = "Lesson Ready";
+                generationStageTarget.textContent = "Lesson Ready!";
             }
-            messageTarget.textContent = "Opening your finished lesson...";
+            messageTarget.textContent = "Opening Dashboard...";
             if (generationTipTarget) {
                 generationTipTarget.textContent = "Your AI-generated lesson is ready to explore.";
             }

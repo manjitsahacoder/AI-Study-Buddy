@@ -67,6 +67,7 @@ class GeminiImageServiceTests(unittest.TestCase):
             os.environ,
             {
                 "GEMINI_API_KEY": "test-key",
+                "GEMINI_IMAGE_API_KEY": "",
                 "GEMINI_IMAGE_MODEL": "gemini-3.1-flash-image",
             },
         ), patch(
@@ -104,6 +105,7 @@ class GeminiImageServiceTests(unittest.TestCase):
             os.environ,
             {
                 "GEMINI_API_KEY": "test-key",
+                "GEMINI_IMAGE_API_KEY": "",
                 "GEMINI_IMAGE_TIMEOUT_SECONDS": "0.01",
             },
         ), patch(
@@ -119,7 +121,7 @@ class GeminiImageServiceTests(unittest.TestCase):
 
         with patch.dict(
             os.environ,
-            {"GEMINI_API_KEY": "test-key"},
+            {"GEMINI_API_KEY": "test-key", "GEMINI_IMAGE_API_KEY": ""},
         ), patch(
             "services.gemini_image_service._create_genai_client",
             return_value=client,
@@ -128,6 +130,36 @@ class GeminiImageServiceTests(unittest.TestCase):
                 gemini_image_service.generate_diagram_image("Draw a plant cell.")
 
         self.assertIn("Gemini image generation failed", str(context.exception))
+
+    def test_gemini_api_key_prefers_image_specific_environment_key(self):
+        with patch.dict(
+            os.environ,
+            {
+                "GEMINI_IMAGE_API_KEY": "image-key",
+                "GEMINI_API_KEY": "text-key",
+            },
+        ):
+            self.assertEqual(gemini_image_service._gemini_api_key(), "image-key")
+
+    def test_gemini_api_key_falls_back_to_environment_key(self):
+        with patch.dict(
+            os.environ,
+            {
+                "GEMINI_IMAGE_API_KEY": "",
+                "GEMINI_API_KEY": "text-key",
+            },
+        ):
+            self.assertEqual(gemini_image_service._gemini_api_key(), "text-key")
+
+    def test_gemini_api_key_falls_back_to_config_key(self):
+        with patch.dict(
+            os.environ,
+            {
+                "GEMINI_IMAGE_API_KEY": "",
+                "GEMINI_API_KEY": "",
+            },
+        ), patch.object(gemini_image_service, "GEMINI_API_KEY", "config-key"):
+            self.assertEqual(gemini_image_service._gemini_api_key(), "config-key")
 
     def test_image_generation_timeout_reads_diagram_specific_environment_alias(self):
         with patch.dict(

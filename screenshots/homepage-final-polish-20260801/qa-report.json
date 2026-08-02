@@ -1,0 +1,519 @@
+{
+  "issues": [
+    "home-tablet: hero too tall (1069px)"
+  ],
+  "results": [
+    {
+      "label": "home-1920",
+      "metrics": {
+        "scrollWidth": 1920,
+        "clientWidth": 1920,
+        "docHeight": 4668,
+        "hero": {
+          "top": 283,
+          "bottom": 960,
+          "height": 677,
+          "width": 1280
+        },
+        "stats": {
+          "top": 974,
+          "bottom": 1100,
+          "height": 126,
+          "width": 1280
+        },
+        "quick": {
+          "top": 1118,
+          "bottom": 1633,
+          "height": 514,
+          "width": 1280
+        },
+        "heroToStats": 14,
+        "statsToQuick": 18,
+        "cards": [
+          {
+            "text": "📚 Lessons Studied AI Notes",
+            "height": 126,
+            "tag": "BUTTON",
+            "href": null
+          },
+          {
+            "text": "📝 Quizzes Completed Smart MCQs",
+            "height": 126,
+            "tag": "BUTTON",
+            "href": null
+          },
+          {
+            "text": "🎓 Current Level Classes 6-10",
+            "height": 126,
+            "tag": "BUTTON",
+            "href": null
+          },
+          {
+            "text": "⚡ XP Gamified",
+            "height": 126,
+            "tag": "A",
+            "href": "/dashboard"
+          },
+          {
+            "text": "🔥 Current Streak Tracked",
+            "height": 126,
+            "tag": "A",
+            "href": "/learning-history"
+          },
+          {
+            "text": "📈 Average Score Analytics",
+            "height": 126,
+            "tag": "A",
+            "href": "/performance"
+          }
+        ]
+      }
+    },
+    {
+      "label": "home-1600",
+      "metrics": {
+        "scrollWidth": 1600,
+        "clientWidth": 1600,
+        "docHeight": 4668,
+        "hero": {
+          "top": 283,
+          "bottom": 960,
+          "height": 677,
+          "width": 1280
+        },
+        "stats": {
+          "top": 974,
+          "bottom": 1100,
+          "height": 126,
+          "width": 1280
+        },
+        "quick": {
+          "top": 1118,
+          "bottom": 1633,
+          "height": 514,
+          "width": 1280
+        },
+        "heroToStats": 14,
+        "statsToQuick": 18,
+        "cards": [
+          {
+            "text": "📚 Lessons Studied AI Notes",
+            "height": 126,
+            "tag": "BUTTON",
+            "href": null
+          },
+          {
+            "text": "📝 Quizzes Completed Smart MCQs",
+            "height": 126,
+            "tag": "BUTTON",
+            "href": null
+          },
+          {
+            "text": "🎓 Current Level Classes 6-10",
+            "height": 126,
+            "tag": "BUTTON",
+            "href": null
+          },
+          {
+            "text": "⚡ XP Gamified",
+            "height": 126,
+            "tag": "A",
+            "href": "/dashboard"
+          },
+          {
+            "text": "🔥 Current Streak Tracked",
+            "height": 126,
+            "tag": "A",
+            "href": "/learning-history"
+          },
+          {
+            "text": "📈 Average Score Analytics",
+            "height": 126,
+            "tag": "A",
+            "href": "/performance"
+          }
+        ]
+      }
+    },
+    {
+      "label": "home-1440",
+      "metrics": {
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "docHeight": 4627,
+        "hero": {
+          "top": 283,
+          "bottom": 960,
+          "height": 677,
+          "width": 1280
+        },
+        "stats": {
+          "top": 974,
+          "bottom": 1075,
+          "height": 100,
+          "width": 1280
+        },
+        "quick": {
+          "top": 1093,
+          "bottom": 1605,
+          "height": 513,
+          "width": 1280
+        },
+        "heroToStats": 14,
+        "statsToQuick": 18,
+        "cards": [
+          {
+            "text": "📚 Lessons Studied AI Notes",
+            "height": 100,
+            "tag": "BUTTON",
+            "href": null
+          },
+          {
+            "text": "📝 Quizzes Completed Smart MCQs",
+            "height": 100,
+            "tag": "BUTTON",
+            "href": null
+          },
+          {
+            "text": "🎓 Current Level Classes 6-10",
+            "height": 100,
+            "tag": "BUTTON",
+            "href": null
+          },
+          {
+            "text": "⚡ XP Gamified",
+            "height": 100,
+            "tag": "A",
+            "href": "/dashboard"
+          },
+          {
+            "text": "🔥 Current Streak Tracked",
+            "height": 100,
+            "tag": "A",
+            "href": "/learning-history"
+          },
+          {
+            "text": "📈 Average Score Analytics",
+            "height": 100,
+            "tag": "A",
+            "href": "/performance"
+          }
+        ]
+      }
+    },
+    {
+      "label": "home-1366",
+      "metrics": {
+        "scrollWidth": 1366,
+        "clientWidth": 1366,
+        "docHeight": 4609,
+        "hero": {
+          "top": 283,
+          "bottom": 960,
+          "height": 677,
+          "width": 1280
+        },
+        "stats": {
+          "top": 974,
+          "bottom": 1074,
+          "height": 99,
+          "width": 1280
+        },
+        "quick": {
+          "top": 1092,
+          "bottom": 1602,
+          "height": 511,
+          "width": 1280
+        },
+        "heroToStats": 14,
+        "statsToQuick": 18,
+        "cards": [
+          {
+            "text": "📚 Lessons Studied AI Notes",
+            "height": 99,
+            "tag": "BUTTON",
+            "href": null
+          },
+          {
+            "text": "📝 Quizzes Completed Smart MCQs",
+            "height": 99,
+            "tag": "BUTTON",
+            "href": null
+          },
+          {
+            "text": "🎓 Current Level Classes 6-10",
+            "height": 99,
+            "tag": "BUTTON",
+            "href": null
+          },
+          {
+            "text": "⚡ XP Gamified",
+            "height": 99,
+            "tag": "A",
+            "href": "/dashboard"
+          },
+          {
+            "text": "🔥 Current Streak Tracked",
+            "height": 99,
+            "tag": "A",
+            "href": "/learning-history"
+          },
+          {
+            "text": "📈 Average Score Analytics",
+            "height": 99,
+            "tag": "A",
+            "href": "/performance"
+          }
+        ]
+      }
+    },
+    {
+      "label": "home-1280",
+      "metrics": {
+        "scrollWidth": 1280,
+        "clientWidth": 1280,
+        "docHeight": 4603,
+        "hero": {
+          "top": 283,
+          "bottom": 957,
+          "height": 674,
+          "width": 1244
+        },
+        "stats": {
+          "top": 971,
+          "bottom": 1069,
+          "height": 98,
+          "width": 1244
+        },
+        "quick": {
+          "top": 1087,
+          "bottom": 1596,
+          "height": 508,
+          "width": 1244
+        },
+        "heroToStats": 14,
+        "statsToQuick": 18,
+        "cards": [
+          {
+            "text": "📚 Lessons Studied AI Notes",
+            "height": 98,
+            "tag": "BUTTON",
+            "href": null
+          },
+          {
+            "text": "📝 Quizzes Completed Smart MCQs",
+            "height": 98,
+            "tag": "BUTTON",
+            "href": null
+          },
+          {
+            "text": "🎓 Current Level Classes 6-10",
+            "height": 98,
+            "tag": "BUTTON",
+            "href": null
+          },
+          {
+            "text": "⚡ XP Gamified",
+            "height": 98,
+            "tag": "A",
+            "href": "/dashboard"
+          },
+          {
+            "text": "🔥 Current Streak Tracked",
+            "height": 98,
+            "tag": "A",
+            "href": "/learning-history"
+          },
+          {
+            "text": "📈 Average Score Analytics",
+            "height": 98,
+            "tag": "A",
+            "href": "/performance"
+          }
+        ]
+      }
+    },
+    {
+      "label": "home-tablet",
+      "metrics": {
+        "scrollWidth": 768,
+        "clientWidth": 768,
+        "docHeight": 7106,
+        "hero": {
+          "top": 418,
+          "bottom": 1487,
+          "height": 1069,
+          "width": 732
+        },
+        "stats": {
+          "top": 1501,
+          "bottom": 1677,
+          "height": 176,
+          "width": 732
+        },
+        "quick": {
+          "top": 1695,
+          "bottom": 2602,
+          "height": 907,
+          "width": 732
+        },
+        "heroToStats": 14,
+        "statsToQuick": 18,
+        "cards": [
+          {
+            "text": "📚 Lessons Studied AI Notes",
+            "height": 82,
+            "tag": "BUTTON",
+            "href": null
+          },
+          {
+            "text": "📝 Quizzes Completed Smart MCQs",
+            "height": 82,
+            "tag": "BUTTON",
+            "href": null
+          },
+          {
+            "text": "🎓 Current Level Classes 6-10",
+            "height": 82,
+            "tag": "BUTTON",
+            "href": null
+          },
+          {
+            "text": "⚡ XP Gamified",
+            "height": 82,
+            "tag": "A",
+            "href": "/dashboard"
+          },
+          {
+            "text": "🔥 Current Streak Tracked",
+            "height": 82,
+            "tag": "A",
+            "href": "/learning-history"
+          },
+          {
+            "text": "📈 Average Score Analytics",
+            "height": 82,
+            "tag": "A",
+            "href": "/performance"
+          }
+        ]
+      }
+    },
+    {
+      "label": "home-mobile",
+      "metrics": {
+        "scrollWidth": 390,
+        "clientWidth": 390,
+        "docHeight": 10952,
+        "hero": {
+          "top": 486,
+          "bottom": 1821,
+          "height": 1335,
+          "width": 370
+        },
+        "stats": {
+          "top": 1835,
+          "bottom": 2356,
+          "height": 521,
+          "width": 370
+        },
+        "quick": {
+          "top": 2374,
+          "bottom": 3837,
+          "height": 1462,
+          "width": 370
+        },
+        "heroToStats": 14,
+        "statsToQuick": 18,
+        "cards": [
+          {
+            "text": "📚 Lessons Studied AI Notes",
+            "height": 77,
+            "tag": "BUTTON",
+            "href": null
+          },
+          {
+            "text": "📝 Quizzes Completed Smart MCQs",
+            "height": 77,
+            "tag": "BUTTON",
+            "href": null
+          },
+          {
+            "text": "🎓 Current Level Classes 6-10",
+            "height": 77,
+            "tag": "BUTTON",
+            "href": null
+          },
+          {
+            "text": "⚡ XP Gamified",
+            "height": 77,
+            "tag": "A",
+            "href": "/dashboard"
+          },
+          {
+            "text": "🔥 Current Streak Tracked",
+            "height": 77,
+            "tag": "A",
+            "href": "/learning-history"
+          },
+          {
+            "text": "📈 Average Score Analytics",
+            "height": 77,
+            "tag": "A",
+            "href": "/performance"
+          }
+        ]
+      }
+    },
+    {
+      "action": "AI Notes",
+      "active": "topic",
+      "highlighted": true
+    },
+    {
+      "action": "Classes 6-10",
+      "active": "student_class",
+      "highlighted": true
+    },
+    {
+      "action": "Guest Smart MCQs",
+      "active": "quiz-feature-card",
+      "highlighted": true
+    },
+    {
+      "action": "Guest Gamified",
+      "path": "/login",
+      "search": "?next=/dashboard"
+    },
+    {
+      "action": "Guest Tracked",
+      "path": "/learning-history",
+      "search": ""
+    },
+    {
+      "action": "Guest Analytics",
+      "path": "/login",
+      "search": "?next=/performance"
+    },
+    {
+      "action": "Auth Smart MCQs",
+      "path": "/quiz-history",
+      "search": ""
+    },
+    {
+      "action": "Auth Gamified",
+      "path": "/dashboard",
+      "search": ""
+    },
+    {
+      "action": "Auth Tracked",
+      "path": "/learning-history",
+      "search": ""
+    },
+    {
+      "action": "Auth Analytics",
+      "path": "/performance",
+      "search": ""
+    }
+  ]
+}

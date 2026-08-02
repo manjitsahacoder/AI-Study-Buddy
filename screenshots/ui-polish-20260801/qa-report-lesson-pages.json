@@ -1,0 +1,149 @@
+{
+  "visited": [
+    {
+      "name": "learn-voice-notes-desktop",
+      "url": "/learning-history/10",
+      "status": 200,
+      "file": "C:\\Users\\csaha\\OneDrive\\Desktop\\AI-Learning-Companion\\screenshots\\ui-polish-20260801\\learn-voice-notes-desktop.png",
+      "viewport": "1440x1000",
+      "flags": {
+        "url": "/learning-history/10",
+        "title": "Mitochondria - Learning History",
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "overflowX": false,
+        "hasListen": true,
+        "hasFlashcard": false,
+        "hasMemory": false,
+        "hasTutor": false
+      }
+    },
+    {
+      "name": "learn-voice-notes-tablet",
+      "url": "/learning-history/10",
+      "status": 200,
+      "file": "C:\\Users\\csaha\\OneDrive\\Desktop\\AI-Learning-Companion\\screenshots\\ui-polish-20260801\\learn-voice-notes-tablet.png",
+      "viewport": "768x1000",
+      "flags": {
+        "url": "/learning-history/10",
+        "title": "Mitochondria - Learning History",
+        "scrollWidth": 768,
+        "clientWidth": 768,
+        "overflowX": false,
+        "hasListen": true,
+        "hasFlashcard": false,
+        "hasMemory": false,
+        "hasTutor": false
+      }
+    },
+    {
+      "name": "learn-voice-notes-mobile",
+      "url": "/learning-history/10",
+      "status": 200,
+      "file": "C:\\Users\\csaha\\OneDrive\\Desktop\\AI-Learning-Companion\\screenshots\\ui-polish-20260801\\learn-voice-notes-mobile.png",
+      "viewport": "390x900",
+      "flags": {
+        "url": "/learning-history/10",
+        "title": "Mitochondria - Learning History",
+        "scrollWidth": 390,
+        "clientWidth": 390,
+        "overflowX": false,
+        "hasListen": true,
+        "hasFlashcard": false,
+        "hasMemory": false,
+        "hasTutor": false
+      }
+    },
+    {
+      "name": "ai-tutor-desktop",
+      "url": "/tutor/1",
+      "status": 200,
+      "file": "C:\\Users\\csaha\\OneDrive\\Desktop\\AI-Learning-Companion\\screenshots\\ui-polish-20260801\\ai-tutor-desktop.png",
+      "viewport": "1440x1000",
+      "flags": {
+        "url": "/tutor/1",
+        "title": "Mitochondria AI Tutor - AI Study Buddy",
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "overflowX": false,
+        "hasListen": false,
+        "hasFlashcard": false,
+        "hasMemory": false,
+        "hasTutor": true
+      }
+    },
+    {
+      "name": "flashcards-desktop",
+      "url": "/flashcards/10",
+      "status": 200,
+      "file": "C:\\Users\\csaha\\OneDrive\\Desktop\\AI-Learning-Companion\\screenshots\\ui-polish-20260801\\flashcards-desktop.png",
+      "viewport": "1440x1000",
+      "flags": {
+        "url": "/flashcards/10",
+        "title": "Mitochondria Flashcards - AI Study Buddy",
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "overflowX": false,
+        "hasListen": false,
+        "hasFlashcard": true,
+        "hasMemory": false,
+        "hasTutor": false
+      }
+    },
+    {
+      "name": "flashcards-mobile",
+      "url": "/flashcards/10",
+      "status": 200,
+      "file": "C:\\Users\\csaha\\OneDrive\\Desktop\\AI-Learning-Companion\\screenshots\\ui-polish-20260801\\flashcards-mobile.png",
+      "viewport": "390x900",
+      "flags": {
+        "url": "/flashcards/10",
+        "title": "Mitochondria Flashcards - AI Study Buddy",
+        "scrollWidth": 390,
+        "clientWidth": 390,
+        "overflowX": false,
+        "hasListen": false,
+        "hasFlashcard": true,
+        "hasMemory": false,
+        "hasTutor": false
+      }
+    },
+    {
+      "name": "memory-challenge-desktop",
+      "url": "/memory-match/10",
+      "status": 200,
+      "file": "C:\\Users\\csaha\\OneDrive\\Desktop\\AI-Learning-Companion\\screenshots\\ui-polish-20260801\\memory-challenge-desktop.png",
+      "viewport": "1440x1000",
+      "flags": {
+        "url": "/memory-match/10",
+        "title": "Mitochondria AI Memory Challenge - AI Study Buddy",
+        "scrollWidth": 1440,
+        "clientWidth": 1440,
+        "overflowX": false,
+        "hasListen": false,
+        "hasFlashcard": false,
+        "hasMemory": true,
+        "hasTutor": false
+      }
+    },
+    {
+      "name": "memory-challenge-mobile",
+      "url": "/memory-match/10",
+      "status": 200,
+      "file": "C:\\Users\\csaha\\OneDrive\\Desktop\\AI-Learning-Companion\\screenshots\\ui-polish-20260801\\memory-challenge-mobile.png",
+      "viewport": "390x900",
+      "flags": {
+        "url": "/memory-match/10",
+        "title": "Mitochondria AI Memory Challenge - AI Study Buddy",
+        "scrollWidth": 390,
+        "clientWidth": 390,
+        "overflowX": false,
+        "hasListen": false,
+        "hasFlashcard": false,
+        "hasMemory": true,
+        "hasTutor": false
+      }
+    }
+  ],
+  "issues": []
+}

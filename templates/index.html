@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>AI Study Buddy</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=homepage-layout-fix-20260802">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=homepage-loading-polish-20260802">
     {% include 'components/pwa_head.html' %}
 </head>
 
@@ -21,7 +21,14 @@
         class="loader-brand-logo"
         src="{{ url_for('static', filename='images/ai-study-buddy-logo.png') }}"
         alt="AI Study Buddy">
-    <div class="spinner"></div>
+    <div class="ai-generation-orb loader-ai-orb" aria-hidden="true">
+        <span class="ai-orb-core"></span>
+        <span class="ai-orb-ring ai-orb-ring-one"></span>
+        <span class="ai-orb-ring ai-orb-ring-two"></span>
+        <span class="ai-orb-node ai-orb-node-one"></span>
+        <span class="ai-orb-node ai-orb-node-two"></span>
+        <span class="ai-orb-node ai-orb-node-three"></span>
+    </div>
     <h2>AI Study Buddy</h2>
     <p id="loader-message">Loading...</p>
     <div class="loader-skeleton-stack" aria-hidden="true">
@@ -48,7 +55,7 @@
             </span>
             <span class="premium-brand-copy">
                 <strong>AI Study Buddy</strong>
-                <span>Your Intelligent Learning Companion</span>
+                <span>Learn Smarter. Revise Faster. Succeed Together.</span>
                 <small>Delhi Public School Dhaligaon</small>
             </span>
         </a>
@@ -88,7 +95,7 @@
         <div class="premium-hero-copy">
             <span class="eyebrow">Premium AI Learning Platform</span>
             <h1 id="premium-home-title"><span>Learn Smarter</span><span>with AI</span></h1>
-            <p class="premium-hero-subtitle">Personalized notes, smart textbook search, diagrams, quizzes, flashcards, tutor support, and progress tracking in one polished student workspace.</p>
+            <p class="premium-hero-subtitle">Your all-in-one AI learning platform for personalized notes, smart textbook search, quizzes, flashcards, educational diagrams, and progress tracking.</p>
             <div class="hero-feature-badges premium-feature-chips" aria-label="AI Study Buddy platform features">
                 <span>&#128218; Smart Textbooks</span>
                 <span>&#129302; AI Tutor</span>
@@ -214,61 +221,6 @@
                 <article class="selection-info-card chapter-info-card" data-chapter-info-card aria-live="polite" hidden></article>
             </form>
         </div>
-    </section>
-
-    <section class="premium-stat-strip" aria-label="Feature shortcuts">
-        <button type="button" class="premium-stat-card" data-home-shortcut="notes" aria-label="Go to AI Notes form and focus the topic input">
-            <span class="premium-stat-icon" aria-hidden="true">&#128218;</span>
-            <div>
-                <strong>AI Notes</strong>
-                <span>Generate personalized lesson notes.</span>
-            </div>
-        </button>
-        {% if user %}
-        <a class="premium-stat-card" href="{{ url_for('history') }}" aria-label="Open Smart MCQs quiz history">
-            <span class="premium-stat-icon" aria-hidden="true">&#128221;</span>
-            <div>
-                <strong>Smart MCQs</strong>
-                <span>Review and practice quiz questions.</span>
-            </div>
-        </a>
-        {% else %}
-        <button type="button" class="premium-stat-card" data-home-shortcut="quiz" aria-label="Go to the Smart MCQs section">
-            <span class="premium-stat-icon" aria-hidden="true">&#128221;</span>
-            <div>
-                <strong>Smart MCQs</strong>
-                <span>Generate quiz practice from lessons.</span>
-            </div>
-        </button>
-        {% endif %}
-        <button type="button" class="premium-stat-card" data-home-shortcut="class" aria-label="Go to the class selector">
-            <span class="premium-stat-icon" aria-hidden="true">&#127891;</span>
-            <div>
-                <strong>Class Selector</strong>
-                <span>Choose Classes 6-10.</span>
-            </div>
-        </button>
-        <a class="premium-stat-card" href="{{ url_for('dashboard') }}" aria-label="Open the gamified learning dashboard">
-            <span class="premium-stat-icon" aria-hidden="true">&#9889;</span>
-            <div>
-                <strong>Gamified Dashboard</strong>
-                <span>Track XP, badges, and goals.</span>
-            </div>
-        </a>
-        <a class="premium-stat-card" href="{{ url_for('learning_history') }}" aria-label="Open Learning History">
-            <span class="premium-stat-icon" aria-hidden="true">&#128293;</span>
-            <div>
-                <strong>Learning History</strong>
-                <span>Resume saved study sessions.</span>
-            </div>
-        </a>
-        <a class="premium-stat-card" href="{{ url_for('performance') }}" aria-label="Open Performance Analytics dashboard">
-            <span class="premium-stat-icon" aria-hidden="true">&#128200;</span>
-            <div>
-                <strong>Performance Analytics</strong>
-                <span>Review score trends and progress.</span>
-            </div>
-        </a>
     </section>
 
     {% if exhibition_mode %}
@@ -626,11 +578,13 @@
 
 <script>
 const loaderMessages = [
-    "&#128214; Reading textbook...",
-    "&#129504; AI is thinking...",
-    "&#9997; Writing notes...",
-    "&#128218; Creating questions...",
-    "&#127912; Generating diagram..."
+    "Understanding Topic...",
+    "Reading Textbook Context...",
+    "Generating AI Notes...",
+    "Creating Quiz...",
+    "Building Flashcards...",
+    "Generating Educational Diagram...",
+    "Finalizing Lesson..."
 ];
 
 let loaderMessageIndex = 0;

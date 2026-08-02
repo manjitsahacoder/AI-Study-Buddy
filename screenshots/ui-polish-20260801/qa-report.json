@@ -1,0 +1,123 @@
+{
+  "visited": [
+    {
+      "name": "home-desktop",
+      "url": "/",
+      "title": "AI Study Buddy",
+      "file": "C:\\Users\\csaha\\OneDrive\\Desktop\\AI-Learning-Companion\\screenshots\\ui-polish-20260801\\home-desktop.png",
+      "viewport": "1440x1000"
+    },
+    {
+      "name": "home-tablet",
+      "url": "/",
+      "title": "AI Study Buddy",
+      "file": "C:\\Users\\csaha\\OneDrive\\Desktop\\AI-Learning-Companion\\screenshots\\ui-polish-20260801\\home-tablet.png",
+      "viewport": "768x1000"
+    },
+    {
+      "name": "home-mobile",
+      "url": "/",
+      "title": "AI Study Buddy",
+      "file": "C:\\Users\\csaha\\OneDrive\\Desktop\\AI-Learning-Companion\\screenshots\\ui-polish-20260801\\home-mobile.png",
+      "viewport": "390x900"
+    },
+    {
+      "name": "login-desktop",
+      "url": "/login",
+      "title": "Login - AI Study Buddy",
+      "file": "C:\\Users\\csaha\\OneDrive\\Desktop\\AI-Learning-Companion\\screenshots\\ui-polish-20260801\\login-desktop.png",
+      "viewport": "1440x900"
+    },
+    {
+      "name": "register-desktop",
+      "url": "/register",
+      "title": "Register - AI Study Buddy",
+      "file": "C:\\Users\\csaha\\OneDrive\\Desktop\\AI-Learning-Companion\\screenshots\\ui-polish-20260801\\register-desktop.png",
+      "viewport": "1440x900"
+    },
+    {
+      "name": "generation-overlay-desktop",
+      "url": "/",
+      "title": "Generation overlay",
+      "file": "C:\\Users\\csaha\\OneDrive\\Desktop\\AI-Learning-Companion\\screenshots\\ui-polish-20260801\\generation-overlay-desktop.png",
+      "viewport": "1440x1000"
+    },
+    {
+      "name": "dashboard-desktop",
+      "url": "/dashboard",
+      "title": "Dashboard - AI Study Buddy",
+      "file": "C:\\Users\\csaha\\OneDrive\\Desktop\\AI-Learning-Companion\\screenshots\\ui-polish-20260801\\dashboard-desktop.png",
+      "viewport": "1440x1000"
+    },
+    {
+      "name": "dashboard-tablet",
+      "url": "/dashboard",
+      "title": "Dashboard - AI Study Buddy",
+      "file": "C:\\Users\\csaha\\OneDrive\\Desktop\\AI-Learning-Companion\\screenshots\\ui-polish-20260801\\dashboard-tablet.png",
+      "viewport": "768x1000"
+    },
+    {
+      "name": "dashboard-mobile",
+      "url": "/dashboard",
+      "title": "Dashboard - AI Study Buddy",
+      "file": "C:\\Users\\csaha\\OneDrive\\Desktop\\AI-Learning-Companion\\screenshots\\ui-polish-20260801\\dashboard-mobile.png",
+      "viewport": "390x900"
+    },
+    {
+      "name": "learning-history-desktop",
+      "url": "/learning-history",
+      "title": "Learning History - AI Study Buddy",
+      "file": "C:\\Users\\csaha\\OneDrive\\Desktop\\AI-Learning-Companion\\screenshots\\ui-polish-20260801\\learning-history-desktop.png",
+      "viewport": "1440x1000"
+    },
+    {
+      "name": "settings-desktop",
+      "url": "/settings",
+      "title": "Settings - AI Study Buddy",
+      "file": "C:\\Users\\csaha\\OneDrive\\Desktop\\AI-Learning-Companion\\screenshots\\ui-polish-20260801\\settings-desktop.png",
+      "viewport": "1440x1000"
+    },
+    {
+      "name": "quiz-history-desktop",
+      "url": "/history",
+      "title": "Quiz History - AI Study Buddy",
+      "file": "C:\\Users\\csaha\\OneDrive\\Desktop\\AI-Learning-Companion\\screenshots\\ui-polish-20260801\\quiz-history-desktop.png",
+      "viewport": "1440x1000"
+    },
+    {
+      "name": "learn-voice-notes-desktop",
+      "url": "/learning-history/10",
+      "title": "404 Not Found",
+      "file": "C:\\Users\\csaha\\OneDrive\\Desktop\\AI-Learning-Companion\\screenshots\\ui-polish-20260801\\learn-voice-notes-desktop.png",
+      "viewport": "1440x1000"
+    },
+    {
+      "name": "ai-tutor-desktop",
+      "url": "/tutor/start?lesson_id=10",
+      "title": "404 Not Found",
+      "file": "C:\\Users\\csaha\\OneDrive\\Desktop\\AI-Learning-Companion\\screenshots\\ui-polish-20260801\\ai-tutor-desktop.png",
+      "viewport": "1440x1000"
+    },
+    {
+      "name": "flashcards-desktop",
+      "url": "/flashcards/10",
+      "title": "404 Not Found",
+      "file": "C:\\Users\\csaha\\OneDrive\\Desktop\\AI-Learning-Companion\\screenshots\\ui-polish-20260801\\flashcards-desktop.png",
+      "viewport": "1440x1000"
+    },
+    {
+      "name": "memory-challenge-desktop",
+      "url": "/memory-match/10",
+      "title": "404 Not Found",
+      "file": "C:\\Users\\csaha\\OneDrive\\Desktop\\AI-Learning-Companion\\screenshots\\ui-polish-20260801\\memory-challenge-desktop.png",
+      "viewport": "1440x1000"
+    }
+  ],
+  "issues": [
+    "console error: Failed to load resource: the server responded with a status of 401 (UNAUTHORIZED)",
+    "console error: Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+    "console error: Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+    "console error: Failed to load resource: the server responded with a status of 404 (NOT FOUND)",
+    "console error: Failed to load resource: the server responded with a status of 404 (NOT FOUND)"
+  ]
+}

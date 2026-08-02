@@ -197,7 +197,7 @@ def _create_genai_client(api_key):
 
 
 def _gemini_api_key():
-    api_key = os.environ.get("GEMINI_API_KEY") or GEMINI_API_KEY
+    api_key = os.environ.get("GEMINI_IMAGE_API_KEY") or os.environ.get("GEMINI_API_KEY") or GEMINI_API_KEY
     if not api_key:
         raise GeminiImageConfigurationError("GEMINI_API_KEY is required.")
     return api_key
