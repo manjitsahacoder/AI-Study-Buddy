@@ -357,6 +357,7 @@
         let suppressUnloadOverlayUntil = 0;
         let temporaryOverlayTimer = null;
         let temporaryOverlayCleanup = null;
+        let activeOverlayMode = "idle";
         const minimumOverlayPaintDelay = 180;
         const temporaryOverlayTimeout = 12000;
         const nativeLocationAssign = window.location.assign.bind(window.location);
@@ -804,6 +805,16 @@
             event.stopImmediatePropagation();
         }
 
+        function overlayModeForOptions(options) {
+            if (options && options.generation === "lesson") {
+                return "generation";
+            }
+            if (options && options.temporary) {
+                return "download";
+            }
+            return "navigation";
+        }
+
         function clearTemporaryOverlay(runCleanup) {
             const cleanup = temporaryOverlayCleanup;
             window.clearTimeout(temporaryOverlayTimer);
@@ -814,7 +825,11 @@
             }
         }
 
-        function hidePageTransitionOverlay() {
+        function hidePageTransitionOverlay(options) {
+            const settings = options || {};
+            if (activeOverlayMode === "generation" && !settings.force) {
+                return false;
+            }
             window.clearTimeout(pendingHideTimer);
             window.clearInterval(messageTimer);
             stopGenerationStepper();
@@ -822,9 +837,11 @@
             pendingHideTimer = null;
             messageTimer = null;
             navigationLocked = false;
+            activeOverlayMode = "idle";
             overlay.classList.remove("is-visible");
             overlay.hidden = true;
             document.documentElement.classList.remove("page-transition-active");
+            return true;
         }
 
         function scheduleTemporaryOverlayHide(cleanup) {
@@ -836,6 +853,7 @@
         function showOverlay(message, label, options) {
             window.clearTimeout(pendingHideTimer);
             clearTemporaryOverlay(true);
+            activeOverlayMode = overlayModeForOptions(options);
             ensurePageTransitionOverlayViewport();
             startMessageRotation(message, progressMessagesFor(label));
             if (options && options.generation === "lesson") {
@@ -1111,6 +1129,20 @@
             showOverlay(contextualMessage(null, url), url.pathname);
         }
 
+        function handlePageShow() {
+            hidePageTransitionOverlay();
+        }
+
+        function handleFocusRecovery() {
+            if (!document.hidden) {
+                pendingHideTimer = window.setTimeout(function () {
+                    if (document.visibilityState === "visible") {
+                        hidePageTransitionOverlay();
+                    }
+                }, 800);
+            }
+        }
+
         patchLocationMethod("assign", nativeLocationAssign, false);
         patchLocationMethod("replace", nativeLocationReplace, true);
 
@@ -1129,16 +1161,8 @@
         }
         window.addEventListener("beforeunload", handleBeforeUnload);
         window.addEventListener("pagehide", showGenerationSuccess);
-        window.addEventListener("pageshow", hidePageTransitionOverlay);
-        window.addEventListener("focus", function () {
-            if (!document.hidden) {
-                pendingHideTimer = window.setTimeout(function () {
-                    if (document.visibilityState === "visible") {
-                        hidePageTransitionOverlay();
-                    }
-                }, 800);
-            }
-        });
+        window.addEventListener("pageshow", handlePageShow);
+        window.addEventListener("focus", handleFocusRecovery);
     }
 
     function initializeMotion() {
