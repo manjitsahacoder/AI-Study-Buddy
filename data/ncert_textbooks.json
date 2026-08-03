@@ -1,0 +1,192 @@
+{
+  "6": {
+    "Science": {
+      "board": "CBSE",
+      "class": 6,
+      "subject": "Science",
+      "title": "Curiosity",
+      "pdf_url": "placeholder://ncert/cbse/class-6/science/curiosity",
+      "language": "English",
+      "version": "latest"
+    },
+    "Mathematics": {
+      "board": "CBSE",
+      "class": 6,
+      "subject": "Mathematics",
+      "title": "Ganita Prakash",
+      "pdf_url": "placeholder://ncert/cbse/class-6/mathematics/ganita-prakash",
+      "language": "English",
+      "version": "latest"
+    },
+    "English": {
+      "board": "CBSE",
+      "class": 6,
+      "subject": "English",
+      "title": "Poorvi",
+      "pdf_url": "placeholder://ncert/cbse/class-6/english/poorvi",
+      "language": "English",
+      "version": "latest"
+    },
+    "Social Science": {
+      "board": "CBSE",
+      "class": 6,
+      "subject": "Social Science",
+      "title": "Exploring Society: India and Beyond",
+      "pdf_url": "placeholder://ncert/cbse/class-6/social-science/exploring-society-india-and-beyond",
+      "language": "English",
+      "version": "latest"
+    }
+  },
+  "7": {
+    "Science": {
+      "board": "CBSE",
+      "class": 7,
+      "subject": "Science",
+      "title": "Curiosity",
+      "pdf_url": "placeholder://ncert/cbse/class-7/science/curiosity",
+      "language": "English",
+      "version": "latest"
+    },
+    "Mathematics": {
+      "board": "CBSE",
+      "class": 7,
+      "subject": "Mathematics",
+      "title": "Ganita Prakash",
+      "pdf_url": "placeholder://ncert/cbse/class-7/mathematics/ganita-prakash",
+      "language": "English",
+      "version": "latest"
+    },
+    "English": {
+      "board": "CBSE",
+      "class": 7,
+      "subject": "English",
+      "title": "Poorvi",
+      "pdf_url": "placeholder://ncert/cbse/class-7/english/poorvi",
+      "language": "English",
+      "version": "latest"
+    },
+    "Social Science": {
+      "board": "CBSE",
+      "class": 7,
+      "subject": "Social Science",
+      "title": "Exploring Society: India and Beyond",
+      "pdf_url": "placeholder://ncert/cbse/class-7/social-science/exploring-society-india-and-beyond",
+      "language": "English",
+      "version": "latest"
+    }
+  },
+  "8": {
+    "Science": {
+      "board": "CBSE",
+      "class": 8,
+      "subject": "Science",
+      "title": "Science",
+      "pdf_url": "placeholder://ncert/cbse/class-8/science/science",
+      "language": "English",
+      "version": "latest"
+    },
+    "Mathematics": {
+      "board": "CBSE",
+      "class": 8,
+      "subject": "Mathematics",
+      "title": "Ganita Prakash Part-I; Ganita Prakash Part-II",
+      "pdf_url": "placeholder://ncert/cbse/class-8/mathematics/ganita-prakash",
+      "language": "English",
+      "version": "latest"
+    },
+    "English": {
+      "board": "CBSE",
+      "class": 8,
+      "subject": "English",
+      "title": "Poorvi",
+      "pdf_url": "placeholder://ncert/cbse/class-8/english/poorvi",
+      "language": "English",
+      "version": "latest"
+    },
+    "Social Science": {
+      "board": "CBSE",
+      "class": 8,
+      "subject": "Social Science",
+      "title": "Exploring Society: India and Beyond Part-I",
+      "pdf_url": "placeholder://ncert/cbse/class-8/social-science/exploring-society-india-and-beyond",
+      "language": "English",
+      "version": "latest"
+    }
+  },
+  "9": {
+    "Science": {
+      "board": "CBSE",
+      "class": 9,
+      "subject": "Science",
+      "title": "Science",
+      "pdf_url": "placeholder://ncert/cbse/class-9/science/science",
+      "language": "English",
+      "version": "latest"
+    },
+    "Mathematics": {
+      "board": "CBSE",
+      "class": 9,
+      "subject": "Mathematics",
+      "title": "Mathematics",
+      "pdf_url": "placeholder://ncert/cbse/class-9/mathematics/mathematics",
+      "language": "English",
+      "version": "latest"
+    },
+    "English": {
+      "board": "CBSE",
+      "class": 9,
+      "subject": "English",
+      "title": "Kaveri",
+      "pdf_url": "placeholder://ncert/cbse/class-9/english/kaveri",
+      "language": "English",
+      "version": "latest"
+    },
+    "Social Science": {
+      "board": "CBSE",
+      "class": 9,
+      "subject": "Social Science",
+      "title": "Understanding Society: India and Beyond",
+      "pdf_url": "placeholder://ncert/cbse/class-9/social-science/understanding-society-india-and-beyond",
+      "language": "English",
+      "version": "latest"
+    }
+  },
+  "10": {
+    "Science": {
+      "board": "CBSE",
+      "class": 10,
+      "subject": "Science",
+      "title": "Science",
+      "pdf_url": "placeholder://ncert/cbse/class-10/science/science",
+      "language": "English",
+      "version": "latest"
+    },
+    "Mathematics": {
+      "board": "CBSE",
+      "class": 10,
+      "subject": "Mathematics",
+      "title": "Mathematics",
+      "pdf_url": "placeholder://ncert/cbse/class-10/mathematics/mathematics",
+      "language": "English",
+      "version": "latest"
+    },
+    "English": {
+      "board": "CBSE",
+      "class": 10,
+      "subject": "English",
+      "title": "First Flight; Footprints Without Feet",
+      "pdf_url": "placeholder://ncert/cbse/class-10/english",
+      "language": "English",
+      "version": "latest"
+    },
+    "Social Science": {
+      "board": "CBSE",
+      "class": 10,
+      "subject": "Social Science",
+      "title": "India and the Contemporary World-II; Contemporary India-II; Democratic Politics-II; Understanding Economic Development",
+      "pdf_url": "placeholder://ncert/cbse/class-10/social-science",
+      "language": "English",
+      "version": "latest"
+    }
+  }
+}
