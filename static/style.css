@@ -13158,7 +13158,7 @@ body.dashboard-page::after {
 .home-page .premium-school-mark {
     width: 56px;
     height: 56px;
-    padding: 4px;
+    padding: 0;
     border-radius: 13px;
     box-shadow: 0 10px 24px rgba(30, 40, 58, 0.13);
     flex: 0 0 56px;
@@ -13167,10 +13167,11 @@ body.dashboard-page::after {
 
 .home-page .premium-school-mark .school-logo {
     width: auto;
-    height: 48px;
-    max-width: 100%;
-    max-height: 48px;
+    height: 54px;
+    max-width: none;
+    max-height: 54px;
     object-fit: contain;
+    object-position: center;
 }
 
 .premium-app-mark {
@@ -14042,8 +14043,8 @@ textarea:focus-visible {
     }
 
     .home-page .premium-school-mark .school-logo {
-        height: 44px;
-        max-height: 44px;
+        height: 50px;
+        max-height: 50px;
     }
 
     .premium-app-mark {
@@ -14110,8 +14111,8 @@ textarea:focus-visible {
     }
 
     .home-page .premium-school-mark .school-logo {
-        height: 40px;
-        max-height: 40px;
+        height: 46px;
+        max-height: 46px;
     }
 
     .premium-app-mark {
