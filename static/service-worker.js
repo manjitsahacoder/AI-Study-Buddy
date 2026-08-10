@@ -1,4 +1,4 @@
-const CACHE_VERSION = "ai-study-buddy-pwa-v6";
+const CACHE_VERSION = "ai-study-buddy-pwa-v7";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const OFFLINE_URL = "/offline";
 
@@ -12,7 +12,6 @@ const PRECACHE_URLS = [
     "/static/css/visualization.css",
     "/static/js/visualization.js",
     "/static/js/memory_challenge.js",
-    "/static/images/SCHOOL_LOGO.png",
     "/static/images/ai-study-buddy-logo.png",
     "/static/images/ai-study-buddy-icon.png",
     "/static/images/study_banner.png",

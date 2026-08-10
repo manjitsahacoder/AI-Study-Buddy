@@ -3719,8 +3719,18 @@ Grade: A
 
         self.assertEqual(response.status_code, 200)
         page = response.get_data(as_text=True)
+        head = page.split("</head>", 1)[0]
         self.assertIn('rel="manifest" href="/manifest.json"', page)
         self.assertIn('name="theme-color" content="#3157d5"', page)
+        self.assertIn('name="apple-mobile-web-app-title" content="AI Study Buddy"', head)
+        self.assertIn('rel="icon" href="/static/icons/favicon.ico" sizes="any"', head)
+        self.assertIn(
+            'rel="apple-touch-icon" type="image/png" sizes="180x180" href="/static/icons/apple-touch-icon.png"',
+            head,
+        )
+        self.assertEqual(1, head.count('rel="manifest"'))
+        self.assertEqual(1, head.count('rel="apple-touch-icon"'))
+        self.assertNotIn("SCHOOL_LOGO.png", head)
         self.assertIn('data-pwa-install-banner', page)
         self.assertIn('/static/pwa.js', page)
 
@@ -3853,7 +3863,7 @@ Grade: A
         self.assertEqual(manifest["orientation"], "portrait-primary")
         self.assertEqual(manifest["start_url"], "/")
         self.assertEqual(manifest["theme_color"], "#3157d5")
-        self.assertEqual(manifest["background_color"], "#f7f4ee")
+        self.assertEqual(manifest["background_color"], "#ffffff")
         expected_icons = {
             ("48x48", "/static/icons/icon-48.png", "any"),
             ("72x72", "/static/icons/icon-72.png", "any"),
@@ -3874,14 +3884,69 @@ Grade: A
             {(icon["sizes"], icon["src"], icon["purpose"]) for icon in manifest["icons"]},
             expected_icons,
         )
+        self.assertNotIn("school_logo", json.dumps(manifest).lower())
+        self.assertNotIn("school-logo", json.dumps(manifest).lower())
         for icon in manifest["icons"]:
-            self.assertTrue(
-                os.path.exists(
-                    os.path.join(
-                        app_module.app.root_path,
-                        icon["src"].lstrip("/").replace("/", os.sep),
-                    )
+            icon_path = os.path.join(
+                app_module.app.root_path,
+                icon["src"].lstrip("/").replace("/", os.sep),
+            )
+            self.assertTrue(os.path.exists(icon_path))
+            self.assertEqual(icon["type"], "image/png")
+
+            from PIL import Image
+
+            expected_size = tuple(int(value) for value in icon["sizes"].split("x"))
+            with Image.open(icon_path) as image:
+                self.assertEqual(image.format, "PNG")
+                self.assertEqual(image.size, expected_size)
+
+    def test_pwa_icon_assets_use_white_safe_canvas(self):
+        from PIL import Image
+
+        expected_sizes = {
+            "static/images/ai-study-buddy-logo.png": (1254, 1254),
+            "static/images/ai-study-buddy-icon.png": (1024, 1024),
+            "static/icons/favicon-16.png": (16, 16),
+            "static/icons/favicon-32.png": (32, 32),
+            "static/icons/apple-touch-icon.png": (180, 180),
+            "static/icons/icon-192.png": (192, 192),
+            "static/icons/icon-512.png": (512, 512),
+            "static/icons/maskable-192.png": (192, 192),
+            "static/icons/maskable-512.png": (512, 512),
+            "static/icons/maskable-icon.png": (512, 512),
+        }
+
+        for relative_path, expected_size in expected_sizes.items():
+            with Image.open(relative_path) as image:
+                rgb = image.convert("RGB")
+                self.assertEqual(image.format, "PNG")
+                self.assertEqual(image.size, expected_size)
+                for corner in (
+                    (0, 0),
+                    (expected_size[0] - 1, 0),
+                    (0, expected_size[1] - 1),
+                    (expected_size[0] - 1, expected_size[1] - 1),
+                ):
+                    self.assertTrue(all(channel >= 248 for channel in rgb.getpixel(corner)))
+
+        with Image.open("static/icons/maskable-512.png") as image:
+            rgb = image.convert("RGB")
+            center = image.width / 2
+            safe_radius_squared = (image.width * 0.4) ** 2
+            blue_pixels = [
+                (x, y)
+                for y in range(image.height)
+                for x in range(image.width)
+                if (
+                    rgb.getpixel((x, y))[2] >= 80
+                    and rgb.getpixel((x, y))[2] >= rgb.getpixel((x, y))[0] + 20
                 )
+            ]
+            self.assertTrue(blue_pixels)
+            self.assertLessEqual(
+                max((x - center) ** 2 + (y - center) ** 2 for x, y in blue_pixels),
+                safe_radius_squared,
             )
 
     def test_service_worker_is_root_scoped_and_avoids_dynamic_caching(self):
@@ -3891,7 +3956,12 @@ Grade: A
         self.assertEqual(response.headers["Service-Worker-Allowed"], "/")
         self.assertEqual(response.headers["Cache-Control"], "no-cache")
         script = response.get_data(as_text=True)
-        self.assertIn('const CACHE_VERSION = "ai-study-buddy-pwa-v6"', script)
+        self.assertIn('const CACHE_VERSION = "ai-study-buddy-pwa-v7"', script)
+        self.assertNotIn('/static/images/SCHOOL_LOGO.png', script)
+        self.assertIn('/static/icons/apple-touch-icon.png', script)
+        self.assertIn('/static/icons/icon-192.png', script)
+        self.assertIn('/static/icons/icon-512.png', script)
+        self.assertIn('/static/icons/maskable-512.png', script)
         self.assertIn('request.method !== "GET"', script)
         self.assertIn('request.mode === "navigate"', script)
         self.assertIn("networkOnlyNavigation(request)", script)
