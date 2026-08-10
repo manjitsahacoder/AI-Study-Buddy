@@ -9,3 +9,4 @@ psycopg2-binary
 pypdf
 python-dotenv
 reportlab
+requests

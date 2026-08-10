@@ -9,3 +9,5 @@ quiz_history.db
 *.sqlite3
 study_report.pdf
 sample_performance_report.pdf
+instance/textbook_pdf_cache/
+instance/textbook_text_cache/
