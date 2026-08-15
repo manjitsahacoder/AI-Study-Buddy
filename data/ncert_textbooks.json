@@ -119,9 +119,9 @@
       "class": 9,
       "subject": "Science",
       "title": "Exploration",
-      "pdf_url": "placeholder://ncert/cbse/class-9/science/science",
+      "pdf_url": "https://ncert.nic.in/textbook/pdf/iesc1ps.pdf",
       "language": "English",
-      "version": "latest",
+      "version": "First Edition, April 2026",
       "chapters": [
         {
           "number": 1,
@@ -355,7 +355,7 @@
       "class": 10,
       "subject": "Science",
       "title": "Science",
-      "pdf_url": "placeholder://ncert/cbse/class-10/science/science",
+      "pdf_url": "https://ncert.nic.in/textbook/pdf/jesc1ps.pdf",
       "language": "English",
       "version": "latest"
     },

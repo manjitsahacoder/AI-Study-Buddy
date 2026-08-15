@@ -20,14 +20,46 @@ class TextbookRegistryTests(unittest.TestCase):
         self.assertEqual(textbook["class"], 9)
         self.assertEqual(textbook["subject"], "Science")
         self.assertEqual(textbook["title"], "Exploration")
+        self.assertEqual(
+            textbook["pdf_url"],
+            "https://ncert.nic.in/textbook/pdf/iesc1ps.pdf",
+        )
         self.assertEqual(textbook["language"], "English")
-        self.assertEqual(textbook["version"], "latest")
+        self.assertEqual(textbook["version"], "First Edition, April 2026")
+        self.assertEqual(
+            [chapter["title"] for chapter in textbook["chapters"]],
+            [
+                "Exploration: Entering the World of Secondary Science",
+                "Cell: The Building Block of Life",
+                "Tissues in Action",
+                "Describing Motion Around Us",
+                "Exploring Mixtures and their Separation",
+                "How Forces Affect Motion",
+                "Work, Energy, and Simple Machines",
+                "Journey Inside the Atom",
+                "Atomic Foundations of Matter",
+                "Sound Waves: Characteristics and Applications",
+                "Reproduction: How Life Continues",
+                "Patterns in Life: Diversity and Classification",
+                "Earth as a System: Energy, Matter, and Life",
+            ],
+        )
 
     def test_get_textbook_normalizes_subject_and_class_whitespace(self):
         textbook = textbook_registry.get_textbook(" 9 ", "  SCIENCE ")
 
         self.assertIsNotNone(textbook)
         self.assertEqual(textbook["title"], "Exploration")
+
+    def test_class_10_science_uses_the_verified_official_pdf(self):
+        textbook = textbook_registry.get_textbook(10, "Science")
+
+        self.assertIsNotNone(textbook)
+        self.assertEqual(textbook["title"], "Science")
+        self.assertEqual(
+            textbook["pdf_url"],
+            "https://ncert.nic.in/textbook/pdf/jesc1ps.pdf",
+        )
 
     def test_get_textbook_returns_copy_of_metadata(self):
         textbook = textbook_registry.get_textbook(9, "Science")

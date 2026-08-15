@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import multiprocessing
 import os
@@ -60,6 +62,12 @@ TEXTBOOK_TEXT_CACHE_DIR = Path(
         Path(__file__).resolve().parent.parent / "instance" / "textbook_text_cache",
     )
 )
+TEXTBOOK_PAGE_CACHE_DIR = Path(
+    os.environ.get(
+        "TEXTBOOK_PAGE_CACHE_DIR",
+        Path(__file__).resolve().parent.parent / "instance" / "textbook_page_cache",
+    )
+)
 TEXTBOOK_PDF_MAX_PAGES = _positive_int_from_environment(
     "TEXTBOOK_PDF_MAX_PAGES",
     50,
@@ -68,6 +76,7 @@ TEXTBOOK_PDF_EXTRACTION_TIMEOUT_SECONDS = _positive_float_from_environment(
     "TEXTBOOK_PDF_EXTRACTION_TIMEOUT_SECONDS",
     10.0,
 )
+PAGE_CACHE_VERSION = "chapter-page-text-v1"
 
 _cache_locks: dict[str, threading.Lock] = {}
 _cache_locks_guard = threading.Lock()
@@ -135,7 +144,6 @@ def get_chapter_text(
             chapter_id=chapter_metadata["id"],
         )
         return None
-
     cache_path = build_chapter_text_cache_path(
         textbook,
         chapter_metadata,
@@ -154,6 +162,244 @@ def get_chapter_text(
             cache_dir=pdf_cache_dir,
         ),
     )
+
+
+def get_chapter_pages(
+    student_class: Any,
+    subject: Any,
+    chapter: Any,
+    *,
+    page_cache_dir: str | os.PathLike[str] | None = None,
+    pdf_cache_dir: str | os.PathLike[str] | None = None,
+    max_pages: int | None = None,
+    timeout_seconds: float | None = None,
+) -> tuple[list[str], int] | None:
+    """Return cached, page-preserving text for one explicitly registered chapter.
+
+    The chapter metadata is resolved before loading the PDF, so callers never
+    construct a source URL from a user-provided chapter value.
+    """
+    textbook = textbook_registry.get_textbook(student_class, subject)
+    chapter_metadata = textbook_registry.get_chapter(student_class, subject, chapter)
+    if textbook is None or chapter_metadata is None:
+        _log_extraction_failed(
+            student_class,
+            subject,
+            reason="registry_missing",
+            event_prefix="textbook_chapter_pages",
+        )
+        return None
+    if not str(chapter_metadata.get("pdf_url") or "").strip():
+        _log_extraction_failed(
+            student_class,
+            subject,
+            reason="missing_pdf_url",
+            event_prefix="textbook_chapter_pages",
+            chapter_id=chapter_metadata["id"],
+        )
+        return None
+    source_pdf_url = str(chapter_metadata["pdf_url"]).strip()
+
+    page_limit = _resolve_page_limit(max_pages)
+    extraction_timeout = _resolve_timeout(timeout_seconds)
+    cache_path = build_chapter_page_cache_path(
+        textbook,
+        chapter_metadata,
+        max_pages=page_limit,
+        cache_dir=page_cache_dir,
+    )
+    return _get_pages_from_source(
+        cache_path,
+        student_class=student_class,
+        subject=subject,
+        chapter_id=chapter_metadata["id"],
+        source_pdf_url=source_pdf_url,
+        max_pages=page_limit,
+        timeout_seconds=extraction_timeout,
+        pdf_loader=lambda: textbook_pdf_service.get_chapter_pdf(
+            student_class,
+            subject,
+            chapter_metadata["number"],
+            cache_dir=pdf_cache_dir,
+        ),
+    )
+
+
+def _get_pages_from_source(
+    cache_path: Path,
+    *,
+    student_class: Any,
+    subject: Any,
+    chapter_id: str,
+    source_pdf_url: str,
+    max_pages: int,
+    timeout_seconds: float,
+    pdf_loader,
+) -> tuple[list[str], int] | None:
+    """Reuse a page cache before process-isolated extraction of one chapter."""
+    event_prefix = "textbook_chapter_pages"
+    cache_key = hashlib.sha256(cache_path.name.encode("utf-8")).hexdigest()[:16]
+    cached_pages, invalid_cache = _read_page_cache(
+        cache_path,
+        max_pages=max_pages,
+        source_pdf_url=source_pdf_url,
+    )
+    if cached_pages is not None:
+        _log_cache_hit(
+            student_class,
+            subject,
+            cache_key,
+            event_prefix=event_prefix,
+            chapter_id=chapter_id,
+        )
+        return cached_pages
+    if invalid_cache:
+        _log_cache_invalid(
+            student_class,
+            subject,
+            cache_key,
+            event_prefix=event_prefix,
+            chapter_id=chapter_id,
+        )
+
+    logger.info(
+        "%s_cache_miss class=%r subject=%r cache_key=%s%s",
+        event_prefix,
+        student_class,
+        subject,
+        cache_key,
+        _chapter_log_suffix(chapter_id),
+    )
+    with _lock_for(cache_path):
+        cached_pages, invalid_cache_after_lock = _read_page_cache(
+            cache_path,
+            max_pages=max_pages,
+            source_pdf_url=source_pdf_url,
+        )
+        if cached_pages is not None:
+            _log_cache_hit(
+                student_class,
+                subject,
+                cache_key,
+                event_prefix=event_prefix,
+                chapter_id=chapter_id,
+            )
+            return cached_pages
+        if invalid_cache_after_lock:
+            if not invalid_cache:
+                _log_cache_invalid(
+                    student_class,
+                    subject,
+                    cache_key,
+                    event_prefix=event_prefix,
+                    chapter_id=chapter_id,
+                )
+            _remove_invalid_cache(
+                cache_path,
+                student_class,
+                subject,
+                cache_key,
+                event_prefix=event_prefix,
+                chapter_id=chapter_id,
+            )
+
+        pdf_path = pdf_loader()
+        if pdf_path is None:
+            _log_extraction_failed(
+                student_class,
+                subject,
+                reason="pdf_unavailable",
+                cache_key=cache_key,
+                event_prefix=event_prefix,
+                chapter_id=chapter_id,
+            )
+            return None
+
+        try:
+            page_texts, total_pages = extract_pdf_pages_with_timeout(
+                pdf_path,
+                max_pages=max_pages,
+                timeout_seconds=timeout_seconds,
+            )
+        except TextbookPdfExtractionTimeout:
+            _log_extraction_failed(
+                student_class,
+                subject,
+                reason="timeout",
+                cache_key=cache_key,
+                event_prefix=event_prefix,
+                chapter_id=chapter_id,
+            )
+            return None
+        except Exception as error:
+            _log_extraction_failed(
+                student_class,
+                subject,
+                reason=type(error).__name__,
+                cache_key=cache_key,
+                event_prefix=event_prefix,
+                chapter_id=chapter_id,
+            )
+            return None
+
+        cleaned_pages = [clean_extracted_text(page_text) for page_text in page_texts]
+        if not any(cleaned_pages):
+            _log_extraction_failed(
+                student_class,
+                subject,
+                reason="empty_text",
+                cache_key=cache_key,
+                event_prefix=event_prefix,
+                chapter_id=chapter_id,
+            )
+            return None
+
+        try:
+            _write_page_cache_atomic(
+                cache_path,
+                page_texts=cleaned_pages,
+                total_pages=total_pages,
+                max_pages=max_pages,
+                source_pdf_url=source_pdf_url,
+            )
+        except OSError as error:
+            _log_extraction_failed(
+                student_class,
+                subject,
+                reason=f"cache_write_{type(error).__name__}",
+                cache_key=cache_key,
+                event_prefix=event_prefix,
+                chapter_id=chapter_id,
+            )
+            return None
+
+        logger.info(
+            "%s_extraction_complete class=%r subject=%r cache_key=%s%s pages=%s total_pages=%s",
+            event_prefix,
+            student_class,
+            subject,
+            cache_key,
+            _chapter_log_suffix(chapter_id),
+            len(cleaned_pages),
+            total_pages,
+        )
+        return cleaned_pages, total_pages
+
+
+def _resolve_page_limit(max_pages: int | None) -> int:
+    if isinstance(max_pages, int) and not isinstance(max_pages, bool) and max_pages > 0:
+        return max_pages
+    return TEXTBOOK_PDF_MAX_PAGES
+
+
+def _resolve_timeout(timeout_seconds: float | None) -> float:
+    if (
+        isinstance(timeout_seconds, (int, float))
+        and not isinstance(timeout_seconds, bool)
+        and timeout_seconds > 0
+    ):
+        return float(timeout_seconds)
+    return TEXTBOOK_PDF_EXTRACTION_TIMEOUT_SECONDS
 
 
 def _get_text_from_source(
@@ -367,6 +613,24 @@ def build_chapter_text_cache_path(
     return cache_root / f"{pdf_filename}.txt"
 
 
+def build_chapter_page_cache_path(
+    textbook: dict[str, Any],
+    chapter: dict[str, Any],
+    *,
+    max_pages: int,
+    cache_dir: str | os.PathLike[str] | None = None,
+) -> Path:
+    """Build a safe JSON page-cache path for one registered chapter PDF."""
+    cache_root = (
+        Path(cache_dir or TEXTBOOK_PAGE_CACHE_DIR).resolve(strict=False) / "chapters"
+    )
+    pdf_filename = textbook_pdf_service.build_chapter_cache_path(
+        textbook,
+        chapter,
+    ).stem
+    return cache_root / f"{pdf_filename}_{PAGE_CACHE_VERSION}_{max_pages}.json"
+
+
 def clean_extracted_text(text: Any) -> str:
     """Conservatively normalize extracted text without changing its meaning."""
     normalized = str(text or "").replace("\x00", "")
@@ -381,13 +645,21 @@ def _extract_pdf_text_with_pypdf(
     pdf_path: str | os.PathLike[str],
     max_pages: int,
 ) -> tuple[str, int, int]:
+    page_texts, total_pages = _extract_pdf_pages_with_pypdf(pdf_path, max_pages)
+    return clean_extracted_text("\n\n".join(page_texts)), len(page_texts), total_pages
+
+
+def _extract_pdf_pages_with_pypdf(
+    pdf_path: str | os.PathLike[str],
+    max_pages: int,
+) -> tuple[list[str], int]:
+    """Extract normalized page text while retaining physical PDF page boundaries."""
     reader = PdfReader(str(pdf_path), strict=False)
     total_pages = len(reader.pages)
-    extracted_pages = min(total_pages, max_pages)
-    page_text = []
-    for page_index in range(extracted_pages):
-        page_text.append(reader.pages[page_index].extract_text() or "")
-    return clean_extracted_text("\n\n".join(page_text)), extracted_pages, total_pages
+    page_texts = []
+    for page_index in range(min(total_pages, max_pages)):
+        page_texts.append(clean_extracted_text(reader.pages[page_index].extract_text()))
+    return page_texts, total_pages
 
 
 def _extract_pdf_process_worker(
@@ -409,16 +681,72 @@ def _extract_pdf_process_worker(
         result_connection.close()
 
 
+def _extract_pdf_pages_process_worker(
+    pdf_path: str,
+    max_pages: int,
+    result_connection,
+) -> None:
+    try:
+        page_texts, total_pages = _extract_pdf_pages_with_pypdf(pdf_path, max_pages)
+        result_connection.send(("ok_pages", page_texts, total_pages))
+    except Exception as error:
+        result_connection.send(
+            ("error", type(error).__name__, str(error)[:300])
+        )
+    finally:
+        result_connection.close()
+
+
 def _extract_pdf_text_with_timeout(
     pdf_path: str | os.PathLike[str],
     *,
     max_pages: int,
     timeout_seconds: float,
 ) -> tuple[str, int, int]:
+    result = _run_pdf_extraction_process(
+        _extract_pdf_process_worker,
+        pdf_path,
+        max_pages=max_pages,
+        timeout_seconds=timeout_seconds,
+    )
+    if len(result) != 4 or result[0] != "ok":
+        raise RuntimeError("pypdf extraction process returned an invalid result")
+    return result[1], int(result[2]), int(result[3])
+
+
+def extract_pdf_pages_with_timeout(
+    pdf_path: str | os.PathLike[str],
+    *,
+    max_pages: int,
+    timeout_seconds: float,
+) -> tuple[list[str], int]:
+    """Safely extract page text for consumers that must preserve page boundaries."""
+    result = _run_pdf_extraction_process(
+        _extract_pdf_pages_process_worker,
+        pdf_path,
+        max_pages=max_pages,
+        timeout_seconds=timeout_seconds,
+    )
+    if (
+        len(result) != 3
+        or result[0] != "ok_pages"
+        or not isinstance(result[1], list)
+    ):
+        raise RuntimeError("pypdf page extraction process returned an invalid result")
+    return [str(page_text) for page_text in result[1]], int(result[2])
+
+
+def _run_pdf_extraction_process(
+    worker,
+    pdf_path: str | os.PathLike[str],
+    *,
+    max_pages: int,
+    timeout_seconds: float,
+) -> tuple:
     context = multiprocessing.get_context("spawn")
     result_connection, worker_connection = context.Pipe(duplex=False)
     process = context.Process(
-        target=_extract_pdf_process_worker,
+        target=worker,
         args=(str(pdf_path), max_pages, worker_connection),
     )
     process.daemon = True
@@ -445,9 +773,7 @@ def _extract_pdf_text_with_timeout(
             error_type = result[1] if len(result) > 1 else "unknown"
             error_message = result[2] if len(result) > 2 else ""
             raise RuntimeError(f"{error_type}: {error_message}")
-        if len(result) != 4 or result[0] != "ok":
-            raise RuntimeError("pypdf extraction process returned an invalid result")
-        return result[1], int(result[2]), int(result[3])
+        return result
     finally:
         try:
             worker_connection.close()
@@ -482,6 +808,45 @@ def _read_text_cache(cache_path: Path) -> tuple[str | None, bool]:
         return None, True
 
 
+def _read_page_cache(
+    cache_path: Path,
+    *,
+    max_pages: int,
+    source_pdf_url: str,
+) -> tuple[tuple[list[str], int] | None, bool]:
+    try:
+        if cache_path.is_symlink():
+            return None, True
+        if not cache_path.exists():
+            return None, False
+        if not cache_path.is_file():
+            return None, True
+        payload = json.loads(cache_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return None, True
+
+    if not isinstance(payload, dict):
+        return None, True
+    page_texts = payload.get("page_texts")
+    total_pages = payload.get("total_pages")
+    if (
+        payload.get("cache_version") != PAGE_CACHE_VERSION
+        or payload.get("max_pages") != max_pages
+        or payload.get("source_pdf_url") != source_pdf_url
+        or not isinstance(page_texts, list)
+        or not page_texts
+        or not all(isinstance(page_text, str) and "\x00" not in page_text for page_text in page_texts)
+        or not any(page_text.strip() for page_text in page_texts)
+        or isinstance(total_pages, bool)
+        or not isinstance(total_pages, int)
+        or total_pages < len(page_texts)
+        or total_pages <= 0
+        or len(page_texts) > max_pages
+    ):
+        return None, True
+    return (page_texts, total_pages), False
+
+
 def _write_text_cache_atomic(cache_path: Path, text: str) -> None:
     temporary_path: Path | None = None
     try:
@@ -497,6 +862,48 @@ def _write_text_cache_atomic(cache_path: Path, text: str) -> None:
         ) as temporary_file:
             temporary_path = Path(temporary_file.name)
             temporary_file.write(text)
+            temporary_file.flush()
+            os.fsync(temporary_file.fileno())
+        os.replace(temporary_path, cache_path)
+        temporary_path = None
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+
+
+def _write_page_cache_atomic(
+    cache_path: Path,
+    *,
+    page_texts: list[str],
+    total_pages: int,
+    max_pages: int,
+    source_pdf_url: str,
+) -> None:
+    temporary_path: Path | None = None
+    try:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            newline="\n",
+            prefix=f".{cache_path.stem}.",
+            suffix=".tmp",
+            dir=cache_path.parent,
+            delete=False,
+        ) as temporary_file:
+            temporary_path = Path(temporary_file.name)
+            json.dump(
+                {
+                    "cache_version": PAGE_CACHE_VERSION,
+                    "max_pages": max_pages,
+                    "page_texts": page_texts,
+                    "source_pdf_url": source_pdf_url,
+                    "total_pages": total_pages,
+                },
+                temporary_file,
+                ensure_ascii=False,
+                sort_keys=True,
+            )
             temporary_file.flush()
             os.fsync(temporary_file.fileno())
         os.replace(temporary_path, cache_path)

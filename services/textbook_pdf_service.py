@@ -21,17 +21,70 @@ from services import textbook_registry
 
 logger = logging.getLogger(__name__)
 
-TEXTBOOK_PDF_CACHE_DIR = (
-    Path(__file__).resolve().parent.parent / "instance" / "textbook_pdf_cache"
+
+def _positive_int_from_environment(name: str, default: int) -> int:
+    raw_value = os.environ.get(name, str(default)).strip()
+    try:
+        value = int(raw_value)
+        if value <= 0:
+            raise ValueError
+        return value
+    except ValueError:
+        logger.warning(
+            "textbook_pdf_configuration_invalid setting=%s value=%r default=%s",
+            name,
+            raw_value,
+            default,
+        )
+        return default
+
+
+def _positive_float_from_environment(name: str, default: float) -> float:
+    raw_value = os.environ.get(name, str(default)).strip()
+    try:
+        value = float(raw_value)
+        if value <= 0:
+            raise ValueError
+        return value
+    except ValueError:
+        logger.warning(
+            "textbook_pdf_configuration_invalid setting=%s value=%r default=%s",
+            name,
+            raw_value,
+            default,
+        )
+        return default
+
+
+TEXTBOOK_PDF_CACHE_DIR = Path(
+    os.environ.get(
+        "TEXTBOOK_PDF_CACHE_DIR",
+        Path(__file__).resolve().parent.parent / "instance" / "textbook_pdf_cache",
+    )
 )
-CONNECT_TIMEOUT_SECONDS = 10
-READ_TIMEOUT_SECONDS = 30
+CONNECT_TIMEOUT_SECONDS = _positive_float_from_environment(
+    "TEXTBOOK_PDF_CONNECT_TIMEOUT_SECONDS",
+    10.0,
+)
+READ_TIMEOUT_SECONDS = _positive_float_from_environment(
+    "TEXTBOOK_PDF_READ_TIMEOUT_SECONDS",
+    30.0,
+)
 DOWNLOAD_TIMEOUT = (CONNECT_TIMEOUT_SECONDS, READ_TIMEOUT_SECONDS)
 DOWNLOAD_CHUNK_SIZE = 64 * 1024
+TEXTBOOK_PDF_MAX_BYTES = _positive_int_from_environment(
+    "TEXTBOOK_PDF_MAX_BYTES",
+    50 * 1024 * 1024,
+)
 PDF_SIGNATURE = b"%PDF-"
+APPROVED_NCERT_HOSTS = {"ncert.nic.in"}
 
 _cache_locks: dict[str, threading.Lock] = {}
 _cache_locks_guard = threading.Lock()
+
+
+class TextbookPdfSizeLimitError(ValueError):
+    """Raised when a response exceeds the configured PDF download limit."""
 
 
 def get_textbook_pdf(
@@ -249,12 +302,47 @@ def _download_pdf(
             pdf_url,
             stream=True,
             timeout=DOWNLOAD_TIMEOUT,
+            allow_redirects=False,
         ) as response:
             response.raise_for_status()
-            content_type = response.headers.get("Content-Type", "")
+            content_type = str(response.headers.get("Content-Type") or "")
+            if not 200 <= response.status_code < 300:
+                _log_invalid_response(
+                    student_class,
+                    subject,
+                    cache_key,
+                    reason=f"http_status_{response.status_code}",
+                    content_type=content_type,
+                    event_prefix=event_prefix,
+                    chapter_id=chapter_id,
+                )
+                return None
+            if not _is_pdf_content_type(content_type):
+                _log_invalid_response(
+                    student_class,
+                    subject,
+                    cache_key,
+                    reason="content_type",
+                    content_type=content_type,
+                    event_prefix=event_prefix,
+                    chapter_id=chapter_id,
+                )
+                return None
+            if _content_length_exceeds_limit(response.headers.get("Content-Length")):
+                _log_invalid_response(
+                    student_class,
+                    subject,
+                    cache_key,
+                    reason="oversized",
+                    content_type=content_type,
+                    event_prefix=event_prefix,
+                    chapter_id=chapter_id,
+                )
+                return None
             temporary_path, bytes_written, signature = _stream_to_temporary_file(
                 response,
                 cache_path,
+                maximum_bytes=TEXTBOOK_PDF_MAX_BYTES,
             )
 
         if bytes_written == 0:
@@ -293,6 +381,17 @@ def _download_pdf(
             bytes_written,
         )
         return cache_path
+    except TextbookPdfSizeLimitError:
+        _log_invalid_response(
+            student_class,
+            subject,
+            cache_key,
+            reason="oversized",
+            content_type=content_type if "content_type" in locals() else "",
+            event_prefix=event_prefix,
+            chapter_id=chapter_id,
+        )
+        return None
     except Exception as error:
         logger.warning(
             "%s_download_failed reason=%s class=%r subject=%r "
@@ -323,7 +422,12 @@ def _download_pdf(
                 )
 
 
-def _stream_to_temporary_file(response: requests.Response, cache_path: Path):
+def _stream_to_temporary_file(
+    response: requests.Response,
+    cache_path: Path,
+    *,
+    maximum_bytes: int,
+):
     signature = bytearray()
     bytes_written = 0
     with tempfile.NamedTemporaryFile(
@@ -338,6 +442,10 @@ def _stream_to_temporary_file(response: requests.Response, cache_path: Path):
             for chunk in response.iter_content(chunk_size=DOWNLOAD_CHUNK_SIZE):
                 if not chunk:
                     continue
+                if bytes_written + len(chunk) > maximum_bytes:
+                    raise TextbookPdfSizeLimitError(
+                        f"response exceeds {maximum_bytes} bytes"
+                    )
                 if len(signature) < len(PDF_SIGNATURE):
                     signature.extend(chunk[: len(PDF_SIGNATURE) - len(signature)])
                 temporary_file.write(chunk)
@@ -447,15 +555,42 @@ def _url_issue(pdf_url: str) -> str | None:
     }
     if parsed_url.hostname and parsed_url.hostname.lower() in placeholder_hosts:
         return "placeholder_url"
+    hostname = (parsed_url.hostname or "").lower()
     if (
-        parsed_url.scheme.lower() not in {"http", "https"}
-        or not parsed_url.hostname
+        parsed_url.scheme.lower() != "https"
+        or not hostname
         or (port is None and parsed_url.netloc.endswith(":"))
+        or port not in {None, 443}
         or parsed_url.username is not None
         or parsed_url.password is not None
+        or not parsed_url.path.lower().endswith(".pdf")
     ):
         return "invalid_url"
+    if not _is_approved_ncert_host(hostname):
+        return "unapproved_url"
     return None
+
+
+def _is_approved_ncert_host(hostname: str) -> bool:
+    normalized_host = hostname.lower().rstrip(".")
+    return any(
+        normalized_host == approved_host
+        or normalized_host.endswith(f".{approved_host}")
+        for approved_host in APPROVED_NCERT_HOSTS
+    )
+
+
+def _is_pdf_content_type(content_type: str) -> bool:
+    return content_type.split(";", 1)[0].strip().lower() == "application/pdf"
+
+
+def _content_length_exceeds_limit(content_length: str | None) -> bool:
+    if not content_length:
+        return False
+    try:
+        return int(content_length) > TEXTBOOK_PDF_MAX_BYTES
+    except (TypeError, ValueError):
+        return False
 
 
 def _safe_url_for_log(pdf_url: str) -> str:

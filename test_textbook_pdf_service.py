@@ -21,6 +21,7 @@ class FakeResponse:
         *,
         status_code=200,
         content_type="application/pdf",
+        content_length=None,
         stream_error=None,
         stream_barrier=None,
         stream_release=None,
@@ -28,6 +29,8 @@ class FakeResponse:
         self.chunks = list(chunks)
         self.status_code = status_code
         self.headers = {"Content-Type": content_type}
+        if content_length is not None:
+            self.headers["Content-Length"] = str(content_length)
         self.stream_error = stream_error
         self.stream_barrier = stream_barrier
         self.stream_release = stream_release
@@ -68,7 +71,7 @@ class TextbookPdfServiceTests(unittest.TestCase):
             "class": 9,
             "subject": "Science",
             "title": "Science",
-            "pdf_url": "https://ncert.test/class-9/science.pdf",
+            "pdf_url": "https://ncert.nic.in/textbook/pdf/test-science.pdf",
             "language": "English",
             "version": "latest",
         }
@@ -132,6 +135,7 @@ class TextbookPdfServiceTests(unittest.TestCase):
             self.textbook["pdf_url"],
             stream=True,
             timeout=(10, 30),
+            allow_redirects=False,
         )
 
     def test_downloaded_pdf_is_reused_on_second_call(self):
@@ -173,6 +177,17 @@ class TextbookPdfServiceTests(unittest.TestCase):
         self.assertIsNone(result)
         self.requests_get.assert_not_called()
 
+    def test_unapproved_pdf_url_returns_none_without_network_request(self):
+        self.registry_get.return_value = {
+            **self.textbook,
+            "pdf_url": "https://example.com/textbook.pdf",
+        }
+
+        result = self._get_pdf()
+
+        self.assertIsNone(result)
+        self.requests_get.assert_not_called()
+
     def test_http_failure_returns_none(self):
         self._set_response(FakeResponse(status_code=503))
 
@@ -192,7 +207,7 @@ class TextbookPdfServiceTests(unittest.TestCase):
     def test_non_pdf_response_is_rejected(self):
         self._set_response(
             FakeResponse(
-                [b"<html>not a pdf</html>"],
+                [PDF_BYTES],
                 content_type="text/html; charset=utf-8",
             )
         )
@@ -201,6 +216,38 @@ class TextbookPdfServiceTests(unittest.TestCase):
 
         self.assertIsNone(result)
         self.assertFalse(self._cache_path().exists())
+
+    def test_oversized_content_length_is_rejected_before_streaming(self):
+        self._set_response(
+            FakeResponse(
+                [PDF_BYTES],
+                content_length=len(PDF_BYTES) + 1,
+            )
+        )
+
+        with patch.object(
+            textbook_pdf_service,
+            "TEXTBOOK_PDF_MAX_BYTES",
+            len(PDF_BYTES),
+        ):
+            result = self._get_pdf()
+
+        self.assertIsNone(result)
+        self.assertFalse(self._cache_path().exists())
+
+    def test_oversized_stream_without_content_length_is_rejected(self):
+        self._set_response(FakeResponse([PDF_BYTES]))
+
+        with patch.object(
+            textbook_pdf_service,
+            "TEXTBOOK_PDF_MAX_BYTES",
+            len(PDF_BYTES) - 1,
+        ):
+            result = self._get_pdf()
+
+        self.assertIsNone(result)
+        self.assertFalse(self._cache_path().exists())
+        self.assertEqual(self._temporary_files(), [])
 
     def test_empty_response_is_rejected(self):
         self._set_response(FakeResponse([]))
@@ -287,7 +334,7 @@ class TextbookPdfServiceTests(unittest.TestCase):
             **self.textbook,
             "subject": "Mathematics",
             "title": "Mathematics",
-            "pdf_url": "https://ncert.test/class-9/mathematics.pdf",
+            "pdf_url": "https://ncert.nic.in/textbook/pdf/test-mathematics.pdf",
         }
         mathematics_pdf = b"%PDF-1.7\nmock mathematics\n%%EOF\n"
         self.registry_get.side_effect = lambda student_class, subject: (
@@ -310,7 +357,7 @@ class TextbookPdfServiceTests(unittest.TestCase):
             **self.textbook,
             "subject": "Mathematics",
             "title": "Mathematics",
-            "pdf_url": "https://ncert.test/class-9/mathematics.pdf",
+            "pdf_url": "https://ncert.nic.in/textbook/pdf/test-mathematics.pdf",
         }
         stream_barrier = threading.Barrier(2)
         self.registry_get.side_effect = lambda student_class, subject: (
@@ -334,7 +381,7 @@ class TextbookPdfServiceTests(unittest.TestCase):
     def test_log_output_does_not_include_url_query_parameters(self):
         secret = "do-not-log-this-token"
         self.textbook["pdf_url"] = (
-            f"https://ncert.test/class-9/science.pdf?token={secret}"
+            f"https://ncert.nic.in/textbook/pdf/test-science.pdf?token={secret}"
         )
         self.registry_get.return_value = self.textbook
         self._set_response(FakeResponse(status_code=500))
