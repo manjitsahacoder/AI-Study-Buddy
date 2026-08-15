@@ -243,6 +243,21 @@ CBSE_TEXTBOOKS = [
     {
         "class_level": 9,
         "subject": "Mathematics",
+        "name": "Ganita Manjari",
+        "chapters": [
+            "Orienting Yourself: The Use of Coordinates",
+            "Introduction to Linear Polynomials",
+            "The World of Numbers",
+            "Exploring Algebraic Identities",
+            "I’m Up and Down, and Round and Round",
+            "Measuring Space: Perimeter and Area",
+            "The Mathematics of Maybe: Introduction to Probability",
+            "Predicting What Comes Next: Exploring Sequences and Progressions",
+        ],
+    },
+    {
+        "class_level": 9,
+        "subject": "Mathematics",
         "name": "Mathematics",
         "chapters": [
             "Number Systems",
@@ -341,6 +356,26 @@ CBSE_TEXTBOOKS = [
             "Light",
             "Stars and the Solar System",
             "Pollution of Air and Water",
+        ],
+    },
+    {
+        "class_level": 9,
+        "subject": "Science",
+        "name": "Exploration",
+        "chapters": [
+            "Exploration: Entering the World of Secondary Science",
+            "Cell: The Building Block of Life",
+            "Tissues in Action",
+            "Describing Motion Around Us",
+            "Exploring Mixtures and their Separation",
+            "How Forces Affect Motion",
+            "Work, Energy, and Simple Machines",
+            "Journey Inside the Atom",
+            "Atomic Foundations of Matter",
+            "Sound Waves: Characteristics and Applications",
+            "Reproduction: How Life Continues",
+            "Patterns in Life: Diversity and Classification",
+            "Earth as a System: Energy, Matter, and Life",
         ],
     },
     {

@@ -19,7 +19,7 @@ class TextbookRegistryTests(unittest.TestCase):
         self.assertEqual(textbook["board"], "CBSE")
         self.assertEqual(textbook["class"], 9)
         self.assertEqual(textbook["subject"], "Science")
-        self.assertEqual(textbook["title"], "Science")
+        self.assertEqual(textbook["title"], "Exploration")
         self.assertEqual(textbook["language"], "English")
         self.assertEqual(textbook["version"], "latest")
 
@@ -27,7 +27,7 @@ class TextbookRegistryTests(unittest.TestCase):
         textbook = textbook_registry.get_textbook(" 9 ", "  SCIENCE ")
 
         self.assertIsNotNone(textbook)
-        self.assertEqual(textbook["title"], "Science")
+        self.assertEqual(textbook["title"], "Exploration")
 
     def test_get_textbook_returns_copy_of_metadata(self):
         textbook = textbook_registry.get_textbook(9, "Science")
@@ -35,7 +35,7 @@ class TextbookRegistryTests(unittest.TestCase):
 
         self.assertEqual(
             textbook_registry.get_textbook(9, "Science")["title"],
-            "Science",
+            "Exploration",
         )
 
     def test_get_textbook_returns_none_for_invalid_class(self):
