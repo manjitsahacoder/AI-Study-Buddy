@@ -99,6 +99,7 @@ from textbook_catalog import (
 )
 from diagram_library import diagram_record_to_view, get_or_create_diagram
 from services import diagram_service as generated_diagram_service
+from services import textbook_registry, textbook_text_service
 from tutor_repository import (
     get_or_create_tutor_lesson,
     get_recent_tutor_messages,
@@ -418,6 +419,8 @@ ALL_ROUND_LEARNER_ACTIVITIES = ("notes", "revision", "flashcards", "tutor", "qui
 GAMIFICATION_LEVEL_XP = 100
 LEARN_BUSY_MESSAGE = "AI Study Buddy is temporarily busy. Please try again in a moment."
 LEARN_MAX_TEXTBOOK_CONTEXT_CHARS = int(os.environ.get("LEARN_MAX_TEXTBOOK_CONTEXT_CHARS", "7000"))
+TEXTBOOK_CONTEXT_MAX_CHARS = int(os.environ.get("TEXTBOOK_CONTEXT_MAX_CHARS", "24000"))
+NCERT_CHAPTER_CONTEXT_VERSION = "ncert-chapter-v2"
 LEARN_MAX_PDF_TEXT_CHARS = int(os.environ.get("LEARN_MAX_PDF_TEXT_CHARS", "45000"))
 LEARN_MAX_PROMPT_CHARS = int(os.environ.get("LEARN_MAX_PROMPT_CHARS", "12000"))
 LEARN_MAX_RESPONSE_CHARS = int(os.environ.get("LEARN_MAX_RESPONSE_CHARS", "55000"))
@@ -1806,12 +1809,14 @@ def save_learning_history(
     textbook_id=None,
     chapter_id=None,
     student_class=None,
+    textbook_context_version=None,
 ):
     board = (board or DEFAULT_BOARD).strip() or DEFAULT_BOARD
     student_class = (student_class or "").strip() or None
     subject = (subject or "").strip()
     book_name = (book_name or "").strip()
     topic = (topic or "").strip()
+    textbook_context_version = (textbook_context_version or "").strip()
     duplicate_cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
     duplicate_query = LearningHistory.query.filter(
         LearningHistory.user_id == user_id,
@@ -1828,19 +1833,25 @@ def save_learning_history(
             LearningHistory.textbook_id == textbook_id,
             LearningHistory.chapter_id == chapter_id,
         )
-    duplicate = duplicate_query.first()
-    if duplicate:
-        return duplicate.id
+    for duplicate in duplicate_query.order_by(
+        LearningHistory.created_at.desc(), LearningHistory.id.desc()
+    ):
+        if lesson_textbook_context_version(duplicate) == textbook_context_version:
+            return duplicate.id
 
     visualization_required = None
     visualization_type = None
     visualization_reason = None
+    saved_diagram_data = diagram_data
     if isinstance(diagram_data, dict):
-        visualization_required = diagram_data.get("visualization_required")
+        saved_diagram_data = dict(diagram_data)
+        if textbook_context_version:
+            saved_diagram_data["textbook_context_version"] = textbook_context_version
+        visualization_required = saved_diagram_data.get("visualization_required")
         if visualization_required is None:
-            visualization_required = diagram_data.get("available")
-        visualization_type = diagram_data.get("visualization_type") or diagram_data.get("decision_visualization_type")
-        visualization_reason = diagram_data.get("reason")
+            visualization_required = saved_diagram_data.get("available")
+        visualization_type = saved_diagram_data.get("visualization_type") or saved_diagram_data.get("decision_visualization_type")
+        visualization_reason = saved_diagram_data.get("reason")
 
     lesson = LearningHistory(
         user_id=user_id,
@@ -1852,7 +1863,7 @@ def save_learning_history(
         book_name=book_name,
         topic=topic,
         notes=notes,
-        diagram_data=json.dumps(diagram_data),
+        diagram_data=json.dumps(saved_diagram_data),
         visualization_required=visualization_required,
         visualization_type=visualization_type,
         visualization_reason=visualization_reason,
@@ -1872,6 +1883,7 @@ def find_reusable_lesson(
     topic,
     textbook_id=None,
     chapter_id=None,
+    textbook_context_version=None,
 ):
     if not user_id:
         return None
@@ -1881,6 +1893,7 @@ def find_reusable_lesson(
     subject = (subject or "").strip()
     book_name = (book_name or "").strip()
     topic = (topic or "").strip()
+    textbook_context_version = (textbook_context_version or "").strip()
     if not student_class or not subject or not topic:
         return None
 
@@ -1902,7 +1915,10 @@ def find_reusable_lesson(
             LearningHistory.textbook_id.is_(None),
             LearningHistory.chapter_id.is_(None),
         )
-    return query.order_by(LearningHistory.created_at.desc(), LearningHistory.id.desc()).first()
+    for lesson in query.order_by(LearningHistory.created_at.desc(), LearningHistory.id.desc()):
+        if lesson_textbook_context_version(lesson) == textbook_context_version:
+            return lesson
+    return None
 
 
 def render_cached_lesson_response(lesson, name, student_class):
@@ -1944,6 +1960,10 @@ def render_cached_lesson_response(lesson, name, student_class):
         has_flashcards=bool(existing_flashcard_set(lesson.id, session["user_id"])),
         is_favourite=bool(existing_favourite_note(lesson.id, session["user_id"])),
         current_page_url=url_for("lesson_notes", lesson_id=lesson.id),
+        ncert_context_used=(
+            lesson_textbook_context_version(lesson)
+            == NCERT_CHAPTER_CONTEXT_VERSION
+        ),
     )
 
 
@@ -2326,6 +2346,16 @@ def decode_json_dict(value):
         return {}
 
     return decoded_value if isinstance(decoded_value, dict) else {}
+
+
+def lesson_textbook_context_version(lesson):
+    """Return the lightweight NCERT-context cache marker for a saved lesson."""
+    return str(
+        decode_json_dict(getattr(lesson, "diagram_data", "")).get(
+            "textbook_context_version", ""
+        )
+        or ""
+    ).strip()
 
 
 def decode_diagram_payload(value, subject="", topic=""):
@@ -9043,6 +9073,239 @@ Use only this extracted textbook context for the chapter:
 """
 
 
+def log_ncert_chapter_context_event(event, **fields):
+    details = " ".join(f"{key}={value}" for key, value in fields.items())
+    log_method = app.logger.warning if event == "textbook_context_error" else app.logger.info
+    log_method("%s %s", event, details)
+
+
+def clean_ncert_chapter_context(text):
+    """Conservatively normalize local PDF-extraction artifacts for the prompt."""
+    normalized = str(text or "").replace("\r\n", "\n").replace("\r", "\n")
+    normalized = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", normalized)
+    normalized = re.sub(r"[^\S\n]+", " ", normalized)
+
+    cleaned_lines = []
+    previous_line = None
+    previous_line_was_adjacent = False
+    for raw_line in normalized.split("\n"):
+        line = raw_line.strip()
+        if not line:
+            if cleaned_lines and cleaned_lines[-1] != "":
+                cleaned_lines.append("")
+            previous_line_was_adjacent = False
+            continue
+        # Consecutive duplicate lines are a known extraction artifact. Keeping
+        # non-adjacent repeats avoids changing genuine textbook content.
+        if line == previous_line and previous_line_was_adjacent:
+            continue
+        cleaned_lines.append(line)
+        previous_line = line
+        previous_line_was_adjacent = True
+
+    return "\n".join(cleaned_lines).strip()
+
+
+def truncate_ncert_chapter_context(text, max_chars):
+    """Bound context at a readable paragraph, line, or word boundary."""
+    context = (text or "").strip()
+    limit = max(1, int(max_chars))
+    if len(context) <= limit:
+        return context, False, "none"
+
+    boundary_start = max(1, int(limit * 0.60))
+    boundary = context.rfind("\n\n", boundary_start, limit + 1)
+    boundary_type = "paragraph"
+    if boundary <= 0:
+        boundary = context.rfind("\n", boundary_start, limit + 1)
+        boundary_type = "line"
+    if boundary <= 0:
+        boundary = context.rfind(" ", boundary_start, limit + 1)
+        boundary_type = "word"
+    if boundary <= 0:
+        boundary = limit
+        boundary_type = "character"
+    bounded = context[:boundary].rstrip()
+    if not bounded:
+        bounded = context[:limit].rstrip()
+        boundary_type = "character"
+    return bounded, True, boundary_type
+
+
+def _normalized_ncert_topic(value):
+    return re.sub(r"[^a-z0-9]+", " ", str(value or "").lower()).strip()
+
+
+def ncert_topic_excerpt(text, requested_topic, chapter_title, max_chars):
+    """Prefer a high-confidence exact topic occurrence without semantic search."""
+    context = (text or "").strip()
+    topic = " ".join(str(requested_topic or "").split())
+    if (
+        not topic
+        or len(topic) < 4
+        or _normalized_ncert_topic(topic) == _normalized_ncert_topic(chapter_title)
+    ):
+        return context, False
+
+    topic_pattern = re.escape(topic).replace(r"\ ", r"\s+")
+    match = re.search(topic_pattern, context, flags=re.IGNORECASE)
+    if not match:
+        return context, False
+
+    limit = max(1, int(max_chars))
+    if len(context) <= limit:
+        return context, False
+    excerpt_start = max(0, match.start() - (limit // 4))
+    boundary_window_start = max(0, excerpt_start - (limit // 6))
+    for delimiter in ("\n\n", "\n", " "):
+        boundary = context.rfind(delimiter, boundary_window_start, excerpt_start + 1)
+        if boundary >= boundary_window_start:
+            excerpt_start = boundary + len(delimiter)
+            break
+    excerpt_end = min(len(context), excerpt_start + limit)
+    excerpt_start = max(0, excerpt_end - limit)
+    excerpt, _, _ = truncate_ncert_chapter_context(
+        context[excerpt_start:excerpt_end],
+        limit,
+    )
+    return excerpt or context, True
+
+
+def prepare_ncert_chapter_context(chapter_text, requested_topic, chapter_title):
+    """Clean and safely bound verified chapter text before prompt injection."""
+    original_text = (chapter_text or "").strip()
+    cleaned_text = clean_ncert_chapter_context(original_text)
+    context_limit = max(1, TEXTBOOK_CONTEXT_MAX_CHARS)
+    excerpt_text, topic_excerpt_used = ncert_topic_excerpt(
+        cleaned_text,
+        requested_topic,
+        chapter_title,
+        context_limit,
+    )
+    bounded_text, truncated, boundary_type = truncate_ncert_chapter_context(
+        excerpt_text,
+        context_limit,
+    )
+    return bounded_text, {
+        "original_chars": len(original_text),
+        "cleaned_chars": len(cleaned_text),
+        "context_limit": context_limit,
+        "topic_excerpt_used": topic_excerpt_used,
+        "truncated": truncated,
+        "boundary_type": boundary_type,
+    }
+
+
+def resolve_ncert_chapter_context(student_class, subject, chapter, requested_topic=None):
+    """Return verified chapter metadata and bounded text, or an empty fallback.
+
+    Registry matching is intentionally exact/normalized only. It never infers a
+    chapter from a related topic or a selected database chapter number.
+    """
+    log_ncert_chapter_context_event(
+        "textbook_context_lookup_started",
+        class_level=student_class,
+        subject=repr(subject),
+    )
+    chapter_metadata = textbook_registry.get_chapter(student_class, subject, chapter)
+    if chapter_metadata is None:
+        log_ncert_chapter_context_event(
+            "textbook_context_unavailable",
+            class_level=student_class,
+            subject=repr(subject),
+            chapter_id="none",
+            reason="unsupported_chapter",
+            fallback=True,
+        )
+        return None, ""
+
+    chapter_id = chapter_metadata["id"]
+    try:
+        chapter_text = textbook_text_service.get_chapter_text(
+            student_class,
+            subject,
+            chapter,
+        )
+    except Exception as error:
+        log_ncert_chapter_context_event(
+            "textbook_context_error",
+            class_level=student_class,
+            subject=repr(subject),
+            chapter_id=chapter_id,
+            error_type=type(error).__name__,
+            fallback=True,
+        )
+        return None, ""
+
+    chapter_text, preparation = prepare_ncert_chapter_context(
+        chapter_text,
+        requested_topic,
+        chapter_metadata["title"],
+    )
+    if not chapter_text:
+        log_ncert_chapter_context_event(
+            "textbook_context_unavailable",
+            class_level=student_class,
+            subject=repr(subject),
+            chapter_id=chapter_id,
+            reason="empty_or_unavailable_text",
+            fallback=True,
+        )
+        return None, ""
+
+    if preparation["original_chars"] != preparation["cleaned_chars"]:
+        log_ncert_chapter_context_event(
+            "textbook_context_cleaned",
+            class_level=student_class,
+            subject=repr(subject),
+            chapter_id=chapter_id,
+            original_chars=preparation["original_chars"],
+            cleaned_chars=preparation["cleaned_chars"],
+        )
+
+    if preparation["truncated"]:
+        log_ncert_chapter_context_event(
+            "textbook_context_truncated",
+            class_level=student_class,
+            subject=repr(subject),
+            chapter_id=chapter_id,
+            original_chars=preparation["cleaned_chars"],
+            context_chars=len(chapter_text),
+            max_chars=preparation["context_limit"],
+            boundary=preparation["boundary_type"],
+            topic_excerpt=preparation["topic_excerpt_used"],
+        )
+
+    log_ncert_chapter_context_event(
+        "textbook_context_used",
+        class_level=student_class,
+        subject=repr(subject),
+        chapter_id=chapter_id,
+        context_chars=len(chapter_text),
+        context_version=NCERT_CHAPTER_CONTEXT_VERSION,
+        topic_excerpt=preparation["topic_excerpt_used"],
+        fallback=False,
+    )
+    return chapter_metadata, chapter_text
+
+
+def ncert_chapter_context_prompt_section(chapter_metadata, chapter_text):
+    if not chapter_metadata or not chapter_text:
+        return ""
+    return f"""
+NCERT Chapter Context:
+The text below is verified NCERT chapter material. Treat it as the primary factual
+and conceptual source for this lesson. Stay faithful to its terminology and facts,
+focus on the requested topic, and do not contradict or quote it verbatim unless a
+short quotation is genuinely useful. Do not mention this context, PDFs, downloads,
+or extraction systems to the student.
+
+--- BEGIN NCERT CHAPTER CONTEXT ---
+{chapter_text}
+--- END NCERT CHAPTER CONTEXT ---
+"""
+
+
 def textbook_prompt_section():
     return """
 Textbook Subject Instructions:
@@ -9072,8 +9335,9 @@ Lesson Quality Requirements:
 - Use the selected class level to decide vocabulary, examples, and depth.
 - Use encouraging, clear language and avoid unnecessary technical jargon.
 - Use examples before definitions whenever that makes the concept easier to understand.
+- If NCERT Chapter Context is available, use it as the primary factual and conceptual source. Explain it naturally rather than reproducing it verbatim.
 - If Local Textbook PDF Context is available, use it as guidance and expand naturally; do not merely summarize the extracted text.
-- If Local Textbook PDF Context is unavailable, continue teaching the topic using reliable CBSE-level knowledge while obeying the no-guessing rules for unknown textbook chapters.
+- If neither context is available, continue teaching the topic using reliable CBSE-level knowledge while obeying the no-guessing rules for unknown textbook chapters.
 
 Structure the main lesson before Quick Revision with markdown headings such as:
 ## Introduction
@@ -11116,6 +11380,7 @@ def learn():
     subject = request.form.get("subject", "").strip() or preferred_subject_for_user(account)
     book_name = request.form.get("book_name", "").strip()
     topic = request.form.get("topic", "").strip()
+    requested_topic = topic
     board = DEFAULT_BOARD
     if account and not name:
         name = account["full_name"]
@@ -11153,6 +11418,21 @@ def learn():
         chapter_count=chapter_count,
     )
 
+    with performance_span("NCERT chapter context loading", detail=f"{student_class} {subject} {topic}"):
+        ncert_chapter_metadata, ncert_chapter_text = resolve_ncert_chapter_context(
+            student_class,
+            subject,
+            topic,
+            requested_topic=requested_topic,
+        )
+    ncert_context_section = ncert_chapter_context_prompt_section(
+        ncert_chapter_metadata,
+        ncert_chapter_text,
+    )
+    ncert_context_version = (
+        NCERT_CHAPTER_CONTEXT_VERSION if ncert_chapter_text else None
+    )
+
     reusable_lesson = find_reusable_lesson(
         session.get("user_id"),
         student_class,
@@ -11162,9 +11442,14 @@ def learn():
         topic,
         textbook.id if textbook else None,
         chapter.id if chapter else None,
+        textbook_context_version=ncert_context_version,
     )
     if reusable_lesson:
-        log_learn_metric("lesson_cache_hit", lesson_id=reusable_lesson.id)
+        log_learn_metric(
+            "lesson_cache_hit",
+            lesson_id=reusable_lesson.id,
+            textbook_context_version=ncert_context_version or "none",
+        )
         save_learning_session(
             session["user_id"],
             name,
@@ -11181,7 +11466,11 @@ def learn():
             lesson_id=reusable_lesson.id,
         )
         return render_cached_lesson_response(reusable_lesson, name, student_class)
-    log_learn_metric("lesson_cache_miss", logged_in=bool(session.get("user_id")))
+    log_learn_metric(
+        "lesson_cache_miss",
+        logged_in=bool(session.get("user_id")),
+        textbook_context_version=ncert_context_version or "none",
+    )
 
     selected_textbook_context_section = selected_textbook_context_block(
         student_class,
@@ -11202,16 +11491,18 @@ def learn():
         book_name,
         student_class,
     )
-    with performance_span("Textbook context loading", detail=f"{student_class} {subject} {topic}"):
-        textbook_context_section = local_textbook_context_section(
-            student_class,
-            subject,
-            book_name,
-            topic,
-            max_chars=LEARN_MAX_TEXTBOOK_CONTEXT_CHARS,
-            chapter_number=chapter.chapter_number if chapter else None,
-            chapter_count=chapter_count,
-        )
+    textbook_context_section = ""
+    if not ncert_chapter_text:
+        with performance_span("Textbook context loading", detail=f"{student_class} {subject} {topic}"):
+            textbook_context_section = local_textbook_context_section(
+                student_class,
+                subject,
+                book_name,
+                topic,
+                max_chars=LEARN_MAX_TEXTBOOK_CONTEXT_CHARS,
+                chapter_number=chapter.chapter_number if chapter else None,
+                chapter_count=chapter_count,
+            )
 
     prompt = f"""
 You are a school teacher.
@@ -11229,6 +11520,7 @@ Topic: {topic}
 {selected_textbook_rules_section}
 {subject_prompt_section}
 {adaptive_quiz_prompt_section}
+{ncert_context_section}
 {textbook_context_section}
 
 Rules:
@@ -11342,6 +11634,7 @@ Rules:
         estimated_characters=len(prompt),
         estimated_tokens=estimate_tokens(prompt),
         textbook_context_length=len(textbook_context_section),
+        ncert_chapter_context_length=len(ncert_chapter_text),
     )
 
     try:
@@ -11428,6 +11721,7 @@ Rules:
                 textbook_id=textbook.id if textbook else None,
                 chapter_id=chapter.id if chapter else None,
                 student_class=student_class,
+                textbook_context_version=ncert_context_version,
             )
             log_learn_metric("lesson_saved", lesson_id=lesson_id)
             save_learning_session(
@@ -11491,6 +11785,7 @@ Rules:
         has_flashcards=False,
         is_favourite=False,
         current_page_url=url_for("lesson_notes", lesson_id=lesson_id) if lesson_id else url_for("home"),
+        ncert_context_used=bool(ncert_chapter_text),
     )
 
 

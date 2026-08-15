@@ -94,51 +94,156 @@ def get_textbook_text(
         _log_extraction_failed(student_class, subject, reason="missing_pdf_url")
         return None
 
-    cache_path = build_textbook_text_cache_path(
+    cache_path = build_textbook_text_cache_path(textbook, cache_dir=text_cache_dir)
+    return _get_text_from_source(
+        cache_path,
+        student_class=student_class,
+        subject=subject,
+        pdf_loader=lambda: textbook_pdf_service.get_textbook_pdf(
+            student_class,
+            subject,
+            cache_dir=pdf_cache_dir,
+        ),
+    )
+
+
+def get_chapter_text(
+    student_class: Any,
+    subject: Any,
+    chapter: Any,
+    *,
+    text_cache_dir: str | os.PathLike[str] | None = None,
+    pdf_cache_dir: str | os.PathLike[str] | None = None,
+) -> str | None:
+    """Return cached or freshly extracted text for one registered chapter."""
+    textbook = textbook_registry.get_textbook(student_class, subject)
+    chapter_metadata = textbook_registry.get_chapter(student_class, subject, chapter)
+    if textbook is None or chapter_metadata is None:
+        _log_extraction_failed(
+            student_class,
+            subject,
+            reason="registry_missing",
+            event_prefix="textbook_chapter_text",
+        )
+        return None
+    if not str(chapter_metadata.get("pdf_url") or "").strip():
+        _log_extraction_failed(
+            student_class,
+            subject,
+            reason="missing_pdf_url",
+            event_prefix="textbook_chapter_text",
+            chapter_id=chapter_metadata["id"],
+        )
+        return None
+
+    cache_path = build_chapter_text_cache_path(
         textbook,
+        chapter_metadata,
         cache_dir=text_cache_dir,
     )
+    return _get_text_from_source(
+        cache_path,
+        student_class=student_class,
+        subject=subject,
+        chapter_id=chapter_metadata["id"],
+        event_prefix="textbook_chapter_text",
+        pdf_loader=lambda: textbook_pdf_service.get_chapter_pdf(
+            student_class,
+            subject,
+            chapter_metadata["number"],
+            cache_dir=pdf_cache_dir,
+        ),
+    )
+
+
+def _get_text_from_source(
+    cache_path: Path,
+    *,
+    student_class: Any,
+    subject: Any,
+    pdf_loader,
+    event_prefix: str = "textbook_text",
+    chapter_id: str | None = None,
+) -> str | None:
+    """Reuse the isolated extraction pipeline for textbook and chapter sources."""
     cache_key = cache_path.stem.rsplit("_", 1)[-1]
     cached_text, invalid_cache = _read_text_cache(cache_path)
     if cached_text is not None:
-        _log_cache_hit(student_class, subject, cache_key)
+        _log_cache_hit(
+            student_class,
+            subject,
+            cache_key,
+            event_prefix=event_prefix,
+            chapter_id=chapter_id,
+        )
         return cached_text
     if invalid_cache:
-        _log_cache_invalid(student_class, subject, cache_key)
+        _log_cache_invalid(
+            student_class,
+            subject,
+            cache_key,
+            event_prefix=event_prefix,
+            chapter_id=chapter_id,
+        )
 
     logger.info(
-        "textbook_text_cache_miss class=%r subject=%r cache_key=%s",
+        "%s_cache_miss class=%r subject=%r cache_key=%s%s",
+        event_prefix,
         student_class,
         subject,
         cache_key,
+        _chapter_log_suffix(chapter_id),
     )
 
     with _lock_for(cache_path):
         cached_text, invalid_cache_after_lock = _read_text_cache(cache_path)
         if cached_text is not None:
-            _log_cache_hit(student_class, subject, cache_key)
+            _log_cache_hit(
+                student_class,
+                subject,
+                cache_key,
+                event_prefix=event_prefix,
+                chapter_id=chapter_id,
+            )
             return cached_text
         if invalid_cache_after_lock:
             if not invalid_cache:
-                _log_cache_invalid(student_class, subject, cache_key)
-            _remove_invalid_cache(cache_path, student_class, subject, cache_key)
+                _log_cache_invalid(
+                    student_class,
+                    subject,
+                    cache_key,
+                    event_prefix=event_prefix,
+                    chapter_id=chapter_id,
+                )
+            _remove_invalid_cache(
+                cache_path,
+                student_class,
+                subject,
+                cache_key,
+                event_prefix=event_prefix,
+                chapter_id=chapter_id,
+            )
 
-        pdf_path = textbook_pdf_service.get_textbook_pdf(
-            student_class,
-            subject,
-            cache_dir=pdf_cache_dir,
-        )
+        pdf_path = pdf_loader()
         if pdf_path is None:
-            _log_extraction_failed(student_class, subject, reason="pdf_unavailable")
+            _log_extraction_failed(
+                student_class,
+                subject,
+                reason="pdf_unavailable",
+                event_prefix=event_prefix,
+                chapter_id=chapter_id,
+            )
             return None
 
         started_at = time.perf_counter()
         logger.info(
-            "textbook_text_extraction_started class=%r subject=%r cache_key=%s "
+            "%s_extraction_started class=%r subject=%r cache_key=%s%s "
             "max_pages=%s timeout_seconds=%s",
+            event_prefix,
             student_class,
             subject,
             cache_key,
+            _chapter_log_suffix(chapter_id),
             TEXTBOOK_PDF_MAX_PAGES,
             TEXTBOOK_PDF_EXTRACTION_TIMEOUT_SECONDS,
         )
@@ -151,14 +256,24 @@ def get_textbook_text(
                 )
             )
         except TextbookPdfExtractionTimeout:
-            logger.warning(
-                "textbook_pdf_extraction_timeout class=%r subject=%r "
-                "cache_key=%s timeout_seconds=%s",
-                student_class,
-                subject,
-                cache_key,
-                TEXTBOOK_PDF_EXTRACTION_TIMEOUT_SECONDS,
-            )
+            if event_prefix == "textbook_text":
+                logger.warning(
+                    "textbook_pdf_extraction_timeout class=%r subject=%r "
+                    "cache_key=%s timeout_seconds=%s",
+                    student_class,
+                    subject,
+                    cache_key,
+                    TEXTBOOK_PDF_EXTRACTION_TIMEOUT_SECONDS,
+                )
+            else:
+                _log_extraction_failed(
+                    student_class,
+                    subject,
+                    reason="timeout",
+                    cache_key=cache_key,
+                    event_prefix=event_prefix,
+                    chapter_id=chapter_id,
+                )
             return None
         except Exception as error:
             _log_extraction_failed(
@@ -166,16 +281,20 @@ def get_textbook_text(
                 subject,
                 reason=type(error).__name__,
                 cache_key=cache_key,
+                event_prefix=event_prefix,
+                chapter_id=chapter_id,
             )
             return None
 
         if total_pages > TEXTBOOK_PDF_MAX_PAGES:
             logger.info(
-                "textbook_text_page_limit_reached class=%r subject=%r "
-                "cache_key=%s total_pages=%s extracted_pages=%s",
+                "%s_page_limit_reached class=%r subject=%r "
+                "cache_key=%s%s total_pages=%s extracted_pages=%s",
+                event_prefix,
                 student_class,
                 subject,
                 cache_key,
+                _chapter_log_suffix(chapter_id),
                 total_pages,
                 extracted_pages,
             )
@@ -187,6 +306,8 @@ def get_textbook_text(
                 subject,
                 reason="empty_text",
                 cache_key=cache_key,
+                event_prefix=event_prefix,
+                chapter_id=chapter_id,
             )
             return None
 
@@ -198,15 +319,19 @@ def get_textbook_text(
                 subject,
                 reason=f"cache_write_{type(error).__name__}",
                 cache_key=cache_key,
+                event_prefix=event_prefix,
+                chapter_id=chapter_id,
             )
             return None
 
         logger.info(
-            "textbook_text_extraction_complete class=%r subject=%r cache_key=%s "
+            "%s_extraction_complete class=%r subject=%r cache_key=%s%s "
             "pages=%s chars=%s duration_ms=%.2f",
+            event_prefix,
             student_class,
             subject,
             cache_key,
+            _chapter_log_suffix(chapter_id),
             extracted_pages,
             len(cleaned_text),
             (time.perf_counter() - started_at) * 1000,
@@ -222,6 +347,23 @@ def build_textbook_text_cache_path(
     """Build a safe text path using the PDF service's textbook identity."""
     cache_root = Path(cache_dir or TEXTBOOK_TEXT_CACHE_DIR).resolve(strict=False)
     pdf_filename = textbook_pdf_service.build_textbook_cache_path(textbook).stem
+    return cache_root / f"{pdf_filename}.txt"
+
+
+def build_chapter_text_cache_path(
+    textbook: dict[str, Any],
+    chapter: dict[str, Any],
+    *,
+    cache_dir: str | os.PathLike[str] | None = None,
+) -> Path:
+    """Build a safe text path using the chapter PDF identity."""
+    cache_root = (
+        Path(cache_dir or TEXTBOOK_TEXT_CACHE_DIR).resolve(strict=False) / "chapters"
+    )
+    pdf_filename = textbook_pdf_service.build_chapter_cache_path(
+        textbook,
+        chapter,
+    ).stem
     return cache_root / f"{pdf_filename}.txt"
 
 
@@ -369,6 +511,9 @@ def _remove_invalid_cache(
     student_class: Any,
     subject: Any,
     cache_key: str,
+    *,
+    event_prefix: str = "textbook_text",
+    chapter_id: str | None = None,
 ) -> None:
     try:
         if cache_path.exists() or cache_path.is_symlink():
@@ -379,6 +524,8 @@ def _remove_invalid_cache(
             subject,
             reason=f"cache_cleanup_{type(error).__name__}",
             cache_key=cache_key,
+            event_prefix=event_prefix,
+            chapter_id=chapter_id,
         )
 
 
@@ -388,21 +535,39 @@ def _lock_for(cache_path: Path) -> threading.Lock:
         return _cache_locks.setdefault(lock_key, threading.Lock())
 
 
-def _log_cache_hit(student_class: Any, subject: Any, cache_key: str) -> None:
+def _log_cache_hit(
+    student_class: Any,
+    subject: Any,
+    cache_key: str,
+    *,
+    event_prefix: str = "textbook_text",
+    chapter_id: str | None = None,
+) -> None:
     logger.info(
-        "textbook_text_cache_hit class=%r subject=%r cache_key=%s",
+        "%s_cache_hit class=%r subject=%r cache_key=%s%s",
+        event_prefix,
         student_class,
         subject,
         cache_key,
+        _chapter_log_suffix(chapter_id),
     )
 
 
-def _log_cache_invalid(student_class: Any, subject: Any, cache_key: str) -> None:
+def _log_cache_invalid(
+    student_class: Any,
+    subject: Any,
+    cache_key: str,
+    *,
+    event_prefix: str = "textbook_text",
+    chapter_id: str | None = None,
+) -> None:
     logger.warning(
-        "textbook_text_cache_invalid class=%r subject=%r cache_key=%s",
+        "%s_cache_invalid class=%r subject=%r cache_key=%s%s",
+        event_prefix,
         student_class,
         subject,
         cache_key,
+        _chapter_log_suffix(chapter_id),
     )
 
 
@@ -412,14 +577,22 @@ def _log_extraction_failed(
     *,
     reason: str,
     cache_key: str = "none",
+    event_prefix: str = "textbook_text",
+    chapter_id: str | None = None,
 ) -> None:
     logger.warning(
-        "textbook_text_extraction_failed reason=%s class=%r subject=%r cache_key=%s",
+        "%s_extraction_failed reason=%s class=%r subject=%r cache_key=%s%s",
+        event_prefix,
         reason,
         student_class,
         subject,
         cache_key,
+        _chapter_log_suffix(chapter_id),
     )
+
+
+def _chapter_log_suffix(chapter_id: str | None) -> str:
+    return f" chapter_id={chapter_id}" if chapter_id else ""
 
 
 def _clear_cache_locks_for_tests() -> None:

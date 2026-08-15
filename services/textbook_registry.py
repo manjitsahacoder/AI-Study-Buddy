@@ -9,6 +9,7 @@ import threading
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 
 logger = logging.getLogger(__name__)
@@ -23,6 +24,7 @@ REQUIRED_TEXTBOOK_FIELDS = {
     "language",
     "version",
 }
+REQUIRED_CHAPTER_FIELDS = {"number", "title", "pdf_url"}
 
 _registry_cache: dict[str, dict[str, dict[str, Any]]] | None = None
 _registry_lock = threading.Lock()
@@ -34,24 +36,57 @@ class TextbookRegistryError(ValueError):
 
 def get_textbook(student_class: Any, subject: Any) -> dict[str, Any] | None:
     """Return textbook metadata for a class and subject, or None if unsupported."""
-    registry = _get_registry()
-    class_key = _normalize_class(student_class)
-    subject_key = _normalize_subject(subject)
-    if not class_key or not subject_key:
+    textbook = _find_textbook(student_class, subject)
+    if textbook is None:
         _log_unsupported_request(student_class, subject)
         return None
+    return deepcopy(textbook)
 
-    class_books = registry.get(class_key)
-    if not class_books:
-        _log_unsupported_request(student_class, subject)
+
+def get_chapter(
+    student_class: Any,
+    subject: Any,
+    chapter: Any,
+) -> dict[str, Any] | None:
+    """Return one registered chapter by number or normalized title, if available."""
+    textbook = _find_textbook(student_class, subject)
+    if textbook is None:
+        _log_chapter_lookup_failed(student_class, subject, chapter, "textbook_missing")
         return None
 
-    canonical_subject = _subject_lookup(class_books).get(subject_key)
-    if not canonical_subject:
-        _log_unsupported_request(student_class, subject)
-        return None
+    chapter_number = _normalize_chapter_number(chapter)
+    chapter_title = _normalize_chapter_title(chapter)
+    for metadata in textbook.get("chapters", []):
+        if chapter_number is not None and metadata["number"] == chapter_number:
+            _log_chapter_lookup_success(student_class, subject, metadata)
+            return deepcopy(metadata)
+        if chapter_title and _normalize_chapter_title(metadata["title"]) == chapter_title:
+            _log_chapter_lookup_success(student_class, subject, metadata)
+            return deepcopy(metadata)
 
-    return deepcopy(class_books[canonical_subject])
+    _log_chapter_lookup_failed(student_class, subject, chapter, "unsupported_chapter")
+    return None
+
+
+def get_chapter_pdf_url(
+    student_class: Any,
+    subject: Any,
+    chapter: Any,
+) -> str | None:
+    """Return the official PDF URL for one registered chapter, if available."""
+    chapter_metadata = get_chapter(student_class, subject, chapter)
+    if chapter_metadata is None:
+        return None
+    return chapter_metadata["pdf_url"]
+
+
+def list_chapters(student_class: Any, subject: Any) -> list[dict[str, Any]]:
+    """Return registered chapters in numeric order, or an empty list if unsupported."""
+    textbook = _find_textbook(student_class, subject)
+    if textbook is None:
+        _log_chapter_lookup_failed(student_class, subject, None, "textbook_missing")
+        return []
+    return deepcopy(sorted(textbook.get("chapters", []), key=lambda item: item["number"]))
 
 
 def has_textbook(student_class: Any, subject: Any) -> bool:
@@ -209,9 +244,103 @@ def _validate_textbook_metadata(
                 f"class {class_key!r} subject {subject_key!r} has invalid {field}"
             )
 
+    if "chapters" in metadata:
+        _validate_chapters(class_key, subject_key, metadata["chapters"])
+
+
+def _validate_chapters(
+    class_key: str,
+    subject_key: Any,
+    chapters: Any,
+) -> None:
+    if not isinstance(chapters, list) or not chapters:
+        raise TextbookRegistryError(
+            f"class {class_key!r} subject {subject_key!r} chapters must be a non-empty list"
+        )
+
+    seen_numbers: set[int] = set()
+    seen_identifiers: set[str] = set()
+    for index, chapter in enumerate(chapters, start=1):
+        if not isinstance(chapter, dict):
+            raise TextbookRegistryError(
+                f"class {class_key!r} subject {subject_key!r} chapter {index} must be an object"
+            )
+        missing_fields = REQUIRED_CHAPTER_FIELDS - set(chapter)
+        if missing_fields:
+            missing = ", ".join(sorted(missing_fields))
+            raise TextbookRegistryError(
+                f"class {class_key!r} subject {subject_key!r} chapter {index} is missing {missing}"
+            )
+
+        number = chapter.get("number")
+        if isinstance(number, bool) or not isinstance(number, int) or number <= 0:
+            raise TextbookRegistryError(
+                f"class {class_key!r} subject {subject_key!r} chapter {index} has invalid number"
+            )
+        title = chapter.get("title")
+        if (
+            not isinstance(title, str)
+            or not title.strip()
+            or "\x00" in title
+            or not _normalize_chapter_title(title)
+        ):
+            raise TextbookRegistryError(
+                f"class {class_key!r} subject {subject_key!r} chapter {index} has invalid title"
+            )
+        pdf_url = chapter.get("pdf_url")
+        if not _is_official_ncert_pdf_url(pdf_url):
+            raise TextbookRegistryError(
+                f"class {class_key!r} subject {subject_key!r} chapter {index} has invalid pdf_url"
+            )
+
+        identifier = _chapter_identifier(number)
+        if number in seen_numbers or identifier in seen_identifiers:
+            raise TextbookRegistryError(
+                f"class {class_key!r} subject {subject_key!r} has duplicate chapter {number}"
+            )
+        seen_numbers.add(number)
+        seen_identifiers.add(identifier)
+        chapter["title"] = title.strip()
+        chapter["pdf_url"] = pdf_url.strip()
+        chapter["id"] = identifier
+
+
+def _is_official_ncert_pdf_url(value: Any) -> bool:
+    if not isinstance(value, str) or not value.strip() or "\x00" in value:
+        return False
+    try:
+        parsed_url = urlsplit(value.strip())
+        hostname = (parsed_url.hostname or "").lower()
+        port = parsed_url.port
+    except ValueError:
+        return False
+    return (
+        parsed_url.scheme.lower() in {"http", "https"}
+        and (hostname == "ncert.nic.in" or hostname.endswith(".ncert.nic.in"))
+        and parsed_url.username is None
+        and parsed_url.password is None
+        and (port is None and not parsed_url.netloc.endswith(":"))
+        and parsed_url.path.lower().endswith(".pdf")
+    )
+
 
 def _subject_lookup(class_books: dict[str, dict[str, Any]]) -> dict[str, str]:
     return {_normalize_subject(subject): subject for subject in class_books}
+
+
+def _find_textbook(student_class: Any, subject: Any) -> dict[str, Any] | None:
+    registry = _get_registry()
+    class_key = _normalize_class(student_class)
+    subject_key = _normalize_subject(subject)
+    if not class_key or not subject_key:
+        return None
+    class_books = registry.get(class_key)
+    if not class_books:
+        return None
+    canonical_subject = _subject_lookup(class_books).get(subject_key)
+    if not canonical_subject:
+        return None
+    return class_books[canonical_subject]
 
 
 def _normalize_class(value: Any) -> str:
@@ -225,11 +354,58 @@ def _normalize_subject(value: Any) -> str:
     return re.sub(r"[^a-z0-9]+", " ", str(value or "").lower()).strip()
 
 
+def _normalize_chapter_number(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int) and value > 0:
+        return value
+    chapter_text = str(value or "").strip()
+    if chapter_text.isdigit() and int(chapter_text) > 0:
+        return int(chapter_text)
+    return None
+
+
+def _normalize_chapter_title(value: Any) -> str:
+    return _normalize_subject(value)
+
+
+def _chapter_identifier(number: int) -> str:
+    return f"chapter-{number:02d}"
+
+
 def _log_unsupported_request(student_class: Any, subject: Any) -> None:
     logger.info(
         "unsupported NCERT textbook request: class=%r subject=%r",
         student_class,
         subject,
+    )
+
+
+def _log_chapter_lookup_success(
+    student_class: Any,
+    subject: Any,
+    chapter: dict[str, Any],
+) -> None:
+    logger.info(
+        "textbook_chapter_lookup_success class=%r subject=%r chapter_id=%s",
+        student_class,
+        subject,
+        chapter["id"],
+    )
+
+
+def _log_chapter_lookup_failed(
+    student_class: Any,
+    subject: Any,
+    chapter: Any,
+    reason: str,
+) -> None:
+    logger.info(
+        "textbook_chapter_lookup_failed reason=%s class=%r subject=%r chapter=%r",
+        reason,
+        student_class,
+        subject,
+        chapter,
     )
 
 

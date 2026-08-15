@@ -89,6 +89,13 @@ class RouteTests(unittest.TestCase):
                 app_module._generated_diagram_jobs.clear()
         app_module.latest_report = {}
         self.client = app_module.app.test_client()
+        chapter_text_patcher = patch.object(
+            app_module.textbook_text_service,
+            "get_chapter_text",
+            return_value=None,
+        )
+        self.get_chapter_text = chapter_text_patcher.start()
+        self.addCleanup(chapter_text_patcher.stop)
         self.questions = [
             "What is question one?",
             "What is question two?",
@@ -379,6 +386,36 @@ Q5. What gas do plants release?
                     Chapter.title == "Quadratic Equations",
                 ).first()
             )
+
+    def test_seed_catalog_exposes_verified_class_9_science_and_mathematics_chapters(self):
+        expected_catalog = {
+            "Exploration": (
+                "Science",
+                13,
+                "Earth as a System: Energy, Matter, and Life",
+            ),
+            "Ganita Manjari": (
+                "Mathematics",
+                8,
+                "Predicting What Comes Next: Exploring Sequences and Progressions",
+            ),
+        }
+        with app_module.app.app_context():
+            seed_cbse_textbook_catalog(db.session)
+            for textbook_name, (subject, chapter_count, final_title) in expected_catalog.items():
+                with self.subTest(textbook=textbook_name):
+                    textbook = Textbook.query.filter_by(
+                        board="CBSE",
+                        class_level=9,
+                        subject=subject,
+                        name=textbook_name,
+                    ).first()
+                    self.assertIsNotNone(textbook)
+                    chapters = Chapter.query.filter_by(textbook_id=textbook.id).order_by(
+                        Chapter.chapter_number.asc()
+                    ).all()
+                    self.assertEqual(len(chapters), chapter_count)
+                    self.assertEqual(chapters[-1].title, final_title)
             self.assertIsNotNone(
                 Chapter.query.join(Textbook).filter(
                     Textbook.class_level == 8,
@@ -8146,6 +8183,385 @@ Grade: A
         )
         self.assertNotIn("upload failed", payload["message"].lower())
         self.assertIn("retry=1", payload["retry_url"])
+
+    def ncert_chapter_learn_payload(self, **overrides):
+        payload = {
+            "name": "Asha",
+            "student_class": "9",
+            "subject": "Science",
+            "book_name": "Science",
+            "topic": "Exploration: Entering the World of Secondary Science",
+        }
+        payload.update(overrides)
+        return payload
+
+    @patch.object(app_module, "local_textbook_context_section")
+    @patch.object(app_module.model, "generate_content")
+    def test_learn_uses_verified_ncert_chapter_context_in_single_prompt(
+        self,
+        generate_content,
+        local_textbook_context_section,
+    ):
+        chapter_text = "NCERT evidence about scientific exploration."
+        self.get_chapter_text.return_value = chapter_text
+        generate_content.return_value = MockResponse(
+            self.diagram_learning_response(
+                "Exploration: Entering the World of Secondary Science"
+            )
+        )
+
+        with self.assertLogs(app_module.app.logger.name, level="INFO") as logs:
+            response = self.client.post("/learn", data=self.ncert_chapter_learn_payload())
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(generate_content.call_count, 1)
+        self.get_chapter_text.assert_called_once_with(
+            "9",
+            "Science",
+            "Exploration: Entering the World of Secondary Science",
+        )
+        local_textbook_context_section.assert_not_called()
+        prompt = generate_content.call_args.args[0]
+        self.assertIn("--- BEGIN NCERT CHAPTER CONTEXT ---", prompt)
+        self.assertIn(chapter_text, prompt)
+        self.assertIn("Treat it as the primary factual", prompt)
+        self.assertIn("Class: 9", prompt)
+        self.assertIn("Subject: Science", prompt)
+        self.assertIn("Chapter: Exploration: Entering the World of Secondary Science", prompt)
+        self.assertIn("Grounded in verified NCERT chapter content", response.get_data(as_text=True))
+        log_output = "\n".join(logs.output)
+        self.assertIn("textbook_context_lookup_started", log_output)
+        self.assertIn("textbook_context_used", log_output)
+        self.assertNotIn(chapter_text, log_output)
+
+    @patch.object(app_module, "local_textbook_context_section")
+    @patch.object(app_module.model, "generate_content")
+    def test_learn_selected_verified_catalog_chapter_is_ncert_compatible(
+        self,
+        generate_content,
+        local_textbook_context_section,
+    ):
+        with app_module.app.app_context():
+            seed_cbse_textbook_catalog(db.session)
+            textbook = Textbook.query.filter_by(
+                board="CBSE",
+                class_level=9,
+                subject="Science",
+                name="Exploration",
+            ).first()
+            chapter = Chapter.query.filter_by(
+                textbook_id=textbook.id,
+                title="Cell: The Building Block of Life",
+            ).first()
+            textbook_id = textbook.id
+            chapter_id = chapter.id
+
+        self.get_chapter_text.return_value = "Verified NCERT cell content."
+        generate_content.return_value = MockResponse(
+            self.diagram_learning_response("Cell: The Building Block of Life")
+        )
+        response = self.client.post(
+            "/learn",
+            data={
+                "name": "Asha",
+                "student_class": "9",
+                "subject": "Science",
+                "book_name": "Exploration",
+                "topic": "Cell: The Building Block of Life",
+                "textbook_id": str(textbook_id),
+                "chapter_id": str(chapter_id),
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(generate_content.call_count, 1)
+        self.get_chapter_text.assert_called_once_with(
+            "9", "Science", "Cell: The Building Block of Life"
+        )
+        local_textbook_context_section.assert_not_called()
+        self.assertIn("Grounded in verified NCERT chapter content", response.get_data(as_text=True))
+
+    @patch.object(app_module, "local_textbook_context_section", return_value="")
+    @patch.object(app_module.model, "generate_content")
+    def test_learn_unsupported_chapter_preserves_existing_prompt_and_cache_path(
+        self,
+        generate_content,
+        local_textbook_context_section,
+    ):
+        generate_content.return_value = MockResponse(
+            self.diagram_learning_response("Unsupported Chapter")
+        )
+
+        with self.assertLogs(app_module.app.logger.name, level="INFO") as logs:
+            response = self.client.post(
+                "/learn",
+                data=self.ncert_chapter_learn_payload(topic="Unsupported Chapter"),
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(generate_content.call_count, 1)
+        self.get_chapter_text.assert_not_called()
+        local_textbook_context_section.assert_called_once()
+        prompt = generate_content.call_args.args[0]
+        self.assertNotIn("--- BEGIN NCERT CHAPTER CONTEXT ---", prompt)
+        self.assertIn("Topic: Unsupported Chapter", prompt)
+        self.assertNotIn("Grounded in verified NCERT chapter content", response.get_data(as_text=True))
+        self.assertIn("textbook_context_unavailable", "\n".join(logs.output))
+
+    @patch.object(app_module, "local_textbook_context_section", return_value="")
+    @patch.object(app_module.model, "generate_content")
+    def test_learn_chapter_context_failures_and_empty_text_fall_back(
+        self,
+        generate_content,
+        local_textbook_context_section,
+    ):
+        generate_content.return_value = MockResponse(
+            self.diagram_learning_response(
+                "Exploration: Entering the World of Secondary Science"
+            )
+        )
+        self.get_chapter_text.side_effect = TimeoutError("mock extraction timeout")
+
+        with self.assertLogs(app_module.app.logger.name, level="WARNING") as error_logs:
+            error_response = self.client.post("/learn", data=self.ncert_chapter_learn_payload())
+
+        self.assertEqual(error_response.status_code, 200)
+        self.assertEqual(generate_content.call_count, 1)
+        self.assertNotIn(
+            "--- BEGIN NCERT CHAPTER CONTEXT ---",
+            generate_content.call_args.args[0],
+        )
+        self.assertIn("textbook_context_error", "\n".join(error_logs.output))
+
+        self.get_chapter_text.side_effect = None
+        self.get_chapter_text.return_value = ""
+        with self.assertLogs(app_module.app.logger.name, level="INFO") as empty_logs:
+            empty_response = self.client.post("/learn", data=self.ncert_chapter_learn_payload())
+
+        self.assertEqual(empty_response.status_code, 200)
+        self.assertEqual(generate_content.call_count, 2)
+        self.assertIn("textbook_context_unavailable", "\n".join(empty_logs.output))
+        self.assertEqual(local_textbook_context_section.call_count, 2)
+
+    @patch.object(app_module, "local_textbook_context_section")
+    @patch.object(app_module.model, "generate_content")
+    def test_learn_truncates_ncert_context_without_another_gemini_call(
+        self,
+        generate_content,
+        local_textbook_context_section,
+    ):
+        chapter_text = "x" * 40
+        self.get_chapter_text.return_value = chapter_text
+        generate_content.return_value = MockResponse(
+            self.diagram_learning_response(
+                "Exploration: Entering the World of Secondary Science"
+            )
+        )
+
+        with patch.object(app_module, "TEXTBOOK_CONTEXT_MAX_CHARS", 24):
+            with self.assertLogs(app_module.app.logger.name, level="INFO") as logs:
+                response = self.client.post("/learn", data=self.ncert_chapter_learn_payload())
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(generate_content.call_count, 1)
+        local_textbook_context_section.assert_not_called()
+        prompt = generate_content.call_args.args[0]
+        self.assertIn("x" * 24, prompt)
+        self.assertNotIn("x" * 25, prompt)
+        log_output = "\n".join(logs.output)
+        self.assertIn("textbook_context_truncated", log_output)
+        self.assertNotIn(chapter_text, log_output)
+
+    def test_ncert_context_cleanup_and_boundary_truncation_are_conservative(self):
+        cleaned = app_module.clean_ncert_chapter_context(
+            "First line  \x00\n\n\nSecond line\nSecond line\n\nThird line"
+        )
+        context, truncated, boundary = app_module.truncate_ncert_chapter_context(
+            "First paragraph has enough words to preserve a clean ending.\n\n"
+            "Second paragraph should not be split into the context.",
+            70,
+        )
+
+        self.assertEqual(cleaned, "First line\n\nSecond line\n\nThird line")
+        self.assertTrue(truncated)
+        self.assertEqual(boundary, "paragraph")
+        self.assertEqual(context, "First paragraph has enough words to preserve a clean ending.")
+
+    def test_ncert_context_exact_topic_excerpt_is_local_and_predictable(self):
+        chapter_text = (
+            "Opening material that establishes the chapter.\n\n"
+            + ("Background detail. " * 20)
+            + "\n\nSpecific Topic appears here with verified details.\n\n"
+            + ("Closing detail. " * 20)
+        )
+        excerpt, matched = app_module.ncert_topic_excerpt(
+            chapter_text,
+            "Specific Topic",
+            "Registered Chapter",
+            180,
+        )
+        unchanged, no_match = app_module.ncert_topic_excerpt(
+            chapter_text,
+            "Missing Topic",
+            "Registered Chapter",
+            180,
+        )
+
+        self.assertTrue(matched)
+        self.assertIn("Specific Topic appears here", excerpt)
+        self.assertLessEqual(len(excerpt), 180)
+        self.assertFalse(no_match)
+        self.assertEqual(unchanged, chapter_text.strip())
+
+    def test_ncert_context_under_limit_is_preserved_and_missing_topic_uses_chapter_start(self):
+        under_limit, under_limit_metadata = app_module.prepare_ncert_chapter_context(
+            "A complete verified paragraph.",
+            "Registered Chapter",
+            "Registered Chapter",
+        )
+        oversized_text = (
+            "Opening verified chapter material stays first.\n\n"
+            + ("Later chapter detail. " * 40)
+        )
+        with patch.object(app_module, "TEXTBOOK_CONTEXT_MAX_CHARS", 120):
+            bounded, metadata = app_module.prepare_ncert_chapter_context(
+                oversized_text,
+                "Missing Topic",
+                "Registered Chapter",
+            )
+
+        self.assertEqual(under_limit, "A complete verified paragraph.")
+        self.assertFalse(under_limit_metadata["truncated"])
+        self.assertFalse(metadata["topic_excerpt_used"])
+        self.assertTrue(metadata["truncated"])
+        self.assertLessEqual(len(bounded), 120)
+        self.assertTrue(bounded.startswith("Opening verified chapter material stays first."))
+
+    @patch.object(app_module, "local_textbook_context_section")
+    @patch.object(app_module.model, "generate_content")
+    def test_ncert_context_keeps_local_quiz_fallback_unchanged(
+        self,
+        generate_content,
+        local_textbook_context_section,
+    ):
+        self.get_chapter_text.return_value = "Verified NCERT chapter material."
+        generate_content.return_value = MockResponse(
+            """# Exploration
+Science begins with careful observation.
+
+## Quick Revision
+- Observe closely.
+
+## Visualization Decision JSON
+{"visualization_required": false, "reason": "Text lesson."}
+
+## Diagram JSON
+{"template":"generic","title":"Exploration","elements":{},"labels":[],"type":"none","nodes":[],"connections":[],"reason":"Text lesson.","confidence":0.1}
+"""
+        )
+
+        with self.assertLogs(app_module.app.logger.name, level="INFO") as logs:
+            response = self.client.post("/learn", data=self.ncert_chapter_learn_payload())
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(generate_content.call_count, 1)
+        self.assertIn(
+            "In your own words, explain the main idea of Exploration: Entering the World of Secondary Science",
+            response.get_data(as_text=True),
+        )
+        local_textbook_context_section.assert_not_called()
+        self.assertIn("source=local_fallback", "\n".join(logs.output))
+
+    @patch.object(app_module, "local_textbook_context_section")
+    @patch.object(app_module.model, "generate_content")
+    def test_ncert_context_cache_version_bypasses_context_free_lesson_and_reuses_matching_lesson(
+        self,
+        generate_content,
+        local_textbook_context_section,
+    ):
+        self.register_user(extra_data={"student_class": "9"})
+        self.login_user()
+        chapter_title = "Exploration: Entering the World of Secondary Science"
+        with app_module.app.app_context():
+            user = User.query.filter_by(username="asha").first()
+            app_module.save_learning_history(
+                user.id,
+                "Science",
+                "Science",
+                chapter_title,
+                "# Context-free lesson\nOld notes.",
+                {"available": False},
+                self.questions,
+                student_class="9",
+            )
+
+        self.get_chapter_text.return_value = "Verified NCERT chapter material."
+        generate_content.return_value = MockResponse(
+            self.diagram_learning_response(chapter_title)
+        )
+        with self.assertLogs(app_module.app.logger.name, level="INFO") as logs:
+            response = self.client.post("/learn", data=self.ncert_chapter_learn_payload())
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(generate_content.call_count, 1)
+        self.assertNotIn("Old notes.", response.get_data(as_text=True))
+        local_textbook_context_section.assert_not_called()
+        with app_module.app.app_context():
+            lessons = LearningHistory.query.order_by(LearningHistory.id).all()
+            self.assertEqual(len(lessons), 2)
+            self.assertIn("Plants make food using sunlight.", lessons[-1].notes)
+            self.assertEqual(
+                json.loads(lessons[-1].diagram_data)["textbook_context_version"],
+                app_module.NCERT_CHAPTER_CONTEXT_VERSION,
+            )
+        log_output = "\n".join(logs.output)
+        self.assertIn("event=lesson_cache_miss", log_output)
+        self.assertNotIn("event=lesson_cache_hit", log_output)
+
+        generate_content.side_effect = AssertionError("Gemini must not run on matching cache hit")
+        with self.assertLogs(app_module.app.logger.name, level="INFO") as cache_logs:
+            cached_response = self.client.post(
+                "/learn", data=self.ncert_chapter_learn_payload()
+            )
+
+        self.assertEqual(cached_response.status_code, 200)
+        self.assertIn("Plants make food using sunlight.", cached_response.get_data(as_text=True))
+        self.assertIn(
+            "Grounded in verified NCERT chapter content",
+            cached_response.get_data(as_text=True),
+        )
+        self.assertEqual(generate_content.call_count, 1)
+        self.assertIn("event=lesson_cache_hit", "\n".join(cache_logs.output))
+
+    @patch.object(app_module, "local_textbook_context_section", return_value="")
+    @patch.object(app_module.model, "generate_content")
+    def test_unsupported_ncert_chapter_retains_existing_lesson_cache(self, generate_content, _):
+        self.register_user(extra_data={"student_class": "9"})
+        self.login_user()
+        with app_module.app.app_context():
+            user = User.query.filter_by(username="asha").first()
+            app_module.save_learning_history(
+                user.id,
+                "Science",
+                "Science",
+                "Unsupported Chapter",
+                "# Cached lesson\nExisting notes.",
+                {"available": False},
+                self.questions,
+                student_class="9",
+            )
+
+        generate_content.side_effect = AssertionError("Gemini must not run on cache hit")
+        with self.assertLogs(app_module.app.logger.name, level="INFO") as logs:
+            response = self.client.post(
+                "/learn",
+                data=self.ncert_chapter_learn_payload(topic="Unsupported Chapter"),
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("Existing notes.", response.get_data(as_text=True))
+        generate_content.assert_not_called()
+        self.assertIn("event=lesson_cache_hit", "\n".join(logs.output))
 
 
 if __name__ == "__main__":

@@ -47,6 +47,9 @@
         <span><strong>Book</strong> {{ book_name }}</span>
         {% endif %}
         <span><strong>Topic</strong> {{ topic }}</span>
+        {% if ncert_context_used %}
+        <span><strong>✓</strong> Grounded in verified NCERT chapter content</span>
+        {% endif %}
         </div>
     </header>
 

@@ -118,19 +118,128 @@
       "board": "CBSE",
       "class": 9,
       "subject": "Science",
-      "title": "Science",
+      "title": "Exploration",
       "pdf_url": "placeholder://ncert/cbse/class-9/science/science",
       "language": "English",
-      "version": "latest"
+      "version": "latest",
+      "chapters": [
+        {
+          "number": 1,
+          "title": "Exploration: Entering the World of Secondary Science",
+          "pdf_url": "https://ncert.nic.in/textbook/pdf/iesc101.pdf"
+        },
+        {
+          "number": 2,
+          "title": "Cell: The Building Block of Life",
+          "pdf_url": "https://ncert.nic.in/textbook/pdf/iesc102.pdf"
+        },
+        {
+          "number": 3,
+          "title": "Tissues in Action",
+          "pdf_url": "https://ncert.nic.in/textbook/pdf/iesc103.pdf"
+        },
+        {
+          "number": 4,
+          "title": "Describing Motion Around Us",
+          "pdf_url": "https://ncert.nic.in/textbook/pdf/iesc104.pdf"
+        },
+        {
+          "number": 5,
+          "title": "Exploring Mixtures and their Separation",
+          "pdf_url": "https://ncert.nic.in/textbook/pdf/iesc105.pdf"
+        },
+        {
+          "number": 6,
+          "title": "How Forces Affect Motion",
+          "pdf_url": "https://ncert.nic.in/textbook/pdf/iesc106.pdf"
+        },
+        {
+          "number": 7,
+          "title": "Work, Energy, and Simple Machines",
+          "pdf_url": "https://ncert.nic.in/textbook/pdf/iesc107.pdf"
+        },
+        {
+          "number": 8,
+          "title": "Journey Inside the Atom",
+          "pdf_url": "https://ncert.nic.in/textbook/pdf/iesc108.pdf"
+        },
+        {
+          "number": 9,
+          "title": "Atomic Foundations of Matter",
+          "pdf_url": "https://ncert.nic.in/textbook/pdf/iesc109.pdf"
+        },
+        {
+          "number": 10,
+          "title": "Sound Waves: Characteristics and Applications",
+          "pdf_url": "https://ncert.nic.in/textbook/pdf/iesc110.pdf"
+        },
+        {
+          "number": 11,
+          "title": "Reproduction: How Life Continues",
+          "pdf_url": "https://ncert.nic.in/textbook/pdf/iesc111.pdf"
+        },
+        {
+          "number": 12,
+          "title": "Patterns in Life: Diversity and Classification",
+          "pdf_url": "https://ncert.nic.in/textbook/pdf/iesc112.pdf"
+        },
+        {
+          "number": 13,
+          "title": "Earth as a System: Energy, Matter, and Life",
+          "pdf_url": "https://ncert.nic.in/textbook/pdf/iesc113.pdf"
+        }
+      ]
     },
     "Mathematics": {
       "board": "CBSE",
       "class": 9,
       "subject": "Mathematics",
-      "title": "Mathematics",
+      "title": "Ganita Manjari",
       "pdf_url": "placeholder://ncert/cbse/class-9/mathematics/mathematics",
       "language": "English",
-      "version": "latest"
+      "version": "latest",
+      "chapters": [
+        {
+          "number": 1,
+          "title": "Orienting Yourself: The Use of Coordinates",
+          "pdf_url": "https://ncert.nic.in/textbook/pdf/iemh101.pdf"
+        },
+        {
+          "number": 2,
+          "title": "Introduction to Linear Polynomials",
+          "pdf_url": "https://ncert.nic.in/textbook/pdf/iemh102.pdf"
+        },
+        {
+          "number": 3,
+          "title": "The World of Numbers",
+          "pdf_url": "https://ncert.nic.in/textbook/pdf/iemh103.pdf"
+        },
+        {
+          "number": 4,
+          "title": "Exploring Algebraic Identities",
+          "pdf_url": "https://ncert.nic.in/textbook/pdf/iemh104.pdf"
+        },
+        {
+          "number": 5,
+          "title": "I’m Up and Down, and Round and Round",
+          "pdf_url": "https://ncert.nic.in/textbook/pdf/iemh105.pdf"
+        },
+        {
+          "number": 6,
+          "title": "Measuring Space: Perimeter and Area",
+          "pdf_url": "https://ncert.nic.in/textbook/pdf/iemh106.pdf"
+        },
+        {
+          "number": 7,
+          "title": "The Mathematics of Maybe: Introduction to Probability",
+          "pdf_url": "https://ncert.nic.in/textbook/pdf/iemh107.pdf"
+        },
+        {
+          "number": 8,
+          "title": "Predicting What Comes Next: Exploring Sequences and Progressions",
+          "pdf_url": "https://ncert.nic.in/textbook/pdf/iemh108.pdf"
+        }
+      ]
     },
     "English": {
       "board": "CBSE",
@@ -139,16 +248,105 @@
       "title": "Kaveri",
       "pdf_url": "placeholder://ncert/cbse/class-9/english/kaveri",
       "language": "English",
-      "version": "latest"
+      "version": "latest",
+      "chapters": [
+        {
+          "number": 1,
+          "title": "How I Taught My Grandmother to Read",
+          "pdf_url": "https://ncert.nic.in/textbook/pdf/iebe101.pdf"
+        },
+        {
+          "number": 2,
+          "title": "The Pot Maker",
+          "pdf_url": "https://ncert.nic.in/textbook/pdf/iebe102.pdf"
+        },
+        {
+          "number": 3,
+          "title": "Winds of Change",
+          "pdf_url": "https://ncert.nic.in/textbook/pdf/iebe103.pdf"
+        },
+        {
+          "number": 4,
+          "title": "Vitamin-M",
+          "pdf_url": "https://ncert.nic.in/textbook/pdf/iebe104.pdf"
+        },
+        {
+          "number": 5,
+          "title": "The World of Limitless Possibilities",
+          "pdf_url": "https://ncert.nic.in/textbook/pdf/iebe105.pdf"
+        },
+        {
+          "number": 6,
+          "title": "Twin Melodies",
+          "pdf_url": "https://ncert.nic.in/textbook/pdf/iebe106.pdf"
+        },
+        {
+          "number": 7,
+          "title": "Carrier of Words",
+          "pdf_url": "https://ncert.nic.in/textbook/pdf/iebe107.pdf"
+        },
+        {
+          "number": 8,
+          "title": "Follow That Dream",
+          "pdf_url": "https://ncert.nic.in/textbook/pdf/iebe108.pdf"
+        }
+      ]
     },
     "Social Science": {
       "board": "CBSE",
       "class": 9,
       "subject": "Social Science",
-      "title": "Understanding Society: India and Beyond",
+      "title": "Understanding Society: India and Beyond Part-I",
       "pdf_url": "placeholder://ncert/cbse/class-9/social-science/understanding-society-india-and-beyond",
       "language": "English",
-      "version": "latest"
+      "version": "latest",
+      "chapters": [
+        {
+          "number": 1,
+          "title": "Understanding Social Science",
+          "pdf_url": "https://ncert.nic.in/textbook/pdf/iest101.pdf"
+        },
+        {
+          "number": 2,
+          "title": "Shaping of the Earth’s Surface",
+          "pdf_url": "https://ncert.nic.in/textbook/pdf/iest102.pdf"
+        },
+        {
+          "number": 3,
+          "title": "Atmosphere and Climate",
+          "pdf_url": "https://ncert.nic.in/textbook/pdf/iest103.pdf"
+        },
+        {
+          "number": 4,
+          "title": "Early Humans and Beginning of Civilisation",
+          "pdf_url": "https://ncert.nic.in/textbook/pdf/iest104.pdf"
+        },
+        {
+          "number": 5,
+          "title": "State and Society up to 1000 CE",
+          "pdf_url": "https://ncert.nic.in/textbook/pdf/iest105.pdf"
+        },
+        {
+          "number": 6,
+          "title": "Democracy",
+          "pdf_url": "https://ncert.nic.in/textbook/pdf/iest106.pdf"
+        },
+        {
+          "number": 7,
+          "title": "Elections",
+          "pdf_url": "https://ncert.nic.in/textbook/pdf/iest107.pdf"
+        },
+        {
+          "number": 8,
+          "title": "Building Blocks in Economics: The Problem of Choice",
+          "pdf_url": "https://ncert.nic.in/textbook/pdf/iest108.pdf"
+        },
+        {
+          "number": 9,
+          "title": "The Price Puzzle: What Drives the Market",
+          "pdf_url": "https://ncert.nic.in/textbook/pdf/iest109.pdf"
+        }
+      ]
     }
   },
   "10": {

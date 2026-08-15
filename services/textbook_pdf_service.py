@@ -54,42 +54,121 @@ def get_textbook_pdf(
         )
         return None
 
-    pdf_url = str(textbook.get("pdf_url") or "").strip()
-    url_issue = _url_issue(pdf_url)
-    if url_issue:
+    cache_path = build_textbook_cache_path(textbook, cache_dir=cache_dir)
+    return _get_registered_pdf(
+        textbook,
+        cache_path,
+        student_class=student_class,
+        subject=subject,
+        event_prefix="textbook_pdf",
+    )
+
+
+def get_chapter_pdf(
+    student_class: Any,
+    subject: Any,
+    chapter: Any,
+    *,
+    cache_dir: str | os.PathLike[str] | None = None,
+) -> Path | None:
+    """Return a cached chapter PDF, downloading it when necessary."""
+    textbook = textbook_registry.get_textbook(student_class, subject)
+    chapter_metadata = textbook_registry.get_chapter(student_class, subject, chapter)
+    if textbook is None or chapter_metadata is None:
         logger.info(
-            "textbook_pdf_download_failed reason=%s class=%r subject=%r",
-            url_issue,
+            "textbook_chapter_pdf_download_failed reason=registry_missing "
+            "class=%r subject=%r chapter=%r",
             student_class,
             subject,
+            chapter,
         )
         return None
 
-    cache_path = build_textbook_cache_path(textbook, cache_dir=cache_dir)
+    cache_path = build_chapter_cache_path(
+        textbook,
+        chapter_metadata,
+        cache_dir=cache_dir,
+    )
+    return _get_registered_pdf(
+        chapter_metadata,
+        cache_path,
+        student_class=student_class,
+        subject=subject,
+        event_prefix="textbook_chapter_pdf",
+        chapter_id=chapter_metadata["id"],
+    )
+
+
+def _get_registered_pdf(
+    metadata: dict[str, Any],
+    cache_path: Path,
+    *,
+    student_class: Any,
+    subject: Any,
+    event_prefix: str,
+    chapter_id: str | None = None,
+) -> Path | None:
+    """Retrieve a registry-backed PDF through the shared cache/download path."""
+    pdf_url = str(metadata.get("pdf_url") or "").strip()
+    url_issue = _url_issue(pdf_url)
+    if url_issue:
+        logger.info(
+            "%s_download_failed reason=%s class=%r subject=%r%s",
+            event_prefix,
+            url_issue,
+            student_class,
+            subject,
+            _chapter_log_suffix(chapter_id),
+        )
+        return None
+
     cache_key = cache_path.stem.rsplit("_", 1)[-1]
     if _is_valid_pdf(cache_path):
-        _log_cache_hit(student_class, subject, cache_key)
+        _log_cache_hit(
+            student_class,
+            subject,
+            cache_key,
+            event_prefix=event_prefix,
+            chapter_id=chapter_id,
+        )
         return cache_path
 
     logger.info(
-        "textbook_pdf_cache_miss class=%r subject=%r cache_key=%s",
+        "%s_cache_miss class=%r subject=%r cache_key=%s%s",
+        event_prefix,
         student_class,
         subject,
         cache_key,
+        _chapter_log_suffix(chapter_id),
     )
 
     with _lock_for(cache_path):
         if _is_valid_pdf(cache_path):
-            _log_cache_hit(student_class, subject, cache_key)
+            _log_cache_hit(
+                student_class,
+                subject,
+                cache_key,
+                event_prefix=event_prefix,
+                chapter_id=chapter_id,
+            )
             return cache_path
 
-        _remove_invalid_cache_file(cache_path, student_class, subject, cache_key)
+        _remove_invalid_cache_file(
+            cache_path,
+            student_class,
+            subject,
+            cache_key,
+            event_prefix=event_prefix,
+            chapter_id=chapter_id,
+        )
         return _download_pdf(
             pdf_url,
             cache_path,
             student_class=student_class,
             subject=subject,
             cache_key=cache_key,
+            event_prefix=event_prefix,
+            chapter_id=chapter_id,
         )
 
 
@@ -112,6 +191,37 @@ def build_textbook_cache_path(
     return cache_root / filename
 
 
+def build_chapter_cache_path(
+    textbook: dict[str, Any],
+    chapter: dict[str, Any],
+    *,
+    cache_dir: str | os.PathLike[str] | None = None,
+) -> Path:
+    """Build a deterministic, traversal-safe cache path for one chapter PDF."""
+    cache_root = (
+        Path(cache_dir or TEXTBOOK_PDF_CACHE_DIR).resolve(strict=False) / "chapters"
+    )
+    class_slug = _safe_slug(textbook.get("class"), "unknown", maximum_length=16)
+    subject_slug = _safe_slug(
+        textbook.get("subject"), "unknown-subject", maximum_length=32
+    )
+    textbook_slug = _safe_slug(
+        textbook.get("title"), "unknown-textbook", maximum_length=32
+    )
+    chapter_number = _safe_chapter_number(chapter.get("number"))
+    chapter_slug = _safe_slug(
+        chapter.get("title"),
+        "unknown-chapter",
+        maximum_length=32,
+    )
+    cache_key = _chapter_metadata_cache_key(textbook, chapter)[:16]
+    filename = (
+        f"class_{class_slug}_{subject_slug}_{textbook_slug}_chapter_"
+        f"{chapter_number}_{chapter_slug}_{cache_key}.pdf"
+    )
+    return cache_root / filename
+
+
 def _download_pdf(
     pdf_url: str,
     cache_path: Path,
@@ -119,16 +229,20 @@ def _download_pdf(
     student_class: Any,
     subject: Any,
     cache_key: str,
+    event_prefix: str = "textbook_pdf",
+    chapter_id: str | None = None,
 ) -> Path | None:
     temporary_path: Path | None = None
     safe_url = _safe_url_for_log(pdf_url)
     try:
         cache_path.parent.mkdir(parents=True, exist_ok=True)
         logger.info(
-            "textbook_pdf_download_started class=%r subject=%r cache_key=%s url=%s",
+            "%s_download_started class=%r subject=%r cache_key=%s%s url=%s",
+            event_prefix,
             student_class,
             subject,
             cache_key,
+            _chapter_log_suffix(chapter_id),
             safe_url,
         )
         with requests.get(
@@ -150,6 +264,8 @@ def _download_pdf(
                 cache_key,
                 reason="empty",
                 content_type=content_type,
+                event_prefix=event_prefix,
+                chapter_id=chapter_id,
             )
             return None
 
@@ -160,27 +276,33 @@ def _download_pdf(
                 cache_key,
                 reason="non_pdf",
                 content_type=content_type,
+                event_prefix=event_prefix,
+                chapter_id=chapter_id,
             )
             return None
 
         os.replace(temporary_path, cache_path)
         temporary_path = None
         logger.info(
-            "textbook_pdf_download_complete class=%r subject=%r cache_key=%s bytes=%s",
+            "%s_download_complete class=%r subject=%r cache_key=%s%s bytes=%s",
+            event_prefix,
             student_class,
             subject,
             cache_key,
+            _chapter_log_suffix(chapter_id),
             bytes_written,
         )
         return cache_path
     except Exception as error:
         logger.warning(
-            "textbook_pdf_download_failed reason=%s class=%r subject=%r "
-            "cache_key=%s url=%s",
+            "%s_download_failed reason=%s class=%r subject=%r "
+            "cache_key=%s%s url=%s",
+            event_prefix,
             type(error).__name__,
             student_class,
             subject,
             cache_key,
+            _chapter_log_suffix(chapter_id),
             safe_url,
         )
         return None
@@ -190,12 +312,14 @@ def _download_pdf(
                 temporary_path.unlink(missing_ok=True)
             except OSError as error:
                 logger.warning(
-                    "textbook_pdf_download_failed reason=temp_cleanup_%s class=%r "
-                    "subject=%r cache_key=%s",
+                    "%s_download_failed reason=temp_cleanup_%s class=%r "
+                    "subject=%r cache_key=%s%s",
+                    event_prefix,
                     type(error).__name__,
                     student_class,
                     subject,
                     cache_key,
+                    _chapter_log_suffix(chapter_id),
                 )
 
 
@@ -251,11 +375,48 @@ def _metadata_cache_key(textbook: dict[str, Any]) -> str:
     return hashlib.sha256(canonical_metadata.encode("utf-8")).hexdigest()
 
 
+def _chapter_metadata_cache_key(
+    textbook: dict[str, Any],
+    chapter: dict[str, Any],
+) -> str:
+    key_fields = {
+        "textbook": {
+            field: textbook.get(field)
+            for field in (
+                "board",
+                "class",
+                "subject",
+                "title",
+                "language",
+                "version",
+            )
+        },
+        "chapter": {
+            field: chapter.get(field)
+            for field in ("id", "number", "title", "pdf_url")
+        },
+    }
+    canonical_metadata = json.dumps(
+        key_fields,
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+    return hashlib.sha256(canonical_metadata.encode("utf-8")).hexdigest()
+
+
 def _safe_slug(value: Any, default: str, *, maximum_length: int) -> str:
     text = unicodedata.normalize("NFKD", str(value or ""))
     text = text.encode("ascii", "ignore").decode("ascii").lower()
     text = re.sub(r"[^a-z0-9]+", "-", text).strip("-")
     return (text[:maximum_length].strip("-") or default)
+
+
+def _safe_chapter_number(value: Any) -> str:
+    if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+        return f"{value:02d}"
+    return "unknown"
 
 
 def _url_issue(pdf_url: str) -> str | None:
@@ -325,6 +486,9 @@ def _remove_invalid_cache_file(
     student_class: Any,
     subject: Any,
     cache_key: str,
+    *,
+    event_prefix: str = "textbook_pdf",
+    chapter_id: str | None = None,
 ) -> None:
     try:
         if cache_path.exists() or cache_path.is_symlink():
@@ -335,15 +499,19 @@ def _remove_invalid_cache_file(
                 cache_key,
                 reason="invalid_cached_file",
                 content_type="",
+                event_prefix=event_prefix,
+                chapter_id=chapter_id,
             )
     except OSError as error:
         logger.warning(
-            "textbook_pdf_download_failed reason=cache_cleanup_%s class=%r "
-            "subject=%r cache_key=%s",
+            "%s_download_failed reason=cache_cleanup_%s class=%r "
+            "subject=%r cache_key=%s%s",
+            event_prefix,
             type(error).__name__,
             student_class,
             subject,
             cache_key,
+            _chapter_log_suffix(chapter_id),
         )
 
 
@@ -353,12 +521,21 @@ def _lock_for(cache_path: Path) -> threading.Lock:
         return _cache_locks.setdefault(lock_key, threading.Lock())
 
 
-def _log_cache_hit(student_class: Any, subject: Any, cache_key: str) -> None:
+def _log_cache_hit(
+    student_class: Any,
+    subject: Any,
+    cache_key: str,
+    *,
+    event_prefix: str = "textbook_pdf",
+    chapter_id: str | None = None,
+) -> None:
     logger.info(
-        "textbook_pdf_cache_hit class=%r subject=%r cache_key=%s",
+        "%s_cache_hit class=%r subject=%r cache_key=%s%s",
+        event_prefix,
         student_class,
         subject,
         cache_key,
+        _chapter_log_suffix(chapter_id),
     )
 
 
@@ -369,16 +546,24 @@ def _log_invalid_response(
     *,
     reason: str,
     content_type: str,
+    event_prefix: str = "textbook_pdf",
+    chapter_id: str | None = None,
 ) -> None:
     logger.warning(
-        "textbook_pdf_invalid_response reason=%s class=%r subject=%r "
-        "cache_key=%s content_type=%r",
+        "%s_invalid_response reason=%s class=%r subject=%r "
+        "cache_key=%s%s content_type=%r",
+        event_prefix,
         reason,
         student_class,
         subject,
         cache_key,
+        _chapter_log_suffix(chapter_id),
         content_type,
     )
+
+
+def _chapter_log_suffix(chapter_id: str | None) -> str:
+    return f" chapter_id={chapter_id}" if chapter_id else ""
 
 
 def _clear_cache_locks_for_tests() -> None:
