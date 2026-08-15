@@ -132,7 +132,7 @@
             button.innerHTML = `
                 <span class="memory-card-inner">
                     <span class="memory-card-face memory-card-back" aria-hidden="true">
-                        <img class="memory-card-icon" src="/static/images/ai-study-buddy-icon.png" alt="">
+                        <img class="memory-card-icon" src="/static/images/ai-study-buddy-mark-v2.png" alt="">
                     </span>
                     <span class="memory-card-face memory-card-front">
                         <small>${card.label}</small>

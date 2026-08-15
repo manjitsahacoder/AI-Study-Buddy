@@ -3720,12 +3720,12 @@ Grade: A
         self.assertEqual(response.status_code, 200)
         page = response.get_data(as_text=True)
         head = page.split("</head>", 1)[0]
-        self.assertIn('rel="manifest" href="/manifest.json"', page)
+        self.assertIn('rel="manifest" href="/manifest.json?v=ai-study-buddy-v2"', page)
         self.assertIn('name="theme-color" content="#3157d5"', page)
         self.assertIn('name="apple-mobile-web-app-title" content="AI Study Buddy"', head)
-        self.assertIn('rel="icon" href="/static/icons/favicon.ico" sizes="any"', head)
+        self.assertIn('rel="icon" href="/static/icons/favicon.ico?v=ai-study-buddy-v2" sizes="any"', head)
         self.assertIn(
-            'rel="apple-touch-icon" type="image/png" sizes="180x180" href="/static/icons/apple-touch-icon.png"',
+            'rel="apple-touch-icon" type="image/png" sizes="180x180" href="/static/icons/apple-touch-icon.png?v=ai-study-buddy-v2"',
             head,
         )
         self.assertEqual(1, head.count('rel="manifest"'))
@@ -3865,20 +3865,20 @@ Grade: A
         self.assertEqual(manifest["theme_color"], "#3157d5")
         self.assertEqual(manifest["background_color"], "#ffffff")
         expected_icons = {
-            ("48x48", "/static/icons/icon-48.png", "any"),
-            ("72x72", "/static/icons/icon-72.png", "any"),
-            ("96x96", "/static/icons/icon-96.png", "any"),
-            ("128x128", "/static/icons/icon-128.png", "any"),
-            ("144x144", "/static/icons/icon-144.png", "any"),
-            ("152x152", "/static/icons/icon-152.png", "any"),
-            ("180x180", "/static/icons/icon-180.png", "any"),
-            ("192x192", "/static/icons/icon-192.png", "any"),
-            ("256x256", "/static/icons/icon-256.png", "any"),
-            ("384x384", "/static/icons/icon-384.png", "any"),
-            ("512x512", "/static/icons/icon-512.png", "any"),
-            ("192x192", "/static/icons/maskable-192.png", "maskable"),
-            ("512x512", "/static/icons/maskable-512.png", "maskable"),
-            ("512x512", "/static/icons/maskable-icon.png", "maskable"),
+            ("48x48", "/static/icons/icon-48.png?v=ai-study-buddy-v2", "any"),
+            ("72x72", "/static/icons/icon-72.png?v=ai-study-buddy-v2", "any"),
+            ("96x96", "/static/icons/icon-96.png?v=ai-study-buddy-v2", "any"),
+            ("128x128", "/static/icons/icon-128.png?v=ai-study-buddy-v2", "any"),
+            ("144x144", "/static/icons/icon-144.png?v=ai-study-buddy-v2", "any"),
+            ("152x152", "/static/icons/icon-152.png?v=ai-study-buddy-v2", "any"),
+            ("180x180", "/static/icons/icon-180.png?v=ai-study-buddy-v2", "any"),
+            ("192x192", "/static/icons/icon-192.png?v=ai-study-buddy-v2", "any"),
+            ("256x256", "/static/icons/icon-256.png?v=ai-study-buddy-v2", "any"),
+            ("384x384", "/static/icons/icon-384.png?v=ai-study-buddy-v2", "any"),
+            ("512x512", "/static/icons/icon-512.png?v=ai-study-buddy-v2", "any"),
+            ("192x192", "/static/icons/maskable-192.png?v=ai-study-buddy-v2", "maskable"),
+            ("512x512", "/static/icons/maskable-512.png?v=ai-study-buddy-v2", "maskable"),
+            ("512x512", "/static/icons/maskable-icon.png?v=ai-study-buddy-v2", "maskable"),
         }
         self.assertEqual(
             {(icon["sizes"], icon["src"], icon["purpose"]) for icon in manifest["icons"]},
@@ -3889,7 +3889,7 @@ Grade: A
         for icon in manifest["icons"]:
             icon_path = os.path.join(
                 app_module.app.root_path,
-                icon["src"].lstrip("/").replace("/", os.sep),
+                icon["src"].split("?", 1)[0].lstrip("/").replace("/", os.sep),
             )
             self.assertTrue(os.path.exists(icon_path))
             self.assertEqual(icon["type"], "image/png")
@@ -3905,8 +3905,7 @@ Grade: A
         from PIL import Image
 
         expected_sizes = {
-            "static/images/ai-study-buddy-logo.png": (1254, 1254),
-            "static/images/ai-study-buddy-icon.png": (1024, 1024),
+            "static/images/ai-study-buddy-mark-v2.png": (1254, 1254),
             "static/icons/favicon-16.png": (16, 16),
             "static/icons/favicon-32.png": (32, 32),
             "static/icons/apple-touch-icon.png": (180, 180),
@@ -3949,6 +3948,27 @@ Grade: A
                 safe_radius_squared,
             )
 
+    def test_app_logo_uses_only_the_versioned_canonical_asset(self):
+        canonical_asset = "ai-study-buddy-mark-v2.png"
+        legacy_assets = ("ai-study-buddy-logo.png", "ai-study-buddy-icon.png")
+        application_sources = [
+            Path("templates/index.html"),
+            Path("templates/components/loading_overlay.html"),
+            Path("templates/components/dashboard_sidebar.html"),
+            Path("static/js/memory_challenge.js"),
+            Path("static/service-worker.js"),
+        ]
+
+        self.assertTrue(Path("static/images").joinpath(canonical_asset).is_file())
+        for legacy_asset in legacy_assets:
+            self.assertFalse(Path("static/images").joinpath(legacy_asset).exists())
+        for source_path in application_sources:
+            source = source_path.read_text(encoding="utf-8")
+            self.assertNotIn(legacy_assets[0], source)
+            self.assertNotIn(legacy_assets[1], source)
+        self.assertIn(canonical_asset, Path("templates/components/dashboard_sidebar.html").read_text(encoding="utf-8"))
+        self.assertIn("SCHOOL_LOGO.png", Path("templates/index.html").read_text(encoding="utf-8"))
+
     def test_service_worker_is_root_scoped_and_avoids_dynamic_caching(self):
         response = self.client.get("/service-worker.js")
 
@@ -3956,12 +3976,15 @@ Grade: A
         self.assertEqual(response.headers["Service-Worker-Allowed"], "/")
         self.assertEqual(response.headers["Cache-Control"], "no-cache")
         script = response.get_data(as_text=True)
-        self.assertIn('const CACHE_VERSION = "ai-study-buddy-pwa-v7"', script)
+        self.assertIn('const CACHE_VERSION = "ai-study-buddy-pwa-v8"', script)
         self.assertNotIn('/static/images/SCHOOL_LOGO.png', script)
-        self.assertIn('/static/icons/apple-touch-icon.png', script)
-        self.assertIn('/static/icons/icon-192.png', script)
-        self.assertIn('/static/icons/icon-512.png', script)
-        self.assertIn('/static/icons/maskable-512.png', script)
+        self.assertNotIn('/static/images/ai-study-buddy-logo.png', script)
+        self.assertNotIn('/static/images/ai-study-buddy-icon.png', script)
+        self.assertIn('/static/images/ai-study-buddy-mark-v2.png', script)
+        self.assertIn('/static/icons/apple-touch-icon.png?v=ai-study-buddy-v2', script)
+        self.assertIn('/static/icons/icon-192.png?v=ai-study-buddy-v2', script)
+        self.assertIn('/static/icons/icon-512.png?v=ai-study-buddy-v2', script)
+        self.assertIn('/static/icons/maskable-512.png?v=ai-study-buddy-v2', script)
         self.assertIn('request.method !== "GET"', script)
         self.assertIn('request.mode === "navigate"', script)
         self.assertIn("networkOnlyNavigation(request)", script)

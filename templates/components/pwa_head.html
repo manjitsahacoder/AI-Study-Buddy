@@ -1,15 +1,15 @@
-<link rel="manifest" href="{{ url_for('manifest') }}">
+<link rel="manifest" href="{{ url_for('manifest', v='ai-study-buddy-v2') }}">
 <meta name="theme-color" content="#3157d5">
 <meta name="application-name" content="AI Study Buddy">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="AI Study Buddy">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="msapplication-TileColor" content="#3157d5">
-<meta name="msapplication-TileImage" content="{{ url_for('static', filename='icons/icon-144.png') }}">
-<link rel="icon" href="{{ url_for('static', filename='icons/favicon.ico') }}" sizes="any">
-<link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='icons/favicon-16.png') }}">
-<link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='icons/favicon-32.png') }}">
-<link rel="apple-touch-icon" type="image/png" sizes="180x180" href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}">
+<meta name="msapplication-TileImage" content="{{ url_for('static', filename='icons/icon-144.png', v='ai-study-buddy-v2') }}">
+<link rel="icon" href="{{ url_for('static', filename='icons/favicon.ico', v='ai-study-buddy-v2') }}" sizes="any">
+<link rel="icon" type="image/png" sizes="16x16" href="{{ url_for('static', filename='icons/favicon-16.png', v='ai-study-buddy-v2') }}">
+<link rel="icon" type="image/png" sizes="32x32" href="{{ url_for('static', filename='icons/favicon-32.png', v='ai-study-buddy-v2') }}">
+<link rel="apple-touch-icon" type="image/png" sizes="180x180" href="{{ url_for('static', filename='icons/apple-touch-icon.png', v='ai-study-buddy-v2') }}">
 <script>
 (function() {
     var preference = {{ theme_preference|default('light')|tojson }};
