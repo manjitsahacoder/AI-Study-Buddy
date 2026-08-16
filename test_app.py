@@ -1849,6 +1849,93 @@ Q5. What is question five?
             self.assertIn(f'name="question{index}"', page)
             self.assertIn(question, page)
 
+    def test_lesson_markdown_renders_tables_and_preserves_common_markdown(self):
+        rendered = app_module.render_lesson_markdown(
+            """# Cell Comparison
+**Cells** have important structures.
+
+- Plant cells have a cell wall.
+- Animal cells do not.
+
+Comparison follows without a blank line.
+| Feature | Plant Cell | Animal Cell |
+|---|---|---|
+| Cell Wall | Present | Absent |
+| Plastids | Present | Absent |
+1. Review the differences.
+2. Explain one difference.
+"""
+        )
+
+        self.assertIn("<h1>Cell Comparison</h1>", rendered)
+        self.assertIn("<strong>Cells</strong>", rendered)
+        self.assertIn("<ul>", rendered)
+        self.assertIn("<ol>", rendered)
+        self.assertIn("<table>", rendered)
+        self.assertIn("<thead>", rendered)
+        self.assertIn("<th>Feature</th>", rendered)
+        self.assertIn("<th>Plant Cell</th>", rendered)
+        self.assertIn("<td>Present</td>", rendered)
+        self.assertNotIn("| Feature | Plant Cell | Animal Cell |", rendered)
+
+    @patch.object(app_module.model, "generate_content")
+    def test_learn_renders_generated_markdown_table_as_semantic_html(self, generate_content):
+        generate_content.return_value = MockResponse(
+            """# Plant and Animal Cells
+**Cells** share some structures.
+
+- Both have a cell membrane.
+- Both contain cytoplasm.
+
+| Feature | Plant Cell | Animal Cell |
+|---|---|---|
+| Cell Wall | Present | Absent |
+| Plastids | Present | Absent |
+
+## Quick Revision
+- Plant cells have a cell wall.
+
+## Visualization Decision JSON
+{"visualization_required": false, "reason": "Comparison lesson."}
+
+## Diagram JSON
+{"template":"generic","title":"Cells","elements":{},"labels":[],"type":"none","nodes":[],"connections":[],"reason":"Text lesson.","confidence":0.1}
+
+## Questions
+Q1. Which cell has a cell wall?
+
+Q2. Which cell has plastids?
+
+Q3. What do both cells contain?
+
+Q4. Name one difference.
+
+Q5. Name one similarity.
+"""
+        )
+
+        response = self.client.post(
+            "/learn",
+            data={
+                "name": "Asha",
+                "student_class": "8",
+                "subject": "Biology",
+                "topic": "Cells",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(generate_content.call_count, 1)
+        page = response.get_data(as_text=True)
+        self.assertIn("<h1>Plant and Animal Cells</h1>", page)
+        self.assertIn("<strong>Cells</strong>", page)
+        self.assertIn("<ul>", page)
+        self.assertIn("<table>", page)
+        self.assertIn("<thead>", page)
+        self.assertIn("<th>Feature</th>", page)
+        self.assertIn("<td>Present</td>", page)
+        self.assertNotIn("| Feature | Plant Cell | Animal Cell |", page)
+
     def test_adaptive_quiz_classifies_requested_subjects(self):
         cases = [
             ("English", "Grammar", "", "English Grammar"),

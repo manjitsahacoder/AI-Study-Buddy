@@ -148,9 +148,57 @@ DEFAULT_BOARD = "CBSE"
 _smart_search_cache = {}
 _pdf_text_extraction_failures = set()
 _pdf_text_extraction_failure_lock = threading.Lock()
+LESSON_MARKDOWN_EXTENSIONS = ("tables",)
+_MARKDOWN_TABLE_DELIMITER_RE = re.compile(
+    r"^[ \t]{0,3}\|?[ \t]*:?-{3,}:?[ \t]*(?:\|[ \t]*:?-{3,}:?[ \t]*)+\|?[ \t]*$"
+)
+_MARKDOWN_TABLE_ROW_RE = re.compile(r"^[ \t]{0,3}\|.*\|[ \t]*$")
 
 
 AUTH_TIMING_ENABLED = performance_timing_enabled()
+
+
+def normalize_lesson_markdown_tables(text):
+    """Add only the block boundaries Python-Markdown needs around pipe tables."""
+    text = text or ""
+    lines = text.splitlines()
+    table_starts = set()
+    table_ends = set()
+
+    for delimiter_index in range(1, len(lines)):
+        if not _MARKDOWN_TABLE_DELIMITER_RE.fullmatch(lines[delimiter_index]):
+            continue
+        header_index = delimiter_index - 1
+        if not _MARKDOWN_TABLE_ROW_RE.fullmatch(lines[header_index]):
+            continue
+
+        table_end = delimiter_index
+        while table_end + 1 < len(lines) and _MARKDOWN_TABLE_ROW_RE.fullmatch(
+            lines[table_end + 1]
+        ):
+            table_end += 1
+        table_starts.add(header_index)
+        table_ends.add(table_end)
+
+    if not table_starts:
+        return text
+
+    normalized_lines = []
+    for index, line in enumerate(lines):
+        if index in table_starts and index > 0 and lines[index - 1].strip():
+            normalized_lines.append("")
+        normalized_lines.append(line)
+        if index in table_ends and index + 1 < len(lines) and lines[index + 1].strip():
+            normalized_lines.append("")
+    return "\n".join(normalized_lines)
+
+
+def render_lesson_markdown(text):
+    return markdown.markdown(
+        normalize_lesson_markdown_tables(text),
+        extensions=LESSON_MARKDOWN_EXTENSIONS,
+        output_format="html5",
+    )
 
 
 def request_cache():
@@ -1984,7 +2032,7 @@ def render_cached_lesson_response(lesson, name, student_class):
         subject=lesson.subject,
         book_name=lesson.book_name,
         topic=lesson.topic,
-        explanation=markdown.markdown(lesson.notes),
+        explanation=render_lesson_markdown(lesson.notes),
         notes=lesson.notes,
         diagram_payload=diagram_payload,
         diagram_image=diagram_view["image_url"] if diagram_view else "",
@@ -10436,7 +10484,7 @@ def view_learning_history(lesson_id):
         "learning_history_detail.html",
         lesson=lesson,
         student_class=preferred_class_for_user(current_user()),
-        notes_html=markdown.markdown(lesson["notes"]),
+        notes_html=render_lesson_markdown(lesson["notes"]),
         diagram_payload=diagram_payload,
         diagram_steps=diagram_payload.get("labels", []),
         diagram_image=diagram_view["image_url"] if diagram_view else "",
@@ -10475,7 +10523,7 @@ def lesson_notes(lesson_id):
         subject=lesson.subject,
         book_name=lesson.book_name,
         topic=lesson.topic,
-        explanation=markdown.markdown(lesson.notes),
+        explanation=render_lesson_markdown(lesson.notes),
         notes=lesson.notes,
         diagram_payload=diagram_payload,
         diagram_image=diagram_view["image_url"] if diagram_view else "",
@@ -11905,7 +11953,7 @@ Rules:
         quiz_question_source=quiz_question_source,
     )
     with performance_span("Markdown conversion", detail="learn_notes"):
-        explanation_html = markdown.markdown(notes)
+        explanation_html = render_lesson_markdown(notes)
     return render_template(
         "learn.html",
         name=name,

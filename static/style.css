@@ -4590,6 +4590,40 @@ button:hover,
     margin: 22px 0;
 }
 
+.lesson-notes-content table {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    border: 1px solid var(--line);
+    border-collapse: collapse;
+    border-radius: var(--card-radius);
+    background: var(--surface-strong);
+    box-shadow: var(--shadow-sm);
+    font-size: 0.96rem;
+    line-height: 1.5;
+    -webkit-overflow-scrolling: touch;
+}
+
+.lesson-notes-content th,
+.lesson-notes-content td {
+    min-width: 9rem;
+    padding: 12px 14px;
+    border: 1px solid var(--line);
+    color: var(--ink);
+    text-align: left;
+    vertical-align: top;
+}
+
+.lesson-notes-content th {
+    background: var(--color-primary-soft);
+    font-weight: var(--font-weight-bold);
+}
+
+.lesson-notes-content tbody tr:nth-child(even) {
+    background: var(--color-secondary-soft);
+}
+
 .content blockquote {
     padding: 16px 18px;
     border-left: 4px solid var(--primary);
