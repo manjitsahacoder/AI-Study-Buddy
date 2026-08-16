@@ -238,9 +238,11 @@ def get_chapter_context(
     cache_key = cache_path.stem.rsplit("_", 1)[-1]
     cached_context, invalid_cache = _read_context_cache(
         cache_path,
+        textbook,
         definition,
         configuration,
         source_pdf_url=source_pdf_url,
+        character_limit=character_limit,
     )
     if cached_context is not None:
         logger.info(
@@ -265,9 +267,11 @@ def get_chapter_context(
     with _lock_for(cache_path):
         cached_context, invalid_cache_after_lock = _read_context_cache(
             cache_path,
+            textbook,
             definition,
             configuration,
             source_pdf_url=source_pdf_url,
+            character_limit=character_limit,
         )
         if cached_context is not None:
             logger.info(
@@ -813,10 +817,12 @@ def _safe_identity_part(value: Any) -> str:
 
 def _read_context_cache(
     cache_path: Path,
+    textbook: dict[str, Any],
     definition: _ChapterDefinition,
     configuration: _TextbookChapterConfiguration,
     *,
     source_pdf_url: str,
+    character_limit: int,
 ) -> tuple[dict[str, Any] | None, bool]:
     try:
         if cache_path.is_symlink() or not cache_path.exists():
@@ -828,23 +834,45 @@ def _read_context_cache(
         return None, True
     if not isinstance(payload, dict):
         return None, True
+    text = payload.get("text")
+    page_texts = payload.get("page_texts")
+    start_page_index = payload.get("start_page_index")
+    end_page_index = payload.get("end_page_index")
     if (
         payload.get("cache_version") != configuration.parser_version
+        or payload.get("textbook_id") != _textbook_identity(textbook)
         or payload.get("pdf_url") != source_pdf_url
         or payload.get("source_strategy", COMBINED_BOOK_SOURCE)
         != configuration.source_strategy
         or payload.get("chapter_id") != definition.identifier
         or payload.get("matched_chapter_title") != definition.title
-        or not isinstance(payload.get("text"), str)
-        or not payload["text"].strip()
-        or not isinstance(payload.get("start_page_index"), int)
-        or not isinstance(payload.get("end_page_index"), int)
-        or payload["start_page_index"] < 0
-        or payload["end_page_index"] < payload["start_page_index"]
-        or not isinstance(payload.get("page_texts"), list)
+        or payload.get("max_chars") != character_limit
+        or not isinstance(text, str)
+        or not text.strip()
+        or len(text) > character_limit
+        or not isinstance(start_page_index, int)
+        or isinstance(start_page_index, bool)
+        or not isinstance(end_page_index, int)
+        or isinstance(end_page_index, bool)
+        or start_page_index < 0
+        or end_page_index < start_page_index
+        or not isinstance(page_texts, list)
+        or not page_texts
+        or not all(
+            isinstance(page, dict)
+            and isinstance(page.get("page_index"), int)
+            and not isinstance(page.get("page_index"), bool)
+            and start_page_index <= page["page_index"] <= end_page_index
+            and isinstance(page.get("text"), str)
+            and bool(page["text"].strip())
+            for page in page_texts
+        )
         or not isinstance(payload.get("match"), dict)
         or not isinstance(payload.get("truncated"), bool)
     ):
+        return None, True
+    page_indexes = [page["page_index"] for page in page_texts]
+    if page_indexes != sorted(set(page_indexes)):
         return None, True
     return payload, False
 

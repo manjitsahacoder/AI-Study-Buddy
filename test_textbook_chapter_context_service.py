@@ -567,6 +567,36 @@ class Class9ExplorationChapterContextServiceTests(unittest.TestCase):
         self.assertEqual(self.chapter_pages.call_count, 1)
         self.assertEqual(json.loads(cache_path.read_text(encoding="utf-8"))["chapter_id"], "chapter-04")
 
+    def test_class_9_semantically_invalid_context_cache_is_regenerated(self):
+        original_context = self._get_context(5)
+        chapter = self._chapter_for_number(5)
+        cache_path = chapter_context_service.build_chapter_context_cache_path(
+            self.textbook,
+            self._definition(5),
+            source_pdf_url=chapter["pdf_url"],
+            character_limit=chapter_context_service.TEXTBOOK_CHAPTER_CONTEXT_MAX_CHARS,
+            cache_dir=self.context_cache_dir,
+        )
+        invalid_payload = json.loads(cache_path.read_text(encoding="utf-8"))
+        invalid_payload["textbook_id"] = "cbse-10-science-science-english-latest"
+        invalid_payload["max_chars"] += 1
+        invalid_payload["page_texts"] = [
+            {"page_index": True, "text": "Wrong cached chapter content."}
+        ]
+        cache_path.write_text(json.dumps(invalid_payload), encoding="utf-8")
+
+        regenerated_context = self._get_context(5)
+
+        self.assertEqual(self.chapter_pages.call_count, 2)
+        self.assertEqual(regenerated_context["text"], original_context["text"])
+        self.assertNotIn("Wrong cached chapter content.", regenerated_context["text"])
+        cached_payload = json.loads(cache_path.read_text(encoding="utf-8"))
+        self.assertEqual(cached_payload["textbook_id"], original_context["textbook_id"])
+        self.assertEqual(
+            cached_payload["max_chars"],
+            chapter_context_service.TEXTBOOK_CHAPTER_CONTEXT_MAX_CHARS,
+        )
+
     def test_class_9_and_class_10_cache_paths_cannot_collide(self):
         class_9_path = chapter_context_service.build_chapter_context_cache_path(
             self.textbook,

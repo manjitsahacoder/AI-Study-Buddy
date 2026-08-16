@@ -9141,15 +9141,20 @@ def _ncert_textbook_identity(textbook):
     )
 
 
+def _is_class9_exploration_request(student_class, subject, book_name):
+    """Return whether a request targets the one enabled NCERT grounding scope."""
+    return (
+        parse_class_level(student_class) == NCERT_EXPLORATION_CLASS
+        and _ncert_identity_component(subject)
+        == _ncert_identity_component(NCERT_EXPLORATION_SUBJECT)
+        and _ncert_identity_component(book_name)
+        == _ncert_identity_component(NCERT_EXPLORATION_TITLE)
+    )
+
+
 def _class9_exploration_grounding_candidate(student_class, subject, book_name, chapter):
     """Resolve only the reviewed Class 9 Exploration identity from the registry."""
-    if (
-        parse_class_level(student_class) != NCERT_EXPLORATION_CLASS
-        or _ncert_identity_component(subject)
-        != _ncert_identity_component(NCERT_EXPLORATION_SUBJECT)
-        or _ncert_identity_component(book_name)
-        != _ncert_identity_component(NCERT_EXPLORATION_TITLE)
-    ):
+    if not _is_class9_exploration_request(student_class, subject, book_name):
         return None
 
     textbook = textbook_registry.get_textbook(
@@ -11513,6 +11518,11 @@ def learn():
         chapter_count=chapter_count,
     )
 
+    class9_exploration_request = _is_class9_exploration_request(
+        student_class,
+        subject,
+        book_name,
+    )
     grounding_candidate = _class9_exploration_grounding_candidate(
         student_class,
         subject,
@@ -11631,7 +11641,7 @@ def learn():
         student_class,
     )
     textbook_context_section = ""
-    if not ncert_context:
+    if not ncert_context and not class9_exploration_request:
         with performance_span("Textbook context loading", detail=f"{student_class} {subject} {topic}"):
             textbook_context_section = local_textbook_context_section(
                 student_class,
